@@ -1,6 +1,6 @@
 """
 FastAPI Authentication & Agent Operation Endpoints
-Production-ready API with enterprise security
+Production-ready API with comprehensive OpenAPI documentation
 """
 from __future__ import annotations
 
@@ -10,119 +10,178 @@ from typing import Optional, List, Dict, Any
 import uuid
 from fastapi import APIRouter, HTTPException, Depends, status, Request, Query
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field, EmailStr
 from sqlalchemy import text
 
 from .api_security import (
     get_current_user, get_current_security_context, require_permission, require_admin,
     create_api_response, create_error_response, log_api_access
 )
-from .auth_models import UserModel, SecurityContext
-from .auth_models import APITokenModel
+from .auth_models import (
+    UserModel, SecurityContext, APITokenModel,
+    UserNotFoundError, InvalidCredentialsError, AccountLockedError, AuthenticationError
+)
 from .auth_service import auth_service
 from .database_models import AgentModel, GoalModel, ActionModel
+
+# Import comprehensive API schemas for OpenAPI documentation
+from .api_schemas import (
+    # Authentication
+    LoginRequest, LoginResponse, TokenRefreshRequest, TokenData, UserInfo,
+    # User Management
+    UserCreate, UserUpdate, UserResponse,
+    # Agent Management
+    AgentCreate, AgentResponse, AgentExecute, AgentExecutionResponse,
+    # Goal Management
+    GoalCreate, GoalResponse,
+    # API Tokens
+    APITokenCreate, APITokenResponse,
+    # System
+    SystemHealth, SystemInfo,
+    # Base responses
+    APIResponse, APIError, ErrorDetail,
+    # Pagination
+    PaginationInfo, PaginatedResponse,
+    # Security
+    SecurityEventResponse,
+    # Enums
+    UserStatus, RoleLevel, SecurityEventType, SecuritySeverity
+)
 
 # Import auth models to register them with SQLAlchemy
 from . import auth_models  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
-# Create main API router
-api_router = APIRouter(prefix="/api/v1", tags=["Authentication", "Agent Operations"])
+# Create main API router with comprehensive tags
+api_router = APIRouter(
+    prefix="/api/v1",
+    tags=[
+        "Authentication",
+        "User Management",
+        "Agent Operations",
+        "Goal Management",
+        "API Tokens",
+        "System"
+    ]
+)
 
-# Pydantic models for API requests/responses
-class LoginRequest(BaseModel):
-    username: str = Field(..., description="Username or email")
-    password: str = Field(..., min_length=6, description="User password")
-    remember_me: bool = Field(default=False, description="Extended session duration")
-
-class TokenResponse(BaseModel):
-    access_token: str
-    refresh_token: str
-    token_type: str = "bearer"
-    expires_in: int
-    user: Dict[str, Any]
-
-class TokenRefreshRequest(BaseModel):
-    refresh_token: str
-
-class UserCreateRequest(BaseModel):
-    username: str = Field(..., min_length=3, max_length=50)
-    email: EmailStr
-    full_name: str = Field(..., min_length=2, max_length=100)
-    password: str = Field(..., min_length=6, description="User password")
-    role_names: Optional[List[str]] = Field(default=["user"], description="User roles")
-
-class UserResponse(BaseModel):
-    id: str
-    username: str
-    email: str
-    full_name: str
-    is_active: bool
-    roles: List[str]
-    created_at: datetime
-    last_login: Optional[datetime] = None
-
-class APITokenCreateRequest(BaseModel):
-    name: str = Field(..., min_length=1, max_length=100)
-    scopes: List[str] = Field(..., description="API scopes/permissions")
-    expires_days: Optional[int] = Field(default=30, ge=1, le=365)
-
-class APITokenResponse(BaseModel):
-    id: str
-    name: str
-    token_prefix: str
-    scopes: List[str]
-    created_at: datetime
-    expires_at: Optional[datetime] = None
-    last_used: Optional[datetime] = None
-    usage_count: int = 0
-
-class AgentCreateRequest(BaseModel):
-    name: str = Field(..., min_length=1, max_length=100)
-    description: Optional[str] = Field(default="", max_length=500)
-    goals: List[str] = Field(default_factory=list)
-    memory_capacity: int = Field(default=1000, ge=100, le=10000)
-
-class AgentResponse(BaseModel):
-    id: str
-    name: str
-    description: str
-    status: str
-    goals: List[str]
-    memory_usage: int
-    created_at: datetime
-    updated_at: datetime
-
-class GoalCreateRequest(BaseModel):
-    title: str = Field(..., min_length=1, max_length=200)
-    description: Optional[str] = Field(default="", max_length=1000)
-    priority: int = Field(default=1, ge=1, le=10)
-    target_date: Optional[datetime] = None
-
-class GoalResponse(BaseModel):
-    id: str
-    title: str
-    description: str
-    status: str
-    priority: int
-    progress: float
-    created_at: datetime
-    target_date: Optional[datetime] = None
-
-
-class APIEnvelope(BaseModel):
-    success: bool
-    message: Optional[str] = None
-    data: Optional[Any] = None
-    timestamp: float
+# API envelope alias for backward compatibility
+APIEnvelope = APIResponse
 
 # Authentication Endpoints
-@api_router.post("/auth/login", response_model=APIEnvelope)
+@api_router.post(
+    "/auth/login",
+    response_model=APIResponse,
+    summary="User Authentication",
+    description="""
+    Authenticate user and receive JWT access/refresh tokens.
+
+    **Authentication Flow:**
+    1. Provide valid username/email and password
+    2. Receive access_token (30 min expiry) and refresh_token (30 day expiry)
+    3. Use access_token in Authorization header for API calls
+    4. Use refresh_token to get new access_token when expired
+
+    **Rate Limiting:** 5 login attempts per 15 minutes per IP
+
+    **Security Notes:**
+    - Account locks after 5 failed attempts for 30 minutes
+    - Tokens are cryptographically signed and tamper-proof
+    - Session is logged for security audit
+    """,
+    responses={
+        200: {
+            "model": APIResponse,
+            "description": "Successful authentication",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "success": True,
+                        "message": "User authenticated successfully",
+                        "timestamp": 1640995200.0,
+                        "data": {
+                            "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                            "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                            "token_type": "bearer",
+                            "expires_in": 1800,
+                            "user": {
+                                "id": "550e8400-e29b-41d4-a716-446655440000",
+                                "username": "admin",
+                                "email": "admin@example.com",
+                                "full_name": "System Administrator",
+                                "is_active": True,
+                                "is_admin": True,
+                                "roles": ["admin"],
+                                "permissions": ["system.admin", "agent.read", "agent.write"],
+                                "last_login": "2023-12-31T23:59:59Z",
+                                "created_at": "2023-01-01T00:00:00Z"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        401: {
+            "model": APIError,
+            "description": "Invalid credentials, account locked, or inactive account",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "invalid_credentials": {
+                            "summary": "Invalid username or password",
+                            "value": {
+                                "success": False,
+                                "error": "INVALID_CREDENTIALS",
+                                "message": "Invalid username or password",
+                                "timestamp": 1640995200.0
+                            }
+                        },
+                        "account_locked": {
+                            "summary": "Account temporarily locked",
+                            "value": {
+                                "success": False,
+                                "error": "ACCOUNT_LOCKED",
+                                "message": "Account is temporarily locked due to multiple failed attempts",
+                                "timestamp": 1640995200.0
+                            }
+                        },
+                        "inactive_account": {
+                            "summary": "Account not active",
+                            "value": {
+                                "success": False,
+                                "error": "ACCOUNT_INACTIVE",
+                                "message": "Account is not active",
+                                "timestamp": 1640995200.0
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+)
 async def login(request: Request, login_data: LoginRequest):
-    """Authenticate user and return JWT tokens."""
+    """
+    Authenticate user and return JWT tokens with comprehensive user information.
+
+    This endpoint validates user credentials and returns:
+    - **access_token**: JWT token for API authentication (30 min expiry)
+    - **refresh_token**: Token to get new access tokens (30 day expiry)
+    - **user**: Complete user profile with roles and permissions
+
+    **Example Usage:**
+    ```bash
+    curl -X POST http://localhost:8000/api/v1/auth/login \\
+      -H "Content-Type: application/json" \\
+      -d '{
+        "username": "admin",
+        "password": "admin123",
+        "remember_me": false
+      }'
+    ```
+    """
     try:
-        # Authenticate user
+        # Authenticate user with IP and user agent tracking
         security_context = auth_service.authenticate_user(
             login_data.username,
             login_data.password,
@@ -130,65 +189,162 @@ async def login(request: Request, login_data: LoginRequest):
             user_agent=request.headers.get("user-agent")
         )
 
-        # Create user session
+        # Create user session with tracking
         tokens = auth_service.create_user_session(
             security_context.user.id,
             ip_address=request.client.host if request.client else None,
             user_agent=request.headers.get("user-agent")
         )
 
-        # Build user info
-        user_info = {
-            "id": security_context.user.id,
-            "username": security_context.user.username,
-            "email": security_context.user.email,
-            "full_name": security_context.user.full_name,
-            "roles": [role.name for role in security_context.user.roles],
-            "permissions": security_context.permissions,
-            "is_admin": security_context.is_admin
-        }
+        # Build comprehensive user info using UserInfo schema
+        user_info = UserInfo(
+            id=security_context.user.id,
+            username=security_context.user.username,
+            email=security_context.user.email,
+            full_name=security_context.user.full_name,
+            is_active=security_context.user.is_active,
+            is_admin=security_context.is_admin,
+            roles=[role.name for role in security_context.user.roles],
+            permissions=security_context.permissions,
+            last_login=security_context.user.last_login,
+            created_at=security_context.user.created_at
+        )
 
-        logger.info(f"User {security_context.user.username} logged in successfully")
+        # Build login response
+        login_response = LoginResponse(
+            access_token=tokens["access_token"],
+            refresh_token=tokens["refresh_token"],
+            token_type=tokens["token_type"],
+            expires_in=tokens["expires_in"],
+            user=user_info
+        )
+
+        logger.info(f"✅ User {security_context.user.username} logged in successfully from {request.client.host}")
 
         return JSONResponse(
             status_code=status.HTTP_200_OK,
             content={
                 "success": True,
-                "data": {
-                    "access_token": tokens["access_token"],
-                    "refresh_token": tokens["refresh_token"],
-                    "token_type": tokens["token_type"],
-                    "expires_in": tokens["expires_in"],
-                    "user": user_info
-                }
+                "message": "User authenticated successfully",
+                "timestamp": datetime.now(UTC).timestamp(),
+                "data": login_response.dict()
             }
         )
 
-    except Exception as e:
-        logger.warning(f"Login failed for {login_data.username}: {str(e)}")
+    except (UserNotFoundError, InvalidCredentialsError) as e:
+        logger.warning(f"🔒 Login failed for {login_data.username}: {str(e)}")
         return create_error_response(
             message="Invalid username or password",
-            error_type="AUTHENTICATION_FAILED",
+            error_type="INVALID_CREDENTIALS",
             status_code=status.HTTP_401_UNAUTHORIZED
         )
+    except AccountLockedError as e:
+        logger.warning(f"🔒 Account locked for {login_data.username}: {str(e)}")
+        return create_error_response(
+            message=str(e),
+            error_type="ACCOUNT_LOCKED",
+            status_code=status.HTTP_401_UNAUTHORIZED
+        )
+    except Exception as e:
+        logger.error(f"💥 Login error for {login_data.username}: {str(e)}")
+        return create_error_response(
+            message="Authentication service temporarily unavailable",
+            error_type="AUTH_SERVICE_ERROR",
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE
+        )
 
-@api_router.post("/auth/refresh", response_model=APIEnvelope)
+@api_router.post(
+    "/auth/refresh",
+    response_model=APIResponse,
+    summary="Refresh Access Token",
+    description="""
+    Exchange a valid refresh token for a new access token.
+
+    **Token Lifecycle:**
+    1. Access tokens expire after 30 minutes
+    2. Refresh tokens expire after 30 days
+    3. Use this endpoint to get new access tokens without re-authenticating
+
+    **Security Notes:**
+    - Refresh tokens are single-use
+    - New refresh token provided with new access token
+    - Invalid refresh tokens are logged for security audit
+    """,
+    responses={
+        200: {
+            "model": APIResponse,
+            "description": "Token refreshed successfully",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "success": True,
+                        "message": "Token refreshed successfully",
+                        "timestamp": 1640995200.0,
+                        "data": {
+                            "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                            "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                            "token_type": "bearer",
+                            "expires_in": 1800
+                        }
+                    }
+                }
+            }
+        },
+        401: {
+            "model": APIError,
+            "description": "Invalid, expired, or revoked refresh token"
+        }
+    }
+)
 async def refresh_token(request: Request, refresh_data: TokenRefreshRequest):
-    """Refresh access token using refresh token."""
+    """
+    Refresh access token using a valid refresh token.
+
+    **Example Usage:**
+    ```bash
+    curl -X POST http://localhost:8000/api/v1/auth/refresh \\
+      -H "Content-Type: application/json" \\
+      -d '{
+        "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+      }'
+    ```
+    """
     try:
         tokens = auth_service.refresh_access_token(refresh_data.refresh_token)
 
-        return create_api_response(
-            data=tokens,
-            message="Token refreshed successfully"
+        # Build token data response
+        token_data = TokenData(
+            access_token=tokens["access_token"],
+            refresh_token=tokens.get("refresh_token", refresh_data.refresh_token),
+            token_type=tokens.get("token_type", "bearer"),
+            expires_in=tokens.get("expires_in", 1800)
         )
 
-    except Exception as e:
-        logger.warning(f"Token refresh failed: {str(e)}")
+        logger.info("🔄 Access token refreshed successfully")
+
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={
+                "success": True,
+                "message": "Token refreshed successfully",
+                "timestamp": datetime.now(UTC).timestamp(),
+                "data": token_data.dict()
+            }
+        )
+
+    except AuthenticationError as e:
+        logger.warning(f"🔒 Token refresh failed: {str(e)}")
         return create_error_response(
             message="Invalid or expired refresh token",
-            error_type="TOKEN_REFRESH_FAILED",
+            error_type="INVALID_REFRESH_TOKEN",
             status_code=status.HTTP_401_UNAUTHORIZED
+        )
+    except Exception as e:
+        logger.error(f"💥 Token refresh error: {str(e)}")
+        return create_error_response(
+            message="Token refresh service temporarily unavailable",
+            error_type="REFRESH_SERVICE_ERROR",
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE
         )
 
 @api_router.post("/auth/logout", response_model=APIEnvelope)
@@ -243,9 +399,9 @@ async def get_current_user_info(security_context: SecurityContext = Depends(get_
         )
 
 # User Management Endpoints
-@api_router.post("/users", response_model=APIEnvelope)
+@api_router.post("/users", response_model=APIResponse)
 async def create_user(
-    user_data: UserCreateRequest,
+    user_data: UserCreate,
     security_context: SecurityContext = Depends(require_permission("users", "write"))
 ):
     """Create new user account (requires users.write permission)."""
@@ -326,9 +482,9 @@ async def list_users(
         )
 
 # API Token Management
-@api_router.post("/api-tokens", response_model=APIEnvelope)
+@api_router.post("/api-tokens", response_model=APIResponse)
 async def create_api_token(
-    token_data: APITokenCreateRequest,
+    token_data: APITokenCreate,
     security_context: SecurityContext = Depends(get_current_security_context)
 ):
     """Create API token for current user."""
@@ -396,9 +552,9 @@ async def list_api_tokens(
         )
 
 # Agent Operation Endpoints
-@api_router.post("/agents", response_model=APIEnvelope)
+@api_router.post("/agents", response_model=APIResponse)
 async def create_agent(
-    agent_data: AgentCreateRequest,
+    agent_data: AgentCreate,
     security_context: SecurityContext = Depends(require_permission("agent", "write"))
 ):
     """Create new agent (requires agent.write permission)."""
@@ -571,9 +727,9 @@ async def execute_agent(
         )
 
 # Goal Management Endpoints
-@api_router.post("/goals", response_model=APIEnvelope)
+@api_router.post("/goals", response_model=APIResponse)
 async def create_goal(
-    goal_data: GoalCreateRequest,
+    goal_data: GoalCreate,
     security_context: SecurityContext = Depends(require_permission("goals", "write"))
 ):
     """Create new goal (requires goals.write permission)."""
