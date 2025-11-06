@@ -31,9 +31,11 @@ An experimental, self-contained Python agent that demonstrates a full autonomy l
 - Register real tools by subclassing `Tool` and hooking them into `_register_default_tools`.
 
 ## Next Steps
-- Replace mock tools with real integrations and richer observation metrics.
-- Add configuration files or plugin discovery for registering custom tools/goals.
-- Wire in linting/formatting (e.g., `ruff`, `black`) and CI to enforce tests automatically.
+- API & docs: add OpenAPI examples and error schemas, surface the typed envelope in docs, and flesh out usage guides.
+- Migrations & DB: document Alembic workflow; provide Postgres deployment config and a migration runbook; ensure migrate step in CI/CD.
+- Performance & observability: create load tests and baselines; ship Prometheus dashboards and add tracing for tool/DB calls.
+- Security & secrets: use env/secret manager for JWT/DB, rotate keys, expand CI scans (SAST/DAST) alongside Trivy.
+- Plugin ecosystem: document plugin YAML/JSON and optional entry-point discovery; publish example plugins and templates.
 
 ## Testing
 - Run the suite with `python3 -m unittest discover`.
