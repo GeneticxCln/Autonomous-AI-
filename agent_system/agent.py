@@ -22,6 +22,7 @@ from .tools import (
 )
 from .enhanced_tools import EnhancedToolRegistry
 from .enhanced_persistence import load_all, save_all, get_storage_info
+from .plugin_loader import load_plugins
 
 # Import intelligent components
 from .reasoning_engine import reasoning_engine
@@ -63,6 +64,13 @@ class AutonomousAgent:
             logger.info("Agent initialized with mock tools (no API keys configured)")
 
         self._register_default_tools()
+        # Load plugin-defined tools and goals if configured
+        try:
+            plugin_info = load_plugins(self)
+            if plugin_info.get("loaded"):
+                logger.info("Plugins loaded: %s", plugin_info)
+        except Exception as e:
+            logger.warning("Plugin loading failed: %s", e)
         # Load persisted state if present
         load_all(self)
 

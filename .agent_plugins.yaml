@@ -1,0 +1,13 @@
+tools:
+  # Prefer real tools where available
+  - class: agent_system.real_tools.RealWebSearchTool
+    enabled: true
+  - class: agent_system.real_tools.RealFileReaderTool
+    enabled: true
+  - class: agent_system.real_tools.RealFileWriterTool
+    enabled: true
+  - class: agent_system.real_tools.RealCodeExecutorTool
+    enabled: true
+
+# Example goals to auto-register on startup (optional)
+goals: []

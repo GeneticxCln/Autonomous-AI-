@@ -4,6 +4,8 @@ import logging
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from typing import Any, Dict, Tuple
+import json
+import time
 
 from .models import Action, ActionStatus, Observation
 
@@ -534,6 +536,13 @@ class ToolRegistry:
         attempts = 0
         max_attempts = self.max_retries if retry else 1
 
+        payload_bytes = 0
+        try:
+            payload_bytes = len(json.dumps(action.parameters, ensure_ascii=False).encode("utf-8"))
+        except Exception:
+            payload_bytes = 0
+
+        start = time.perf_counter()
         while attempts < max_attempts:
             attempts += 1
 
@@ -546,11 +555,25 @@ class ToolRegistry:
                 else:
                     self.tool_stats[tool.name]["failure"] += 1
 
+                duration_ms = (time.perf_counter() - start) * 1000.0
+                try:
+                    result_bytes = len(json.dumps(result, ensure_ascii=False)[:100000].encode("utf-8"))
+                except Exception:
+                    result_bytes = 0
+
                 observation = Observation(
                     action_id=action.id,
                     status=status,
                     result=result,
                     feedback=f"Completed in {attempts} attempt(s)",
+                    metrics={
+                        "tool": tool.name,
+                        "latency_ms": round(duration_ms, 3),
+                        "attempts": attempts,
+                        "payload_bytes": payload_bytes,
+                        "result_bytes": result_bytes,
+                        "success": 1.0 if status == ActionStatus.SUCCESS else 0.0,
+                    },
                 )
 
                 if status == ActionStatus.SUCCESS or not retry:
@@ -562,18 +585,37 @@ class ToolRegistry:
                 logger.error("Tool execution error: %s", exc)
 
                 if attempts >= max_attempts:
+                    duration_ms = (time.perf_counter() - start) * 1000.0
                     return Observation(
                         action_id=action.id,
                         status=ActionStatus.FAILURE,
                         result=None,
                         feedback=f"Failed after {attempts} attempts: {exc}",
+                        metrics={
+                            "tool": tool.name,
+                            "latency_ms": round(duration_ms, 3),
+                            "attempts": attempts,
+                            "payload_bytes": payload_bytes,
+                            "result_bytes": 0,
+                            "success": 0.0,
+                            "error_type": type(exc).__name__,
+                        },
                     )
 
+        duration_ms = (time.perf_counter() - start) * 1000.0
         return Observation(
             action_id=action.id,
             status=ActionStatus.FAILURE,
             result=None,
             feedback=f"Failed after {max_attempts} attempts",
+            metrics={
+                "tool": tool.name if tool else action.tool_name,
+                "latency_ms": round(duration_ms, 3),
+                "attempts": attempts,
+                "payload_bytes": payload_bytes,
+                "result_bytes": 0,
+                "success": 0.0,
+            },
         )
 
     def get_available_tools(self) -> list[str]:
