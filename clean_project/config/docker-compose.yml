@@ -1,0 +1,15 @@
+version: "3.9"
+services:
+  api:
+    build: .
+    environment:
+      - ENVIRONMENT=production
+      - API_DEBUG=false
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-dev-secret-please-change}
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5

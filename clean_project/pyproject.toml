@@ -40,9 +40,9 @@ dev = [
 ]
 
 [project.scripts]
-agent-chat = "agent_system.chat_cli:main"
-agent-term = "agent_system.terminal_cli:main"
-agent-run = "agent_system.__main__:main"
+agent-chat = "src.agent_system.chat_cli:main"
+agent-term = "src.agent_system.terminal_cli:main"
+agent-run = "src.agent_system.__main__:main"
 
 [tool.black]
 line-length = 100
@@ -54,14 +54,14 @@ select = ["E", "F", "I", "UP", "B"]
 ignore = ["E203", "E266", "E501", "W503"]
 
 [tool.ruff.isort]
-known-first-party = ["agent_system"]
+known-first-party = ["src.agent_system"]
 
 [tool.pytest.ini_options]
 addopts = "-q"
 
 [tool.coverage.run]
 branch = true
-source = ["agent_system"]
+source = ["src.agent_system"]
 
 [tool.coverage.report]
 show_missing = true
@@ -73,3 +73,7 @@ warn_unused_ignores = true
 warn_redundant_casts = true
 warn_unused_configs = true
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "src.agent_system.*"
+strict = true
