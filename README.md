@@ -37,6 +37,11 @@ An experimental, self-contained Python agent that demonstrates a full autonomy l
 - Security & secrets: use env/secret manager for JWT/DB, rotate keys, expand CI scans (SAST/DAST) alongside Trivy.
 - Plugin ecosystem: document plugin YAML/JSON and optional entry-point discovery; publish example plugins and templates.
 
+## Recently Completed
+- Real tool integrations enabled (web search, file read/write, code execute) with richer observation metrics (latency, payload/result sizes, attempts).
+- Plugin discovery via YAML/JSON for registering custom tools/goals; agent auto-loads from .agent_plugins.yaml.
+- Linting/formatting and CI wired (pre-commit with ruff/black/mypy; GitHub Actions runs tests and container scan).
+
 ## Testing
 - Run the suite with `python3 -m unittest discover`.
 
