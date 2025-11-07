@@ -1,11 +1,11 @@
 from __future__ import annotations
 
+import json
 import logging
+import time
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from typing import Any, Dict, Tuple
-import json
-import time
 
 from .models import Action, ActionStatus, Observation
 
@@ -48,7 +48,10 @@ class FileReaderTool(Tool):
     def execute(self, **kwargs) -> Tuple[ActionStatus, Any]:
         filepath = kwargs.get("filepath", "")
         logger.info("Reading file (mock): %s", filepath)
-        return ActionStatus.SUCCESS, {"content": f"Contents of {filepath} (mock)", "filepath": filepath}
+        return ActionStatus.SUCCESS, {
+            "content": f"Contents of {filepath} (mock)",
+            "filepath": filepath,
+        }
 
 
 class FileWriterTool(Tool):
@@ -79,7 +82,6 @@ class CodeExecutorTool(Tool):
         return "code_executor"
 
     def execute(self, **kwargs) -> Tuple[ActionStatus, Any]:
-        code = kwargs.get("code", "")
         logger.info("Executing code")
         return ActionStatus.SUCCESS, {"output": "Code executed successfully"}
 
@@ -95,10 +97,12 @@ class ShellTool(Tool):
 
     def _safe_token(self, token: str) -> bool:
         import re
+
         return bool(re.fullmatch(r"[A-Za-z0-9_\-\./]+", token))
 
     def execute(self, **kwargs) -> Tuple[ActionStatus, Any]:
-        import subprocess, shlex
+        import subprocess
+
         from .config_simple import settings, validate_file_path
 
         cmd = str(kwargs.get("cmd", "")).strip()
@@ -120,7 +124,9 @@ class ShellTool(Tool):
             tokens.append(s)
 
         try:
-            proc = subprocess.run(tokens, capture_output=True, text=True, timeout=settings.TOOL_TIMEOUT)
+            proc = subprocess.run(
+                tokens, capture_output=True, text=True, timeout=settings.TOOL_TIMEOUT
+            )
             return ActionStatus.SUCCESS, {
                 "cmd": tokens,
                 "return_code": proc.returncode,
@@ -141,9 +147,10 @@ class CodeSearchTool(Tool):
         return "code_search"
 
     def execute(self, **kwargs) -> Tuple[ActionStatus, Any]:
+        import fnmatch
         import os
         import re
-        import fnmatch
+
         from .config_simple import validate_file_path
 
         root = str(kwargs.get("path", "."))
@@ -169,7 +176,11 @@ class CodeSearchTool(Tool):
 
         for dirpath, dirnames, filenames in os.walk(root):
             # Apply directory excludes
-            dirnames[:] = [d for d in dirnames if not any(fnmatch.fnmatch(os.path.join(dirpath, d), ex) for ex in excludes)]
+            dirnames[:] = [
+                d
+                for d in dirnames
+                if not any(fnmatch.fnmatch(os.path.join(dirpath, d), ex) for ex in excludes)
+            ]
             for filename in filenames:
                 filepath = os.path.join(dirpath, filename)
                 if any(fnmatch.fnmatch(filepath, ex) for ex in excludes):
@@ -178,14 +189,16 @@ class CodeSearchTool(Tool):
                     continue
                 try:
                     # Read text files only (best-effort)
-                    with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+                    with open(filepath, encoding="utf-8", errors="ignore") as f:
                         for i, line in enumerate(f, start=1):
                             if regex.search(line):
-                                matches.append({
-                                    "file": filepath,
-                                    "line": i,
-                                    "text": line.strip()[:500],
-                                })
+                                matches.append(
+                                    {
+                                        "file": filepath,
+                                        "line": i,
+                                        "text": line.strip()[:500],
+                                    }
+                                )
                                 if len(matches) >= max_results:
                                     break
                 except Exception:
@@ -206,8 +219,11 @@ class EditFileTool(Tool):
         return "edit_file"
 
     def execute(self, **kwargs) -> Tuple[ActionStatus, Any]:
+        import hashlib
+        import json
+        import time
         from pathlib import Path
-        import time, json, hashlib
+
         from .config_simple import validate_file_path
 
         path = str(kwargs.get("path", "")).strip()
@@ -245,11 +261,18 @@ class EditFileTool(Tool):
         meta_path = backup_dir / (base + ".meta.json")
         try:
             backup_path.write_text(txt, encoding="utf-8")
-            meta_path.write_text(json.dumps({"original": str(p)}, ensure_ascii=False, indent=2), encoding="utf-8")
+            meta_path.write_text(
+                json.dumps({"original": str(p)}, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
             p.write_text(new_txt, encoding="utf-8")
         except Exception as e:
             return ActionStatus.FAILURE, {"error": f"write failed: {e}"}
-        return ActionStatus.SUCCESS, {"edited": True, "replacements": replaced, "backup": str(backup_path), "meta": str(meta_path)}
+        return ActionStatus.SUCCESS, {
+            "edited": True,
+            "replacements": replaced,
+            "backup": str(backup_path),
+            "meta": str(meta_path),
+        }
 
 
 class RestoreBackupTool(Tool):
@@ -260,8 +283,9 @@ class RestoreBackupTool(Tool):
         return "restore_backup"
 
     def execute(self, **kwargs) -> Tuple[ActionStatus, Any]:
-        from pathlib import Path
         import json
+        from pathlib import Path
+
         backups_dir = Path(".agent_state/backups")
         latest = bool(kwargs.get("latest", True))
         backup = kwargs.get("backup")  # path to .bak or .meta.json
@@ -270,7 +294,9 @@ class RestoreBackupTool(Tool):
         bak_path: Path | None = None
         try:
             if latest:
-                metas = sorted(backups_dir.glob("*.meta.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+                metas = sorted(
+                    backups_dir.glob("*.meta.json"), key=lambda p: p.stat().st_mtime, reverse=True
+                )
                 if not metas:
                     return ActionStatus.FAILURE, {"error": "no backups"}
                 meta_path = metas[0]
@@ -292,7 +318,11 @@ class RestoreBackupTool(Tool):
             if not bak_path.exists():
                 return ActionStatus.FAILURE, {"error": "backup file missing"}
             Path(original).write_text(bak_path.read_text(encoding="utf-8"), encoding="utf-8")
-            return ActionStatus.SUCCESS, {"restored": original, "backup": str(bak_path), "meta": str(meta_path)}
+            return ActionStatus.SUCCESS, {
+                "restored": original,
+                "backup": str(bak_path),
+                "meta": str(meta_path),
+            }
         except Exception as e:
             return ActionStatus.FAILURE, {"error": str(e)}
 
@@ -305,15 +335,23 @@ class ReplaceInFilesTool(Tool):
         return "replace_in_files"
 
     def execute(self, **kwargs) -> Tuple[ActionStatus, Any]:
-        import os, re, fnmatch, json, hashlib, time
+        import fnmatch
+        import hashlib
+        import json
+        import os
+        import re
+        import time
         from pathlib import Path
+
         from .config_simple import validate_file_path
 
         root = str(kwargs.get("path", "."))
         pattern = kwargs.get("search")
         repl = kwargs.get("replace", "")
-        includes = kwargs.get("include", ["**/*.py", "**/*.txt", "**/*.md", "**/*.json", "**/*.ts", "**/*.js"])
-        excludes = kwargs.get("exclude", [".git/*", "*.pyc", "node_modules/*", "*.min.js"]) 
+        includes = kwargs.get(
+            "include", ["**/*.py", "**/*.txt", "**/*.md", "**/*.json", "**/*.ts", "**/*.js"]
+        )
+        excludes = kwargs.get("exclude", [".git/*", "*.pyc", "node_modules/*", "*.min.js"])
         max_edits = int(kwargs.get("max_edits", 1000))
         flags = re.IGNORECASE if kwargs.get("ignore_case", False) else 0
         if not pattern:
@@ -332,7 +370,11 @@ class ReplaceInFilesTool(Tool):
         backup_dir.mkdir(parents=True, exist_ok=True)
         ts = int(time.time())
         for dirpath, dirnames, filenames in os.walk(root):
-            dirnames[:] = [d for d in dirnames if not any(fnmatch.fnmatch(os.path.join(dirpath, d), ex) for ex in excludes)]
+            dirnames[:] = [
+                d
+                for d in dirnames
+                if not any(fnmatch.fnmatch(os.path.join(dirpath, d), ex) for ex in excludes)
+            ]
             for filename in filenames:
                 filepath = os.path.join(dirpath, filename)
                 if any(fnmatch.fnmatch(filepath, ex) for ex in excludes):
@@ -354,18 +396,32 @@ class ReplaceInFilesTool(Tool):
                         backup_path = backup_dir / (base + ".bak")
                         meta_path = backup_dir / (base + ".meta.json")
                         backup_path.write_text(text, encoding="utf-8")
-                        meta_path.write_text(json.dumps({"original": str(p)}, ensure_ascii=False, indent=2), encoding="utf-8")
+                        meta_path.write_text(
+                            json.dumps({"original": str(p)}, ensure_ascii=False, indent=2),
+                            encoding="utf-8",
+                        )
                         p.write_text(new_text, encoding="utf-8")
                         files_changed += 1
                         total_edits += n
-                        changes.append({"file": filepath, "replacements": n, "backup": str(backup_path), "meta": str(meta_path)})
+                        changes.append(
+                            {
+                                "file": filepath,
+                                "replacements": n,
+                                "backup": str(backup_path),
+                                "meta": str(meta_path),
+                            }
+                        )
                     except Exception:
                         continue
                 if total_edits >= max_edits:
                     break
             if total_edits >= max_edits:
                 break
-        return ActionStatus.SUCCESS, {"files_changed": files_changed, "total_replacements": total_edits, "changes": changes}
+        return ActionStatus.SUCCESS, {
+            "files_changed": files_changed,
+            "total_replacements": total_edits,
+            "changes": changes,
+        }
 
 
 class GitTool(Tool):
@@ -379,10 +435,12 @@ class GitTool(Tool):
 
     def _safe_token(self, tok: str) -> bool:
         import re
+
         return bool(re.fullmatch(r"[A-Za-z0-9._/\-]+", tok))
 
     def execute(self, **kwargs) -> Tuple[ActionStatus, Any]:
         import subprocess
+
         from .config_simple import settings
 
         cmd = str(kwargs.get("cmd", "")).lower().strip()
@@ -397,7 +455,7 @@ class GitTool(Tool):
             elif cmd == "log":
                 n = int(kwargs.get("n", 10))
                 n = max(1, min(100, n))
-                args += ["log", "--oneline", f"-n", str(n)]
+                args += ["log", "--oneline", "-n", str(n)]
             elif cmd == "diff":
                 rng = kwargs.get("range")
                 path = kwargs.get("path")
@@ -407,7 +465,9 @@ class GitTool(Tool):
                 if path and isinstance(path, str) and self._safe_token(path):
                     args.append(path)
 
-            proc = subprocess.run(args, capture_output=True, text=True, timeout=settings.TOOL_TIMEOUT)
+            proc = subprocess.run(
+                args, capture_output=True, text=True, timeout=settings.TOOL_TIMEOUT
+            )
             return ActionStatus.SUCCESS, {
                 "cmd": args,
                 "return_code": proc.returncode,
@@ -429,15 +489,23 @@ class TestTool(Tool):
 
     def execute(self, **kwargs) -> Tuple[ActionStatus, Any]:
         import subprocess
+
         from .config_simple import settings
+
         path = str(kwargs.get("path", "tests"))
         pattern = str(kwargs.get("pattern", "test*.py"))
         try:
             cmd = ["python3", "-m", "unittest", "discover", "-s", path, "-p", pattern, "-q"]
-            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=max(settings.TOOL_TIMEOUT, 60))
+            proc = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=max(settings.TOOL_TIMEOUT, 60)
+            )
             out = (proc.stdout or "") + (proc.stderr or "")
             lines = out.strip().splitlines()[-50:]
-            return ActionStatus.SUCCESS, {"cmd": cmd, "return_code": proc.returncode, "output": "\n".join(lines)}
+            return ActionStatus.SUCCESS, {
+                "cmd": cmd,
+                "return_code": proc.returncode,
+                "output": "\n".join(lines),
+            }
         except subprocess.TimeoutExpired:
             return ActionStatus.FAILURE, {"error": "tests timed out"}
         except Exception as e:
@@ -453,15 +521,24 @@ class FormatTool(Tool):
 
     def execute(self, **kwargs) -> Tuple[ActionStatus, Any]:
         import subprocess
+
         from .config_simple import settings, validate_file_path
+
         path = str(kwargs.get("path", ".")).strip()
         check = bool(kwargs.get("check", False))
         if not validate_file_path(path):
             return ActionStatus.FAILURE, {"error": f"path not allowed: {path}"}
         cmd = ["python3", "-m", "black"] + (["--check"] if check else []) + [path]
         try:
-            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=max(settings.TOOL_TIMEOUT, 60))
-            return ActionStatus.SUCCESS, {"cmd": cmd, "return_code": proc.returncode, "stdout": proc.stdout[-8000:], "stderr": proc.stderr[-8000:]}
+            proc = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=max(settings.TOOL_TIMEOUT, 60)
+            )
+            return ActionStatus.SUCCESS, {
+                "cmd": cmd,
+                "return_code": proc.returncode,
+                "stdout": proc.stdout[-8000:],
+                "stderr": proc.stderr[-8000:],
+            }
         except subprocess.TimeoutExpired:
             return ActionStatus.FAILURE, {"error": "format timed out"}
         except Exception as e:
@@ -477,15 +554,24 @@ class LintTool(Tool):
 
     def execute(self, **kwargs) -> Tuple[ActionStatus, Any]:
         import subprocess
+
         from .config_simple import settings, validate_file_path
+
         path = str(kwargs.get("path", ".")).strip()
         fix = bool(kwargs.get("fix", False))
         if not validate_file_path(path):
             return ActionStatus.FAILURE, {"error": f"path not allowed: {path}"}
         cmd = ["python3", "-m", "ruff"] + (["--fix"] if fix else []) + [path]
         try:
-            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=max(settings.TOOL_TIMEOUT, 60))
-            return ActionStatus.SUCCESS, {"cmd": cmd, "return_code": proc.returncode, "stdout": proc.stdout[-8000:], "stderr": proc.stderr[-8000:]}
+            proc = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=max(settings.TOOL_TIMEOUT, 60)
+            )
+            return ActionStatus.SUCCESS, {
+                "cmd": cmd,
+                "return_code": proc.returncode,
+                "stdout": proc.stdout[-8000:],
+                "stderr": proc.stderr[-8000:],
+            }
         except subprocess.TimeoutExpired:
             return ActionStatus.FAILURE, {"error": "lint timed out"}
         except Exception as e:
@@ -557,7 +643,9 @@ class ToolRegistry:
 
                 duration_ms = (time.perf_counter() - start) * 1000.0
                 try:
-                    result_bytes = len(json.dumps(result, ensure_ascii=False)[:100000].encode("utf-8"))
+                    result_bytes = len(
+                        json.dumps(result, ensure_ascii=False)[:100000].encode("utf-8")
+                    )
                 except Exception:
                     result_bytes = 0
 

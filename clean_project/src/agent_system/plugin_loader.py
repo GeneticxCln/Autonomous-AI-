@@ -91,4 +91,9 @@ def load_plugins(agent, config_path: str | None = None) -> Dict[str, Any]:
         goal = agent.add_goal(g["description"], prio)
         added_goals.append(goal.id)
 
-    return {"loaded": True, "tools_registered": registered, "goals_added": added_goals, "config": str(path)}
+    return {
+        "loaded": True,
+        "tools_registered": registered,
+        "goals_added": added_goals,
+        "config": str(path),
+    }

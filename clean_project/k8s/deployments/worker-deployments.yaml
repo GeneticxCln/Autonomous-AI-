@@ -1,0 +1,248 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent-worker-high
+  namespace: agent-system
+  labels:
+    app: agent-system
+    component: worker
+    priority: high
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: agent-system
+      component: worker
+      priority: high
+  template:
+    metadata:
+      labels:
+        app: agent-system
+        component: worker
+        priority: high
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: worker
+          image: agent-system:latest
+          imagePullPolicy: IfNotPresent
+          command:
+            - rq
+            - worker
+            - -u
+            - redis://redis-service:6379/0
+            - high
+            - --with-scheduler
+          envFrom:
+            - configMapRef:
+                name: agent-config
+            - secretRef:
+                name: agent-secrets
+          env:
+            - name: PYTHONPATH
+              value: /app
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          volumeMounts:
+            - name: agent-logs
+              mountPath: /app/logs
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          livenessProbe:
+            exec:
+              command:
+                - rq
+                - info
+                - high
+                - --url
+                - redis://redis-service:6379/0
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+      volumes:
+        - name: agent-logs
+          persistentVolumeClaim:
+            claimName: agent-logs-pvc
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent-worker-normal
+  namespace: agent-system
+  labels:
+    app: agent-system
+    component: worker
+    priority: normal
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: agent-system
+      component: worker
+      priority: normal
+  template:
+    metadata:
+      labels:
+        app: agent-system
+        component: worker
+        priority: normal
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: worker
+          image: agent-system:latest
+          imagePullPolicy: IfNotPresent
+          command:
+            - rq
+            - worker
+            - -u
+            - redis://redis-service:6379/0
+            - normal
+            - --with-scheduler
+          envFrom:
+            - configMapRef:
+                name: agent-config
+            - secretRef:
+                name: agent-secrets
+          env:
+            - name: PYTHONPATH
+              value: /app
+          volumeMounts:
+            - name: agent-logs
+              mountPath: /app/logs
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          livenessProbe:
+            exec:
+              command:
+                - rq
+                - info
+                - normal
+                - --url
+                - redis://redis-service:6379/0
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+      volumes:
+        - name: agent-logs
+          persistentVolumeClaim:
+            claimName: agent-logs-pvc
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent-worker-low
+  namespace: agent-system
+  labels:
+    app: agent-system
+    component: worker
+    priority: low
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: agent-system
+      component: worker
+      priority: low
+  template:
+    metadata:
+      labels:
+        app: agent-system
+        component: worker
+        priority: low
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: worker
+          image: agent-system:latest
+          imagePullPolicy: IfNotPresent
+          command:
+            - rq
+            - worker
+            - -u
+            - redis://redis-service:6379/0
+            - low
+            - --with-scheduler
+          envFrom:
+            - configMapRef:
+                name: agent-config
+            - secretRef:
+                name: agent-secrets
+          env:
+            - name: PYTHONPATH
+              value: /app
+          volumeMounts:
+            - name: agent-logs
+              mountPath: /app/logs
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "250m"
+          livenessProbe:
+            exec:
+              command:
+                - rq
+                - info
+                - low
+                - --url
+                - redis://redis-service:6379/0
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+      volumes:
+        - name: agent-logs
+          persistentVolumeClaim:
+            claimName: agent-logs-pvc
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30

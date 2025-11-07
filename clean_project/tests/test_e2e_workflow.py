@@ -2,18 +2,20 @@
 End-to-End API workflow tests using FastAPI TestClient.
 Validates login, protected routes, user/goal/agent flows.
 """
+
 from __future__ import annotations
 
-from pathlib import Path
 import sys
+from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fastapi.testclient import TestClient
-from agent_system.fastapi_app import app
+
 from agent_system.auth_models import db_manager
-from agent_system.database_models import db_manager as app_db_manager
 from agent_system.auth_service import auth_service
+from agent_system.database_models import db_manager as app_db_manager
+from agent_system.fastapi_app import app
 
 
 def get_auth_headers(client: TestClient) -> dict:
@@ -42,6 +44,7 @@ def test_e2e_api_flow():
 
     # Cleanup if previous run left the user
     from agent_system.auth_models import UserModel
+
     with auth_service.db.get_session() as session:
         existing = session.query(UserModel).filter(UserModel.username == "e2e_user").first()
         if existing:

@@ -9,6 +9,36 @@ sqlalchemy>=2.0.0
 alembic>=1.12.0
 aiofiles>=23.0.0
 
+# Caching and Message Queues
+redis>=5.0.0
+rq>=1.15.0
+cachetools>=5.3.0
+
+# Load Balancing and Proxy
+nginx>=1.25.0
+
+# Monitoring and Observability
+prometheus-client>=0.19.0
+structlog>=23.0.0
+
+# Kubernetes (optional for cloud deployment)
+kubernetes>=28.0.0
+psutil>=5.9.0
+
+# Distributed Tracing and Observability
+opentelemetry-api>=1.19.0
+opentelemetry-sdk>=1.19.0
+opentelemetry-exporter-jaeger-thrift>=1.19.0
+opentelemetry-instrumentation-fastapi>=0.40b0
+opentelemetry-instrumentation-redis>=0.40b0
+opentelemetry-instrumentation-requests>=0.40b0
+opentelemetry-instrumentation-sqlalchemy>=0.40b0
+opentelemetry-instrumentation-aiohttp-client>=0.40b0
+opentelemetry-instrumentation-httpx>=0.40b0
+
+# Service Mesh and Advanced Networking
+istio-client>=1.19.0
+
 # AI/LLM integrations
 openai>=1.0.0
 anthropic>=0.7.0
@@ -39,4 +69,3 @@ PyYAML>=6.0
 black>=23.0.0
 ruff>=0.1.0
 mypy>=1.6.0
-alembic>=1.12.0

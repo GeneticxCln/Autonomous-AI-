@@ -2,17 +2,20 @@
 API Schemas for OpenAPI Documentation
 Comprehensive request/response models with examples
 """
+
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional, List, Dict, Any, Union
-from pydantic import BaseModel, Field, EmailStr, validator
 from enum import Enum
+from typing import Any, Dict, List, Optional
+
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 
 # Enums
 class UserStatus(str, Enum):
     """User account status."""
+
     ACTIVE = "active"
     INACTIVE = "inactive"
     SUSPENDED = "suspended"
@@ -21,6 +24,7 @@ class UserStatus(str, Enum):
 
 class RoleLevel(str, Enum):
     """Role hierarchy levels."""
+
     ADMIN = "admin"
     MANAGER = "manager"
     USER = "user"
@@ -29,6 +33,7 @@ class RoleLevel(str, Enum):
 
 class SecurityEventType(str, Enum):
     """Security event types."""
+
     LOGIN = "login"
     LOGOUT = "logout"
     FAILED_LOGIN = "failed_login"
@@ -42,6 +47,7 @@ class SecurityEventType(str, Enum):
 
 class SecuritySeverity(str, Enum):
     """Security event severity levels."""
+
     INFO = "info"
     WARNING = "warning"
     ERROR = "error"
@@ -51,6 +57,7 @@ class SecuritySeverity(str, Enum):
 # Base Response Models
 class APIResponse(BaseModel):
     """Base API response model."""
+
     success: bool = Field(..., description="Whether the request was successful")
     message: str = Field(..., description="Human-readable response message")
     timestamp: float = Field(..., description="Unix timestamp of response")
@@ -59,6 +66,7 @@ class APIResponse(BaseModel):
 
 class ErrorDetail(BaseModel):
     """Detailed error information."""
+
     code: str = Field(..., description="Error code")
     message: str = Field(..., description="Error message")
     field: Optional[str] = Field(None, description="Field that caused the error")
@@ -67,6 +75,7 @@ class ErrorDetail(BaseModel):
 
 class APIError(BaseModel):
     """API error response model."""
+
     success: bool = Field(False, description="Always false for errors")
     error: str = Field(..., description="Error type/category")
     message: str = Field(..., description="Human-readable error message")
@@ -77,41 +86,39 @@ class APIError(BaseModel):
 # Authentication Schemas
 class LoginRequest(BaseModel):
     """User login request."""
+
     username: str = Field(
         ...,
         min_length=3,
         max_length=50,
         description="Username or email address",
-        example="admin"
     )
     password: str = Field(
         ...,
         min_length=6,
         description="User password",
-        example="admin123"
     )
-    remember_me: bool = Field(
-        False,
-        description="Extended session duration"
-    )
+    remember_me: bool = Field(False, description="Extended session duration")
 
-    @validator('username')
+    @field_validator("username")
     def validate_username(cls, v):
         if not v.strip():
-            raise ValueError('Username cannot be empty')
+            raise ValueError("Username cannot be empty")
         return v.strip()
 
 
 class TokenData(BaseModel):
     """JWT token data."""
+
     access_token: str = Field(..., description="JWT access token")
     refresh_token: str = Field(..., description="JWT refresh token")
     token_type: str = Field("bearer", description="Token type")
-    expires_in: int = Field(..., description="Token expiration time in seconds", example=1800)
+    expires_in: int = Field(..., description="Token expiration time in seconds")
 
 
 class UserInfo(BaseModel):
     """User information model."""
+
     id: str = Field(..., description="Unique user identifier")
     username: str = Field(..., description="Username")
     email: str = Field(..., description="Email address")
@@ -126,6 +133,7 @@ class UserInfo(BaseModel):
 
 class LoginResponse(BaseModel):
     """Login response model."""
+
     access_token: str = Field(..., description="JWT access token")
     refresh_token: str = Field(..., description="JWT refresh token")
     token_type: str = Field("bearer", description="Token type")
@@ -135,66 +143,63 @@ class LoginResponse(BaseModel):
 
 class TokenRefreshRequest(BaseModel):
     """Token refresh request."""
+
     refresh_token: str = Field(
         ...,
         description="Refresh token",
-        example="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
     )
 
 
 # User Management Schemas
 class UserCreate(BaseModel):
     """User creation request."""
+
     username: str = Field(
         ...,
         min_length=3,
         max_length=50,
         description="Unique username",
-        example="john_doe"
     )
-    email: EmailStr = Field(..., description="Email address", example="john@example.com")
+    email: EmailStr = Field(..., description="Email address")
     full_name: str = Field(
         ...,
         min_length=2,
         max_length=100,
         description="User's full name",
-        example="John Doe"
     )
     password: str = Field(
         ...,
         min_length=8,
-        description="Password (8+ characters, mixed case, numbers, symbols)",
-        example="SecurePass123!"
+        description="Password (8+ characters)",
     )
     role_names: List[str] = Field(
         default=["user"],
         description="User roles",
-        example=["user"]
     )
 
-    @validator('password')
+    @field_validator("password")
     def validate_password(cls, v):
         if len(v) < 8:
-            raise ValueError('Password must be at least 8 characters')
-        if not any(c.isupper() for c in v):
-            raise ValueError('Password must contain uppercase letters')
-        if not any(c.islower() for c in v):
-            raise ValueError('Password must contain lowercase letters')
-        if not any(c.isdigit() for c in v):
-            raise ValueError('Password must contain numbers')
+            raise ValueError("Password must be at least 8 characters")
+        if not any(c.isalpha() for c in v):
+            raise ValueError("Password must contain letters")
         return v
 
 
 class UserUpdate(BaseModel):
     """User update request."""
+
     email: Optional[EmailStr] = Field(None, description="Email address")
-    full_name: Optional[str] = Field(None, min_length=2, max_length=100, description="User's full name")
+    full_name: Optional[str] = Field(
+        None, min_length=2, max_length=100, description="User's full name"
+    )
     is_active: Optional[bool] = Field(None, description="Account active status")
     role_names: Optional[List[str]] = Field(None, description="User roles")
 
 
 class UserResponse(BaseModel):
     """User response model."""
+
     id: str = Field(..., description="Unique user identifier")
     username: str = Field(..., description="Username")
     email: str = Field(..., description="Email address")
@@ -212,47 +217,40 @@ class UserResponse(BaseModel):
 # Agent Management Schemas
 class AgentCreate(BaseModel):
     """Agent creation request."""
+
     name: str = Field(
         ...,
         min_length=1,
         max_length=100,
         description="Agent name",
-        example="Data Analysis Agent"
     )
     description: Optional[str] = Field(
         "",
         max_length=500,
         description="Agent description",
-        example="Analyzes data and generates insights"
     )
     goals: List[str] = Field(
         default_factory=list,
         description="Agent goals",
-        example=["Analyze sales data", "Generate reports"]
     )
-    memory_capacity: int = Field(
-        1000,
-        ge=100,
-        le=10000,
-        description="Memory capacity limit"
-    )
-    configuration: Optional[Dict[str, Any]] = Field(
-        None,
-        description="Agent configuration"
-    )
+    memory_capacity: int = Field(1000, ge=100, le=10000, description="Memory capacity limit")
+    configuration: Optional[Dict[str, Any]] = Field(None, description="Agent configuration")
 
 
 class AgentResponse(BaseModel):
     """Agent response model."""
+
     id: str = Field(..., description="Unique agent identifier")
     name: str = Field(..., description="Agent name")
     description: str = Field(..., description="Agent description")
-    status: str = Field(..., description="Agent status", example="idle")
+    status: str = Field(..., description="Agent status")
     goals: List[str] = Field(default_factory=list, description="Agent goals")
     memory_usage: int = Field(0, description="Current memory usage")
     memory_capacity: int = Field(1000, description="Memory capacity")
     configuration: Dict[str, Any] = Field(default_factory=dict, description="Configuration")
-    performance_metrics: Dict[str, Any] = Field(default_factory=dict, description="Performance metrics")
+    performance_metrics: Dict[str, Any] = Field(
+        default_factory=dict, description="Performance metrics"
+    )
     created_by: Optional[str] = Field(None, description="Creator user ID")
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: datetime = Field(..., description="Last update timestamp")
@@ -261,19 +259,17 @@ class AgentResponse(BaseModel):
 
 class AgentExecute(BaseModel):
     """Agent execution request."""
+
     action: str = Field(
         ...,
         description="Action to execute",
-        example="start_analysis"
     )
-    parameters: Optional[Dict[str, Any]] = Field(
-        None,
-        description="Action parameters"
-    )
+    parameters: Optional[Dict[str, Any]] = Field(None, description="Action parameters")
 
 
 class AgentExecutionResponse(BaseModel):
     """Agent execution response."""
+
     agent_id: str = Field(..., description="Agent identifier")
     action_id: str = Field(..., description="Action execution ID")
     status: str = Field(..., description="Execution status")
@@ -284,32 +280,21 @@ class AgentExecutionResponse(BaseModel):
 # Goal Management Schemas
 class GoalCreate(BaseModel):
     """Goal creation request."""
+
     title: str = Field(
         ...,
         min_length=1,
         max_length=200,
         description="Goal title",
-        example="Increase sales by 20%"
     )
-    description: Optional[str] = Field(
-        "",
-        max_length=1000,
-        description="Goal description"
-    )
-    priority: int = Field(
-        1,
-        ge=1,
-        le=10,
-        description="Goal priority (1-10, 10 highest)"
-    )
-    target_date: Optional[datetime] = Field(
-        None,
-        description="Target completion date"
-    )
+    description: Optional[str] = Field("", max_length=1000, description="Goal description")
+    priority: int = Field(1, ge=1, le=10, description="Goal priority (1-10, 10 highest)")
+    target_date: Optional[datetime] = Field(None, description="Target completion date")
 
 
 class GoalResponse(BaseModel):
     """Goal response model."""
+
     id: str = Field(..., description="Unique goal identifier")
     title: str = Field(..., description="Goal title")
     description: str = Field(..., description="Goal description")
@@ -326,28 +311,23 @@ class GoalResponse(BaseModel):
 # API Token Schemas
 class APITokenCreate(BaseModel):
     """API token creation request."""
+
     name: str = Field(
         ...,
         min_length=1,
         max_length=100,
         description="Token name",
-        example="My Application Token"
     )
     scopes: List[str] = Field(
         ...,
         description="Token scopes/permissions",
-        example=["read", "write"]
     )
-    expires_days: Optional[int] = Field(
-        30,
-        ge=1,
-        le=365,
-        description="Expiration days"
-    )
+    expires_days: Optional[int] = Field(30, ge=1, le=365, description="Expiration days")
 
 
 class APITokenResponse(BaseModel):
     """API token response model."""
+
     id: str = Field(..., description="Token identifier")
     name: str = Field(..., description="Token name")
     token_prefix: str = Field(..., description="Token prefix for identification")
@@ -362,6 +342,7 @@ class APITokenResponse(BaseModel):
 # Security Event Schemas
 class SecurityEventResponse(BaseModel):
     """Security event response model."""
+
     id: str = Field(..., description="Event identifier")
     user_id: Optional[str] = Field(None, description="User identifier")
     event_type: SecurityEventType = Field(..., description="Event type")
@@ -376,14 +357,16 @@ class SecurityEventResponse(BaseModel):
 # System Information Schemas
 class SystemHealth(BaseModel):
     """System health information."""
-    status: str = Field(..., description="System status", example="healthy")
-    database: str = Field(..., description="Database status", example="connected")
+
+    status: str = Field(..., description="System status")
+    database: str = Field(..., description="Database status")
     timestamp: float = Field(..., description="Check timestamp")
     version: str = Field(..., description="System version")
 
 
 class SystemInfo(BaseModel):
     """System information."""
+
     users: int = Field(..., description="Total user count")
     agents: int = Field(..., description="Total agent count")
     goals: int = Field(..., description="Total goal count")
@@ -396,6 +379,7 @@ class SystemInfo(BaseModel):
 # Pagination Schema
 class PaginationInfo(BaseModel):
     """Pagination information."""
+
     page: int = Field(..., description="Current page number")
     per_page: int = Field(..., description="Items per page")
     total: int = Field(..., description="Total items count")
@@ -404,6 +388,7 @@ class PaginationInfo(BaseModel):
 
 class PaginatedResponse(BaseModel):
     """Paginated response wrapper."""
+
     items: List[Any] = Field(..., description="Response items")
     pagination: PaginationInfo = Field(..., description="Pagination information")
 
@@ -411,6 +396,7 @@ class PaginatedResponse(BaseModel):
 # Webhook Schemas
 class WebhookEvent(BaseModel):
     """Webhook event model."""
+
     id: str = Field(..., description="Event identifier")
     type: str = Field(..., description="Event type")
     data: Dict[str, Any] = Field(..., description="Event data")
@@ -420,6 +406,7 @@ class WebhookEvent(BaseModel):
 # Rate Limiting Schemas
 class RateLimitInfo(BaseModel):
     """Rate limiting information."""
+
     limit: int = Field(..., description="Rate limit")
     remaining: int = Field(..., description="Requests remaining")
     reset: float = Field(..., description="Reset timestamp")
@@ -429,13 +416,15 @@ class RateLimitInfo(BaseModel):
 # Bulk Operations Schemas
 class BulkOperationRequest(BaseModel):
     """Bulk operation request."""
-    operation: str = Field(..., description="Operation type", example="activate_users")
+
+    operation: str = Field(..., description="Operation type")
     items: List[str] = Field(..., description="Item identifiers")
     parameters: Optional[Dict[str, Any]] = Field(None, description="Operation parameters")
 
 
 class BulkOperationResponse(BaseModel):
     """Bulk operation response."""
+
     operation: str = Field(..., description="Operation type")
     total: int = Field(..., description="Total items")
     successful: int = Field(..., description="Successful operations")

@@ -2,22 +2,26 @@
 Comprehensive Test Suite for Enterprise Authentication
 Covers edge cases, security scenarios, and performance testing
 """
-import pytest
-import time
+
 import hashlib
-import uuid
-from datetime import datetime, timedelta
-from unittest.mock import patch, MagicMock
 import sys
+import time
 from pathlib import Path
+
+import pytest
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from agent_system.auth_models import (
-    db_manager, UserModel, RoleModel, PermissionModel, SecurityContext,
-    AuthenticationError, AuthorizationError, UserNotFoundError, InvalidCredentialsError,
-    AccountLockedError, TokenExpiredError, InsufficientPermissionsError
+    AccountLockedError,
+    AuthenticationError,
+    InsufficientPermissionsError,
+    InvalidCredentialsError,
+    TokenExpiredError,
+    UserModel,
+    UserNotFoundError,
+    db_manager,
 )
 from agent_system.auth_service import auth_service
 
@@ -25,6 +29,7 @@ from agent_system.auth_service import auth_service
 ADMIN_USER = "admin"
 ADMIN_PASS = "admin" + "123"
 TEST_PASS = "testpass" + "123"
+
 
 class TestAuthenticationSystem:
     """Comprehensive authentication system tests."""
@@ -41,9 +46,7 @@ class TestAuthenticationSystem:
         """Clean up test data."""
         with auth_service.db.get_session() as session:
             # Remove test users
-            test_users = session.query(UserModel).filter(
-                UserModel.username.like('test_%')
-            ).all()
+            test_users = session.query(UserModel).filter(UserModel.username.like("test_%")).all()
             for user in test_users:
                 session.delete(user)
             session.commit()
@@ -81,7 +84,7 @@ class TestAuthenticationSystem:
             username=username,
             email="test@example.com",
             password="testpass123",
-            full_name="Test User"
+            full_name="Test User",
         )
 
         # Test 5 failed attempts
@@ -102,7 +105,7 @@ class TestAuthenticationSystem:
             username=username,
             email="test@example.com",
             password="testpass123",
-            full_name="Test User"
+            full_name="Test User",
         )
 
         # Make some failed attempts
@@ -195,7 +198,7 @@ class TestAuthenticationSystem:
             email=email,
             password="testpass123",
             full_name="Test User",
-            role_names=["user"]
+            role_names=["user"],
         )
 
         # Verify user was created
@@ -215,7 +218,7 @@ class TestAuthenticationSystem:
             username="test_duplicate",
             email="test@example.com",
             password="testpass123",
-            full_name="Test User"
+            full_name="Test User",
         )
 
         # Try to create duplicate
@@ -224,7 +227,7 @@ class TestAuthenticationSystem:
                 username="test_duplicate",
                 email="test@example.com",
                 password="testpass123",
-                full_name="Test User 2"
+                full_name="Test User 2",
             )
 
     def test_user_creation_with_roles(self):
@@ -237,7 +240,7 @@ class TestAuthenticationSystem:
             email="test@example.com",
             password="testpass123",
             full_name="Test User",
-            role_names=["user", "manager"]
+            role_names=["user", "manager"],
         )
 
         # Verify roles
@@ -251,10 +254,7 @@ class TestAuthenticationSystem:
 
         # Create API token
         token = auth_service.create_api_token(
-            security_context.user.id,
-            "Test API Token",
-            ["read", "write"],
-            expires_days=30
+            security_context.user.id, "Test API Token", ["read", "write"], expires_days=30
         )
 
         # Token should be a long string
@@ -266,9 +266,7 @@ class TestAuthenticationSystem:
 
         # Create and verify API token
         token = auth_service.create_api_token(
-            security_context.user.id,
-            "Test API Token",
-            ["read", "write"]
+            security_context.user.id, "Test API Token", ["read", "write"]
         )
 
         # Verify token
@@ -283,10 +281,7 @@ class TestAuthenticationSystem:
 
         # Create expired token
         token = auth_service.create_api_token(
-            security_context.user.id,
-            "Expired Token",
-            ["read"],
-            expires_days=-1  # Already expired
+            security_context.user.id, "Expired Token", ["read"], expires_days=-1  # Already expired
         )
 
         # Should fail to verify
@@ -329,7 +324,7 @@ class TestAuthenticationSystem:
             email="regular@example.com",
             password="testpass123",
             full_name="Regular User",
-            role_names=["user"]
+            role_names=["user"],
         )
         user_security = auth_service.authenticate_user("test_regular", "testpass123")
         assert user_security.is_admin is False
@@ -349,7 +344,7 @@ class TestAuthenticationSystem:
             username="test_nonadmin",
             email="nonadmin@example.com",
             password="testpass123",
-            full_name="Non-Admin User"
+            full_name="Non-Admin User",
         )
         user_security = auth_service.authenticate_user("test_nonadmin", "testpass123")
 
@@ -385,7 +380,7 @@ class TestAuthenticationSystem:
             username="test_hash",
             email="hash@example.com",
             password=test_password,
-            full_name="Hash Test"
+            full_name="Hash Test",
         )
 
         # Verify password check works
@@ -417,7 +412,7 @@ class TestAuthenticationSystem:
             username="test_inactive",
             email="inactive@example.com",
             password="testpass123",
-            full_name="Inactive User"
+            full_name="Inactive User",
         )
 
         # Deactivate user
@@ -437,7 +432,7 @@ class TestAuthenticationSystem:
             username="test_email_auth",
             email="auth@example.com",
             password="testpass123",
-            full_name="Email Auth Test"
+            full_name="Email Auth Test",
         )
 
         # Test authentication with email
@@ -459,12 +454,14 @@ class TestAuthenticationSystem:
         """Test creating multiple users concurrently."""
         users_to_create = []
         for i in range(10):
-            users_to_create.append({
-                "username": f"test_concurrent_{i}",
-                "email": f"concurrent{i}@example.com",
-                "password": "testpass123",
-                "full_name": f"Concurrent User {i}"
-            })
+            users_to_create.append(
+                {
+                    "username": f"test_concurrent_{i}",
+                    "email": f"concurrent{i}@example.com",
+                    "password": "testpass123",
+                    "full_name": f"Concurrent User {i}",
+                }
+            )
 
         # Create all users
         created_users = []
@@ -475,8 +472,7 @@ class TestAuthenticationSystem:
         # Verify all users can authenticate
         for user_data in users_to_create:
             security_context = auth_service.authenticate_user(
-                user_data["username"],
-                user_data["password"]
+                user_data["username"], user_data["password"]
             )
             assert security_context is not None
 
@@ -488,7 +484,7 @@ class TestAuthenticationSystem:
             email="roleperms@example.com",
             password=TEST_PASS,
             full_name="Role Perms Test",
-            role_names=["guest"]
+            role_names=["guest"],
         )
 
         # Authenticate and check permissions

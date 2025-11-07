@@ -70,9 +70,7 @@ class GoalManager:
 
         return None
 
-    def update_goal_status(
-        self, goal_id: str, status: GoalStatus, progress: float | None = None
-    ):
+    def update_goal_status(self, goal_id: str, status: GoalStatus, progress: float | None = None):
         """Update goal status and progress."""
         if goal_id not in self.goals:
             return

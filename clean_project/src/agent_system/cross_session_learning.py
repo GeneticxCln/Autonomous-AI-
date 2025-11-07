@@ -1,16 +1,17 @@
 """
 Cross-session learning system for persistent knowledge between agent runs.
 """
+
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
-import hashlib
-from datetime import datetime, timedelta
+from collections import defaultdict
+from dataclasses import asdict, dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
-from dataclasses import dataclass, asdict
-from collections import defaultdict, deque
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +23,7 @@ KNOWLEDGE_DIR.mkdir(exist_ok=True)
 @dataclass
 class KnowledgePattern:
     """Represents a learned knowledge pattern."""
+
     pattern_id: str
     pattern_type: str  # 'goal_pattern', 'action_sequence', 'tool_success'
     description: str
@@ -36,20 +38,21 @@ class KnowledgePattern:
     def to_dict(self) -> Dict[str, Any]:
         return {
             **asdict(self),
-            'last_used': self.last_used.isoformat(),
-            'created_at': self.created_at.isoformat()
+            "last_used": self.last_used.isoformat(),
+            "created_at": self.created_at.isoformat(),
         }
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> KnowledgePattern:
-        data['last_used'] = datetime.fromisoformat(data['last_used'])
-        data['created_at'] = datetime.fromisoformat(data['created_at'])
+        data["last_used"] = datetime.fromisoformat(data["last_used"])
+        data["created_at"] = datetime.fromisoformat(data["created_at"])
         return cls(**data)
 
 
 @dataclass
 class LearningSession:
     """Represents a learning session."""
+
     session_id: str
     start_time: datetime
     end_time: Optional[datetime]
@@ -62,15 +65,15 @@ class LearningSession:
     def to_dict(self) -> Dict[str, Any]:
         return {
             **asdict(self),
-            'start_time': self.start_time.isoformat(),
-            'end_time': self.end_time.isoformat() if self.end_time else None
+            "start_time": self.start_time.isoformat(),
+            "end_time": self.end_time.isoformat() if self.end_time else None,
         }
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> LearningSession:
-        data['start_time'] = datetime.fromisoformat(data['start_time'])
-        if data['end_time']:
-            data['end_time'] = datetime.fromisoformat(data['end_time'])
+        data["start_time"] = datetime.fromisoformat(data["start_time"])
+        if data["end_time"]:
+            data["end_time"] = datetime.fromisoformat(data["end_time"])
         return cls(**data)
 
 
@@ -99,16 +102,18 @@ class CrossSessionLearningSystem:
         try:
             knowledge_file = KNOWLEDGE_DIR / "knowledge_patterns.json"
             if knowledge_file.exists():
-                with open(knowledge_file, 'r') as f:
+                with open(knowledge_file) as f:
                     data = json.load(f)
                     for pattern_id, pattern_data in data.items():
-                        self.knowledge_patterns[pattern_id] = KnowledgePattern.from_dict(pattern_data)
+                        self.knowledge_patterns[pattern_id] = KnowledgePattern.from_dict(
+                            pattern_data
+                        )
                 logger.info(f"Loaded {len(self.knowledge_patterns)} knowledge patterns")
 
             # Load session history
             sessions_file = KNOWLEDGE_DIR / "session_history.json"
             if sessions_file.exists():
-                with open(sessions_file, 'r') as f:
+                with open(sessions_file) as f:
                     data = json.load(f)
                     self.session_history = [LearningSession.from_dict(s) for s in data]
                 logger.info(f"Loaded {len(self.session_history)} historical sessions")
@@ -125,13 +130,13 @@ class CrossSessionLearningSystem:
                 for pattern_id, pattern in self.knowledge_patterns.items()
             }
             knowledge_file = KNOWLEDGE_DIR / "knowledge_patterns.json"
-            with open(knowledge_file, 'w') as f:
+            with open(knowledge_file, "w") as f:
                 json.dump(patterns_data, f, indent=2)
 
             # Save session history
             sessions_data = [session.to_dict() for session in self.session_history]
             sessions_file = KNOWLEDGE_DIR / "session_history.json"
-            with open(sessions_file, 'w') as f:
+            with open(sessions_file, "w") as f:
                 json.dump(sessions_data, f, indent=2)
 
         except Exception as e:
@@ -148,7 +153,7 @@ class CrossSessionLearningSystem:
             goals_completed=0,
             total_success_rate=0.0,
             knowledge_gained=0,
-            knowledge_used=0
+            knowledge_used=0,
         )
 
     def end_current_session(self) -> None:
@@ -157,15 +162,21 @@ class CrossSessionLearningSystem:
             self.current_session.end_time = datetime.now()
             self.session_history.append(self.current_session)
             self._save_knowledge_base()
-            logger.info(f"Ended session {self.current_session.session_id} with {self.current_session.knowledge_gained} patterns learned")
+            logger.info(
+                f"Ended session {self.current_session.session_id} with {self.current_session.knowledge_gained} patterns learned"
+            )
 
-    def learn_from_goal(self, goal_description: str, actions: List[Dict], success_score: float) -> str:
+    def learn_from_goal(
+        self, goal_description: str, actions: List[Dict], success_score: float
+    ) -> str:
         """Learn a new pattern from goal completion."""
         pattern_data = {
-            'goal_description': goal_description,
-            'action_sequence': [action.get('name', action.get('id', str(action))) for action in actions],
-            'success_score': success_score,
-            'timestamp': datetime.now().isoformat()
+            "goal_description": goal_description,
+            "action_sequence": [
+                action.get("name", action.get("id", str(action))) for action in actions
+            ],
+            "success_score": success_score,
+            "timestamp": datetime.now().isoformat(),
         }
 
         pattern_id = self._generate_pattern_id(pattern_data)
@@ -190,7 +201,7 @@ class CrossSessionLearningSystem:
                 last_used=datetime.now(),
                 created_at=datetime.now(),
                 confidence_score=min(0.8, 0.4 + success_score),
-                parameters=pattern_data
+                parameters=pattern_data,
             )
             self.knowledge_patterns[pattern_id] = pattern
             if self.current_session:
@@ -210,7 +221,9 @@ class CrossSessionLearningSystem:
             # Update rolling success rate
             total_attempts = self.current_session.goals_attempted
             current_rate = self.current_session.total_success_rate
-            self.current_session.total_success_rate = (current_rate * (total_attempts - 1) + success_score) / total_attempts
+            self.current_session.total_success_rate = (
+                current_rate * (total_attempts - 1) + success_score
+            ) / total_attempts
 
         return pattern_id
 
@@ -238,7 +251,9 @@ class CrossSessionLearningSystem:
         for _, pattern_id in pattern_values[:patterns_to_remove]:
             del self.knowledge_patterns[pattern_id]
 
-    def find_similar_patterns(self, goal_description: str, limit: int = 5) -> List[Tuple[KnowledgePattern, float]]:
+    def find_similar_patterns(
+        self, goal_description: str, limit: int = 5
+    ) -> List[Tuple[KnowledgePattern, float]]:
         """Find patterns similar to the current goal."""
         goal_lower = goal_description.lower()
         similar_patterns = []
@@ -278,7 +293,7 @@ class CrossSessionLearningSystem:
             pattern = similar_patterns[0][0]
             if self.current_session:
                 self.current_session.knowledge_used += 1
-            return pattern.parameters.get('action_sequence', [])
+            return pattern.parameters.get("action_sequence", [])
 
         return None
 
@@ -288,15 +303,22 @@ class CrossSessionLearningSystem:
 
         # Pattern statistics
         total_patterns = len(self.knowledge_patterns)
-        high_confidence_patterns = sum(1 for p in self.knowledge_patterns.values() if p.confidence_score > 0.7)
-        recently_used_patterns = sum(1 for p in self.knowledge_patterns.values()
-                                   if (now - p.last_used).days < 7)
+        high_confidence_patterns = sum(
+            1 for p in self.knowledge_patterns.values() if p.confidence_score > 0.7
+        )
+        recently_used_patterns = sum(
+            1 for p in self.knowledge_patterns.values() if (now - p.last_used).days < 7
+        )
 
         # Session statistics
         total_sessions = len(self.session_history)
         if self.session_history:
-            avg_success_rate = sum(s.total_success_rate for s in self.session_history) / len(self.session_history)
-            avg_goals_per_session = sum(s.goals_completed for s in self.session_history) / len(self.session_history)
+            avg_success_rate = sum(s.total_success_rate for s in self.session_history) / len(
+                self.session_history
+            )
+            avg_goals_per_session = sum(s.goals_completed for s in self.session_history) / len(
+                self.session_history
+            )
         else:
             avg_success_rate = 0.0
             avg_goals_per_session = 0.0
@@ -305,36 +327,36 @@ class CrossSessionLearningSystem:
         knowledge_health = (high_confidence_patterns / max(1, total_patterns)) * 100
 
         return {
-            'total_patterns': total_patterns,
-            'high_confidence_patterns': high_confidence_patterns,
-            'recently_used_patterns': recently_used_patterns,
-            'total_sessions': total_sessions,
-            'avg_success_rate': avg_success_rate,
-            'avg_goals_per_session': avg_goals_per_session,
-            'knowledge_health': knowledge_health,
-            'current_session_id': self.current_session.session_id if self.current_session else None,
-            'patterns_by_type': defaultdict(int)
+            "total_patterns": total_patterns,
+            "high_confidence_patterns": high_confidence_patterns,
+            "recently_used_patterns": recently_used_patterns,
+            "total_sessions": total_sessions,
+            "avg_success_rate": avg_success_rate,
+            "avg_goals_per_session": avg_goals_per_session,
+            "knowledge_health": knowledge_health,
+            "current_session_id": self.current_session.session_id if self.current_session else None,
+            "patterns_by_type": defaultdict(int),
         }
 
     def export_knowledge_for_sharing(self) -> Dict[str, Any]:
         """Export knowledge patterns for sharing with other agents."""
         export_data = {
-            'export_timestamp': datetime.now().isoformat(),
-            'patterns': [
+            "export_timestamp": datetime.now().isoformat(),
+            "patterns": [
                 {
-                    'pattern_id': pattern.pattern_id,
-                    'pattern_type': pattern.pattern_type,
-                    'description': pattern.description,
-                    'success_rate': pattern.success_rate,
-                    'usage_count': pattern.usage_count,
-                    'confidence_score': pattern.confidence_score,
-                    'action_sequence': pattern.parameters.get('action_sequence', []),
-                    'goal_example': pattern.parameters.get('goal_description', '')
+                    "pattern_id": pattern.pattern_id,
+                    "pattern_type": pattern.pattern_type,
+                    "description": pattern.description,
+                    "success_rate": pattern.success_rate,
+                    "usage_count": pattern.usage_count,
+                    "confidence_score": pattern.confidence_score,
+                    "action_sequence": pattern.parameters.get("action_sequence", []),
+                    "goal_example": pattern.parameters.get("goal_description", ""),
                 }
                 for pattern in self.knowledge_patterns.values()
                 if pattern.confidence_score > 0.5  # Only export confident patterns
             ],
-            'statistics': self.get_knowledge_statistics()
+            "statistics": self.get_knowledge_statistics(),
         }
         return export_data
 
@@ -343,26 +365,26 @@ class CrossSessionLearningSystem:
         imported_count = 0
         current_patterns = {p.description: p for p in self.knowledge_patterns.values()}
 
-        for pattern_data in imported_data.get('patterns', []):
+        for pattern_data in imported_data.get("patterns", []):
             # Skip if we already have a similar pattern
-            if pattern_data['description'] in current_patterns:
+            if pattern_data["description"] in current_patterns:
                 continue
 
             # Create new pattern
             pattern = KnowledgePattern(
                 pattern_id=self._generate_pattern_id(pattern_data),
-                pattern_type=pattern_data['pattern_type'],
-                description=pattern_data['description'],
-                success_rate=pattern_data['success_rate'],
-                usage_count=pattern_data['usage_count'],
+                pattern_type=pattern_data["pattern_type"],
+                description=pattern_data["description"],
+                success_rate=pattern_data["success_rate"],
+                usage_count=pattern_data["usage_count"],
                 last_used=datetime.now(),
                 created_at=datetime.now(),
-                confidence_score=pattern_data['confidence_score'],
+                confidence_score=pattern_data["confidence_score"],
                 parameters={
-                    'action_sequence': pattern_data['action_sequence'],
-                    'goal_description': pattern_data['goal_example'],
-                    'imported': True
-                }
+                    "action_sequence": pattern_data["action_sequence"],
+                    "goal_description": pattern_data["goal_example"],
+                    "imported": True,
+                },
             )
 
             self.knowledge_patterns[pattern.pattern_id] = pattern
@@ -380,28 +402,40 @@ class CrossSessionLearningSystem:
         stats = self.get_knowledge_statistics()
 
         # Knowledge growth insight
-        if stats['total_patterns'] > 0:
-            growth_rate = (stats['high_confidence_patterns'] / stats['total_patterns']) * 100
+        if stats["total_patterns"] > 0:
+            growth_rate = (stats["high_confidence_patterns"] / stats["total_patterns"]) * 100
             if growth_rate > 70:
-                insights.append(f"High-quality knowledge base: {growth_rate:.1f}% of patterns are highly confident")
+                insights.append(
+                    f"High-quality knowledge base: {growth_rate:.1f}% of patterns are highly confident"
+                )
             elif growth_rate > 40:
-                insights.append(f"Growing knowledge base: {growth_rate:.1f}% of patterns are highly confident")
+                insights.append(
+                    f"Growing knowledge base: {growth_rate:.1f}% of patterns are highly confident"
+                )
             else:
-                insights.append(f"Knowledge base needs refinement: only {growth_rate:.1f}% of patterns are highly confident")
+                insights.append(
+                    f"Knowledge base needs refinement: only {growth_rate:.1f}% of patterns are highly confident"
+                )
 
         # Usage pattern insight
-        if stats['recently_used_patterns'] > stats['total_patterns'] * 0.3:
+        if stats["recently_used_patterns"] > stats["total_patterns"] * 0.3:
             insights.append("Agent is actively reusing learned knowledge")
-        elif stats['recently_used_patterns'] < stats['total_patterns'] * 0.1:
+        elif stats["recently_used_patterns"] < stats["total_patterns"] * 0.1:
             insights.append("Consider reviewing and using existing knowledge patterns more often")
 
         # Performance insight
-        if stats['avg_success_rate'] > 0.8:
-            insights.append(f"Excellent learning performance: {stats['avg_success_rate']:.1%} average success rate")
-        elif stats['avg_success_rate'] > 0.6:
-            insights.append(f"Good learning performance: {stats['avg_success_rate']:.1%} average success rate")
+        if stats["avg_success_rate"] > 0.8:
+            insights.append(
+                f"Excellent learning performance: {stats['avg_success_rate']:.1%} average success rate"
+            )
+        elif stats["avg_success_rate"] > 0.6:
+            insights.append(
+                f"Good learning performance: {stats['avg_success_rate']:.1%} average success rate"
+            )
         else:
-            insights.append(f"Learning performance could be improved: {stats['avg_success_rate']:.1%} average success rate")
+            insights.append(
+                f"Learning performance could be improved: {stats['avg_success_rate']:.1%} average success rate"
+            )
 
         return insights
 

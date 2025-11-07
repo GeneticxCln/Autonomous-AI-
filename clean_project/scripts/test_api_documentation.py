@@ -2,16 +2,16 @@
 Test comprehensive API documentation improvements
 Verifies OpenAPI schema integration and endpoint functionality
 """
-import pytest
+
 import time
-import json
-from datetime import datetime
+
 from fastapi.testclient import TestClient
+
+from agent_system.auth_models import db_manager as auth_db_manager
+from agent_system.auth_service import auth_service
 
 # Import and initialize the app properly
 from agent_system.fastapi_app import app
-from agent_system.auth_service import auth_service
-from agent_system.auth_models import db_manager as auth_db_manager
 
 # Initialize auth system for testing
 auth_db_manager.initialize()
@@ -19,6 +19,7 @@ auth_service.initialize()
 
 # Create test client after initialization
 client = TestClient(app)
+
 
 class TestAPIDocumentation:
     """Test comprehensive API documentation features."""
@@ -28,11 +29,7 @@ class TestAPIDocumentation:
         # Login as admin to get tokens for authenticated requests
         self.login_response = client.post(
             "/api/v1/auth/login",
-            json={
-                "username": "admin",
-                "password": "admin123",
-                "remember_me": False
-            }
+            json={"username": "admin", "password": "admin123", "remember_me": False},
         )
         assert self.login_response.status_code == 200
         self.access_token = self.login_response.json()["data"]["access_token"]
@@ -121,11 +118,7 @@ class TestAPIDocumentation:
         # Test invalid login (should return 401)
         invalid_login = client.post(
             "/api/v1/auth/login",
-            json={
-                "username": "admin",
-                "password": "wrong_password",
-                "remember_me": False
-            }
+            json={"username": "admin", "password": "wrong_password", "remember_me": False},
         )
         assert invalid_login.status_code == 401
 
@@ -195,7 +188,7 @@ class TestAPIDocumentation:
             "/api/v1/goals",
             "/api/v1/api-tokens",
             "/api/v1/system/health",
-            "/api/v1/system/info"
+            "/api/v1/system/info",
         ]
 
         for endpoint in expected_endpoints:
@@ -213,16 +206,32 @@ class TestAPIDocumentation:
 
         # Check for key schema definitions
         expected_schemas = [
-            "LoginRequest", "LoginResponse", "TokenRefreshRequest", "TokenData",
-            "UserInfo", "UserCreate", "UserUpdate", "UserResponse",
-            "AgentCreate", "AgentResponse", "GoalCreate", "GoalResponse",
-            "APITokenCreate", "APITokenResponse", "SystemHealth", "SystemInfo",
-            "APIResponse", "APIError", "ErrorDetail", "PaginationInfo"
+            "LoginRequest",
+            "LoginResponse",
+            "TokenRefreshRequest",
+            "TokenData",
+            "UserInfo",
+            "UserCreate",
+            "UserUpdate",
+            "UserResponse",
+            "AgentCreate",
+            "AgentResponse",
+            "GoalCreate",
+            "GoalResponse",
+            "APITokenCreate",
+            "APITokenResponse",
+            "SystemHealth",
+            "SystemInfo",
+            "APIResponse",
+            "APIError",
+            "ErrorDetail",
+            "PaginationInfo",
         ]
 
         for schema_name in expected_schemas:
-            assert schema_name in schema["components"]["schemas"], \
-                f"Schema {schema_name} not found in components"
+            assert (
+                schema_name in schema["components"]["schemas"]
+            ), f"Schema {schema_name} not found in components"
 
         print("✅ API schema consistency: PASSED")
 
@@ -272,6 +281,7 @@ class TestAPIDocumentation:
         assert "success" in data
 
         print("✅ Pagination documentation: PASSED")
+
 
 if __name__ == "__main__":
     # Run comprehensive tests

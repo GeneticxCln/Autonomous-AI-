@@ -2,14 +2,16 @@
 Authentication System Test
 Tests JWT authentication, RBAC, and security features
 """
+
 import sys
 from pathlib import Path
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from agent_system.auth_service import auth_service
 from agent_system.auth_models import db_manager
+from agent_system.auth_service import auth_service
+
 
 def test_authentication_system():
     """Test the authentication system."""
@@ -28,7 +30,7 @@ def test_authentication_system():
         # Test user authentication
         print("\n🔑 Testing User Authentication")
         security_context = auth_service.authenticate_user("admin", "admin123")
-        print(f"✅ Admin user authenticated successfully")
+        print("✅ Admin user authenticated successfully")
         print(f"   User: {security_context.user.username}")
         print(f"   Permissions: {len(security_context.permissions)} total")
 
@@ -48,17 +50,15 @@ def test_authentication_system():
 
         # Test token verification
         print("\n✅ Testing Token Verification")
-        verified_context = auth_service.verify_token(tokens['access_token'])
-        print(f"✅ Token verified successfully")
+        verified_context = auth_service.verify_token(tokens["access_token"])
+        print("✅ Token verified successfully")
         print(f"   Verified user: {verified_context.user.username}")
         print(f"   Session ID: {verified_context.session_id}")
 
         # Test API token creation
         print("\n🔧 Testing API Token Creation")
         api_token = auth_service.create_api_token(
-            security_context.user.id,
-            "Test API Token",
-            ["read", "write"]
+            security_context.user.id, "Test API Token", ["read", "write"]
         )
         print(f"✅ API token created: {api_token}")
         print(f"   API token prefix: {api_token[:8]}...")
@@ -66,14 +66,14 @@ def test_authentication_system():
         # Test API token verification
         print("\n🔍 Testing API Token Verification")
         api_context = auth_service.verify_api_token(api_token)
-        print(f"✅ API token verified successfully")
+        print("✅ API token verified successfully")
         print(f"   API user: {api_context.user.username}")
         print(f"   API permissions: {api_context.permissions}")
 
         # Test permission requirements
         print("\n🔒 Testing Permission Requirements")
         try:
-            auth_service.require_permission(verified_context, 'system', 'admin')
+            auth_service.require_permission(verified_context, "system", "admin")
             print("✅ Admin permission requirement passed")
         except Exception as e:
             print(f"❌ Admin permission failed: {e}")
@@ -101,6 +101,7 @@ def test_authentication_system():
         print(f"❌ Authentication test failed: {e}")
         raise
 
+
 def test_security_features():
     """Test security features."""
     print("\n🔒 Testing Security Features")
@@ -127,6 +128,7 @@ def test_security_features():
 
     except Exception as e:
         print(f"❌ Security test failed: {e}")
+
 
 if __name__ == "__main__":
     test_authentication_system()

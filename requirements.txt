@@ -39,4 +39,4 @@ PyYAML>=6.0
 black>=23.0.0
 ruff>=0.1.0
 mypy>=1.6.0
-alembic>=1.12.0
+ 

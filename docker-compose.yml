@@ -1,7 +1,9 @@
 version: "3.9"
 services:
   api:
-    build: .
+    build:
+      context: ./clean_project
+      dockerfile: config/Dockerfile
     environment:
       - ENVIRONMENT=production
       - API_DEBUG=false
@@ -9,7 +11,7 @@ services:
     ports:
       - "8000:8000"
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8000/health"]
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys;\ntry:\n  r=urllib.request.urlopen('http://localhost:8000/health', timeout=3)\n  sys.exit(0 if r.getcode()==200 else 1)\nexcept Exception:\n  sys.exit(1)\n\""]
       interval: 10s
       timeout: 5s
       retries: 5

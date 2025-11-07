@@ -2,19 +2,20 @@
 Integration Tests for Enterprise Authentication System
 Tests complete workflows and identifies integration issues
 """
+
 import sys
 import time
-import json
-import requests
 from pathlib import Path
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent))
 
+from fastapi.testclient import TestClient
+
 from agent_system.auth_models import db_manager
 from agent_system.auth_service import auth_service
 from agent_system.fastapi_app import app
-from fastapi.testclient import TestClient
+
 
 def test_complete_authentication_workflow():
     """Test complete authentication workflow."""
@@ -48,7 +49,7 @@ def test_complete_authentication_workflow():
     # Test 3: Token Verification
     print("\n3. Testing token verification...")
     try:
-        verified_context = auth_service.verify_token(tokens['access_token'])
+        verified_context = auth_service.verify_token(tokens["access_token"])
         print("✅ Token verification successful")
         print(f"   Verified user: {verified_context.user.username}")
     except Exception as e:
@@ -59,10 +60,7 @@ def test_complete_authentication_workflow():
     print("\n4. Testing API token creation...")
     try:
         api_token = auth_service.create_api_token(
-            security_context.user.id,
-            "Integration Test Token",
-            ["read", "write"],
-            expires_days=30
+            security_context.user.id, "Integration Test Token", ["read", "write"], expires_days=30
         )
         print("✅ API token created")
         print(f"   Token: {api_token[:20]}...")
@@ -97,9 +95,10 @@ def test_complete_authentication_workflow():
         # Clean up any existing test user first
         with auth_service.db.get_session() as session:
             from agent_system.auth_models import UserModel
-            existing_user = session.query(UserModel).filter(
-                UserModel.username == "integration_test"
-            ).first()
+
+            existing_user = (
+                session.query(UserModel).filter(UserModel.username == "integration_test").first()
+            )
             if existing_user:
                 session.delete(existing_user)
                 session.commit()
@@ -109,7 +108,7 @@ def test_complete_authentication_workflow():
             email="integration@example.com",
             password="test123",
             full_name="Integration Test User",
-            role_names=["user"]
+            role_names=["user"],
         )
         print("✅ New user created")
 
@@ -125,6 +124,7 @@ def test_complete_authentication_workflow():
     try:
         with auth_service.db.get_session() as session:
             from agent_system.auth_models import AuthSecurityEventModel
+
             events = session.query(AuthSecurityEventModel).count()
             print(f"✅ Security events logged: {events} events")
     except Exception as e:
@@ -143,7 +143,7 @@ def test_complete_authentication_workflow():
     # Test 10: Token Refresh
     print("\n10. Testing token refresh...")
     try:
-        new_tokens = auth_service.refresh_access_token(tokens['refresh_token'])
+        new_tokens = auth_service.refresh_access_token(tokens["refresh_token"])
         print("✅ Token refresh successful")
         print(f"   New access token: {new_tokens['access_token'][:30]}...")
     except Exception as e:
@@ -152,6 +152,7 @@ def test_complete_authentication_workflow():
 
     print("\n🎉 All integration tests passed!")
     return True
+
 
 def test_fastapi_integration():
     """Test FastAPI integration."""
@@ -199,6 +200,7 @@ def test_fastapi_integration():
         print(f"❌ FastAPI integration failed: {e}")
         return False
 
+
 def test_database_operations():
     """Test database operations."""
     print("\n💾 Testing Database Operations")
@@ -208,12 +210,13 @@ def test_database_operations():
         # Test database connection
         with auth_service.db.get_session() as session:
             # Test basic query
-            from agent_system.auth_models import UserModel, RoleModel, PermissionModel
+            from agent_system.auth_models import PermissionModel, RoleModel, UserModel
+
             users = session.query(UserModel).count()
             roles = session.query(RoleModel).count()
             permissions = session.query(PermissionModel).count()
 
-            print(f"✅ Database connected")
+            print("✅ Database connected")
             print(f"   Users: {users}")
             print(f"   Roles: {roles}")
             print(f"   Permissions: {permissions}")
@@ -223,6 +226,7 @@ def test_database_operations():
     except Exception as e:
         print(f"❌ Database operations failed: {e}")
         return False
+
 
 def test_error_handling():
     """Test error handling scenarios."""
@@ -264,6 +268,7 @@ def test_error_handling():
         print(f"❌ Error handling tests failed: {e}")
         return False
 
+
 def test_performance_requirements():
     """Test performance requirements."""
     print("\n⚡ Testing Performance Requirements")
@@ -282,7 +287,7 @@ def test_performance_requirements():
         avg_time = sum(auth_times) / len(auth_times)
         max_time = max(auth_times)
 
-        print(f"✅ Authentication performance:")
+        print("✅ Authentication performance:")
         print(f"   Average: {avg_time:.2f}ms")
         print(f"   Maximum: {max_time:.2f}ms")
 
@@ -311,6 +316,7 @@ def test_performance_requirements():
         print(f"❌ Performance tests failed: {e}")
         return False
 
+
 def run_integration_tests():
     """Run all integration tests."""
     print("🚀 RUNNING COMPREHENSIVE INTEGRATION TESTS")
@@ -321,7 +327,7 @@ def run_integration_tests():
         "fastapi_integration": test_fastapi_integration(),
         "database_operations": test_database_operations(),
         "error_handling": test_error_handling(),
-        "performance_requirements": test_performance_requirements()
+        "performance_requirements": test_performance_requirements(),
     }
 
     print("\n" + "=" * 60)
@@ -347,6 +353,7 @@ def run_integration_tests():
         print("🔧 System needs fixes before production")
 
     return passed == total
+
 
 if __name__ == "__main__":
     success = run_integration_tests()

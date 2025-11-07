@@ -1,0 +1,47 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agent-config
+  namespace: agent-system
+  labels:
+    app: agent-system
+    component: config
+data:
+  # Application Configuration
+  ENVIRONMENT: "production"
+  API_DEBUG: "false"
+  DATABASE_URL: "sqlite:///./agent_enterprise.db"
+  REDIS_URL: "redis://redis-service:6379/0"
+  LOG_LEVEL: "INFO"
+  MAX_CYCLES: "100"
+  DEFAULT_GOAL_PRIORITY: "0.8"
+  TOOL_TIMEOUT: "30"
+  MAX_RETRIES: "3"
+  CODE_EXECUTION_TIMEOUT: "60"
+
+  # Security Configuration
+  JWT_ALGORITHM: "HS256"
+  JWT_ACCESS_TOKEN_EXPIRE_MINUTES: "30"
+  JWT_REFRESH_TOKEN_EXPIRE_DAYS: "30"
+
+  # Cache Configuration
+  CACHE_DEFAULT_TTL: "1800"
+  CACHE_SESSION_TTL: "1800"
+  CACHE_API_RESPONSE_TTL: "300"
+
+  # Queue Configuration
+  QUEUE_RESULT_TTL: "3600"
+  QUEUE_FAILURE_TTL: "86400"
+  QUEUE_MAX_RETRIES: "3"
+  QUEUE_RETRY_DELAY: "60"
+
+  # Monitoring Configuration
+  ENABLE_METRICS: "true"
+  METRICS_PORT: "9090"
+  PROMETHEUS_PORT: "8000"
+
+  # Performance Configuration
+  ENABLE_RATE_LIMITING: "true"
+  RATE_LIMIT_REQUESTS: "100"
+  RATE_LIMIT_WINDOW: "60"
+  ENABLE_CACHING: "true"

@@ -2,18 +2,19 @@
 Production Configuration Management
 Secure handling of environment variables and secrets
 """
+
 from __future__ import annotations
 
 import os
 import secrets
-import string
-from pathlib import Path
-from typing import Optional, List
+import sys
 from functools import lru_cache
+from typing import List
 
 # Try to import python-dotenv, fallback if not available
 try:
     from dotenv import load_dotenv
+
     load_dotenv()
 except ImportError:
     pass  # python-dotenv not installed, use os.environ directly
@@ -21,6 +22,7 @@ except ImportError:
 
 class ConfigError(Exception):
     """Configuration error."""
+
     pass
 
 
@@ -37,8 +39,12 @@ class ProductionConfig:
         # JWT Security (CRITICAL)
         self.jwt_secret_key = self._get_jwt_secret()
         self.jwt_algorithm = self.get_env("JWT_ALGORITHM", "HS256")
-        self.jwt_access_token_expire_minutes = int(self.get_env("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
-        self.jwt_refresh_token_expire_days = int(self.get_env("JWT_REFRESH_TOKEN_EXPIRE_DAYS", "30"))
+        self.jwt_access_token_expire_minutes = int(
+            self.get_env("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "30")
+        )
+        self.jwt_refresh_token_expire_days = int(
+            self.get_env("JWT_REFRESH_TOKEN_EXPIRE_DAYS", "30")
+        )
 
         # API Configuration
         self.api_host = self.get_env("API_HOST", "127.0.0.1")
@@ -120,7 +126,7 @@ class ProductionConfig:
             else:
                 # Generate for development
                 secret = secrets.token_urlsafe(32)
-                print(f"⚠️  Generated development JWT secret. Set JWT_SECRET_KEY for production.")
+                print("⚠️  Generated development JWT secret. Set JWT_SECRET_KEY for production.")
 
         # Validate secret strength
         if len(secret) < 32:
@@ -160,7 +166,9 @@ class ProductionConfig:
             errors.append("RATE_LIMIT_REQUESTS should be at least 10")
 
         if errors:
-            raise ConfigError("Configuration validation failed:\n" + "\n".join(f"- {error}" for error in errors))
+            raise ConfigError(
+                "Configuration validation failed:\n" + "\n".join(f"- {error}" for error in errors)
+            )
 
     def is_production(self) -> bool:
         """Check if running in production environment."""
@@ -176,7 +184,9 @@ class ProductionConfig:
 
     def get_database_url(self) -> str:
         """Get database URL with environment-specific settings."""
-        if self.database_url.startswith("postgresql://") or self.database_url.startswith("postgres://"):
+        if self.database_url.startswith("postgresql://") or self.database_url.startswith(
+            "postgres://"
+        ):
             # Add connection pool settings for PostgreSQL
             url = self.database_url.rstrip("/")
             if "?" not in url:
@@ -184,7 +194,7 @@ class ProductionConfig:
             else:
                 url += "&"
 
-            url += f"pool_size=20&max_overflow=30&pool_pre_ping=True&pool_recycle=3600"
+            url += "pool_size=20&max_overflow=30&pool_pre_ping=True&pool_recycle=3600"
             return url
 
         return self.database_url
@@ -212,7 +222,7 @@ class ProductionConfig:
         )
 
 
-@lru_cache()
+@lru_cache
 def get_config() -> ProductionConfig:
     """Get cached configuration instance."""
     return ProductionConfig()
@@ -230,7 +240,10 @@ def validate_production_config():
         # Check critical security settings
         checks = [
             (not config.debug, "Debug mode is disabled"),
-            (config.jwt_secret_key != "your-super-secret-jwt-key-change-in-production", "JWT secret is configured"),
+            (
+                config.jwt_secret_key != "your-super-secret-jwt-key-change-in-production",
+                "JWT secret is configured",
+            ),
             (config.secure_headers, "Security headers are enabled"),
             (config.enable_audit_logging, "Audit logging is enabled"),
             (config.max_login_attempts >= 3, "Login attempt limit is set"),
@@ -251,7 +264,7 @@ if __name__ == "__main__":
     # Example usage and validation
     try:
         config = get_config()
-        print(f"✅ Configuration loaded successfully")
+        print("✅ Configuration loaded successfully")
         print(f"   Environment: {config.environment}")
         print(f"   Database: {config.database_url}")
         print(f"   JWT Configured: {config.jwt_secret_key[:20]}...")

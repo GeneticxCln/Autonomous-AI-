@@ -1,7 +1,9 @@
 """
 Debug what schemas are actually generated in OpenAPI
 """
+
 from fastapi.testclient import TestClient
+
 from agent_system.fastapi_app import app
 
 # Create test client

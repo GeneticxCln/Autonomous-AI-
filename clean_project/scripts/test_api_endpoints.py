@@ -2,18 +2,19 @@
 API Endpoints Test Suite
 Comprehensive testing of FastAPI authentication and agent operation endpoints
 """
+
 import sys
-from pathlib import Path
-import json
-import requests
 import time
-from typing import Dict, Any
+from pathlib import Path
+from typing import Dict
+
+import requests
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from agent_system.auth_models import db_manager
-from agent_system.auth_service import auth_service
+
 
 class APITestClient:
     """Test client for API endpoints."""
@@ -29,10 +30,7 @@ class APITestClient:
         try:
             response = requests.post(
                 f"{self.base_url}/api/v1/auth/login",
-                json={
-                    "username": username,
-                    "password": password
-                }
+                json={"username": username, "password": password},
             )
 
             if response.status_code == 200:
@@ -66,10 +64,7 @@ class APITestClient:
         # Test get current user
         print("Testing get current user...")
         try:
-            response = requests.get(
-                f"{self.base_url}/api/v1/auth/me",
-                headers=self.auth_headers()
-            )
+            response = requests.get(f"{self.base_url}/api/v1/auth/me", headers=self.auth_headers())
             if response.status_code == 200 and response.json().get("success"):
                 user_data = response.json()["data"]
                 print(f"✅ Current user: {user_data['username']} ({user_data['roles']})")
@@ -84,8 +79,7 @@ class APITestClient:
         print("Testing token refresh...")
         try:
             response = requests.post(
-                f"{self.base_url}/api/v1/auth/refresh",
-                json={"refresh_token": self.refresh_token}
+                f"{self.base_url}/api/v1/auth/refresh", json={"refresh_token": self.refresh_token}
             )
             if response.status_code == 200 and response.json().get("success"):
                 new_token = response.json()["data"]["access_token"]
@@ -115,8 +109,8 @@ class APITestClient:
                     "name": "Test Agent",
                     "description": "Test agent for API validation",
                     "goals": ["Test goal 1", "Test goal 2"],
-                    "memory_capacity": 1000
-                }
+                    "memory_capacity": 1000,
+                },
             )
 
             if response.status_code == 201 and response.json().get("success"):
@@ -133,10 +127,7 @@ class APITestClient:
         # Test list agents
         print("Testing agent listing...")
         try:
-            response = requests.get(
-                f"{self.base_url}/api/v1/agents",
-                headers=self.auth_headers()
-            )
+            response = requests.get(f"{self.base_url}/api/v1/agents", headers=self.auth_headers())
             if response.status_code == 200 and response.json().get("success"):
                 agents = response.json()["data"]
                 print(f"✅ Listed {len(agents)} agents")
@@ -151,8 +142,7 @@ class APITestClient:
         print("Testing agent details...")
         try:
             response = requests.get(
-                f"{self.base_url}/api/v1/agents/{agent_id}",
-                headers=self.auth_headers()
+                f"{self.base_url}/api/v1/agents/{agent_id}", headers=self.auth_headers()
             )
             if response.status_code == 200 and response.json().get("success"):
                 agent_details = response.json()["data"]
@@ -168,8 +158,7 @@ class APITestClient:
         print("Testing agent execution...")
         try:
             response = requests.post(
-                f"{self.base_url}/api/v1/agents/{agent_id}/execute",
-                headers=self.auth_headers()
+                f"{self.base_url}/api/v1/agents/{agent_id}/execute", headers=self.auth_headers()
             )
             if response.status_code == 200 and response.json().get("success"):
                 execution_data = response.json()["data"]
@@ -197,8 +186,8 @@ class APITestClient:
                 json={
                     "title": "Test Goal",
                     "description": "Test goal for API validation",
-                    "priority": 5
-                }
+                    "priority": 5,
+                },
             )
 
             if response.status_code == 201 and response.json().get("success"):
@@ -215,10 +204,7 @@ class APITestClient:
         # Test list goals
         print("Testing goal listing...")
         try:
-            response = requests.get(
-                f"{self.base_url}/api/v1/goals",
-                headers=self.auth_headers()
-            )
+            response = requests.get(f"{self.base_url}/api/v1/goals", headers=self.auth_headers())
             if response.status_code == 200 and response.json().get("success"):
                 goals = response.json()["data"]
                 print(f"✅ Listed {len(goals)} goals")
@@ -247,8 +233,8 @@ class APITestClient:
                     "email": "test@example.com",
                     "full_name": "Test User",
                     "password": "testpass123",
-                    "role_names": ["user"]
-                }
+                    "role_names": ["user"],
+                },
             )
 
             if response.status_code == 201 and response.json().get("success"):
@@ -265,10 +251,7 @@ class APITestClient:
         # Test list users
         print("Testing user listing...")
         try:
-            response = requests.get(
-                f"{self.base_url}/api/v1/users",
-                headers=self.auth_headers()
-            )
+            response = requests.get(f"{self.base_url}/api/v1/users", headers=self.auth_headers())
             if response.status_code == 200 and response.json().get("success"):
                 users = response.json()["data"]
                 print(f"✅ Listed {len(users)} users")
@@ -292,11 +275,7 @@ class APITestClient:
             response = requests.post(
                 f"{self.base_url}/api/v1/api-tokens",
                 headers=self.auth_headers(),
-                json={
-                    "name": "Test API Token",
-                    "scopes": ["read", "write"],
-                    "expires_days": 30
-                }
+                json={"name": "Test API Token", "scopes": ["read", "write"], "expires_days": 30},
             )
 
             if response.status_code == 201 and response.json().get("success"):
@@ -315,8 +294,7 @@ class APITestClient:
         print("Testing API token listing...")
         try:
             response = requests.get(
-                f"{self.base_url}/api/v1/api-tokens",
-                headers=self.auth_headers()
+                f"{self.base_url}/api/v1/api-tokens", headers=self.auth_headers()
             )
             if response.status_code == 200 and response.json().get("success"):
                 tokens = response.json()["data"]
@@ -353,12 +331,13 @@ class APITestClient:
         print("Testing system info...")
         try:
             response = requests.get(
-                f"{self.base_url}/api/v1/system/info",
-                headers=self.auth_headers()
+                f"{self.base_url}/api/v1/system/info", headers=self.auth_headers()
             )
             if response.status_code == 200 and response.json().get("success"):
                 system_info = response.json()["data"]
-                print(f"✅ System info retrieved: {system_info['users']} users, {system_info['agents']} agents")
+                print(
+                    f"✅ System info retrieved: {system_info['users']} users, {system_info['agents']} agents"
+                )
             else:
                 print("❌ System info failed")
                 return False
@@ -375,8 +354,7 @@ class APITestClient:
 
         try:
             response = requests.post(
-                f"{self.base_url}/api/v1/auth/logout",
-                headers=self.auth_headers()
+                f"{self.base_url}/api/v1/auth/logout", headers=self.auth_headers()
             )
             if response.status_code == 200 and response.json().get("success"):
                 print("✅ Logout successful")
@@ -389,6 +367,7 @@ class APITestClient:
         except Exception as e:
             print(f"❌ Logout error: {e}")
             return False
+
 
 def wait_for_api(base_url: str = "http://127.0.0.1:8000", timeout: int = 30) -> bool:
     """Wait for API to be ready."""
@@ -407,6 +386,7 @@ def wait_for_api(base_url: str = "http://127.0.0.1:8000", timeout: int = 30) -> 
 
     print("❌ API not ready within timeout")
     return False
+
 
 def run_api_tests():
     """Run comprehensive API tests."""
@@ -474,6 +454,7 @@ def run_api_tests():
         print("❌ Some tests failed - check logs above")
 
     return passed == total
+
 
 if __name__ == "__main__":
     run_api_tests()

@@ -63,7 +63,9 @@ class ActionSelector:
         action_key = f"{action.tool_name}:{action.name}"
         # Use same default baseline as _score_action to ensure monotonic improvement when learning
         old_score = self.action_scores.get(action_key, 0.5)
-        self.action_scores[action_key] = old_score * (1 - self.learning_rate) + success_score * self.learning_rate
+        self.action_scores[action_key] = (
+            old_score * (1 - self.learning_rate) + success_score * self.learning_rate
+        )
         self.action_counts[action_key] += 1
 
         logger.debug(

@@ -4,38 +4,64 @@ import argparse
 import asyncio
 import json
 import logging
-import sys
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
-from pathlib import Path
 import os
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
-from .llm_integration import llm_manager
+from .config_simple import settings, validate_file_path
 from .enhanced_tools import EnhancedToolRegistry
+from .llm_integration import llm_manager
 from .models import Action
-from .config_simple import settings
-from .config_simple import validate_file_path
-from .vector_memory import SimpleVectorMemory
 from .todo_store import SimpleTodoStore
-from .tools import GenericTool, FileReaderTool, FileWriterTool, CodeExecutorTool, ShellTool, CodeSearchTool, EditFileTool, ReplaceInFilesTool, RestoreBackupTool, GitTool, TestTool, FormatTool, LintTool
+from .tools import (
+    CodeExecutorTool,
+    CodeSearchTool,
+    EditFileTool,
+    FileReaderTool,
+    FileWriterTool,
+    FormatTool,
+    GenericTool,
+    GitTool,
+    LintTool,
+    ReplaceInFilesTool,
+    RestoreBackupTool,
+    ShellTool,
+    TestTool,
+)
+from .vector_memory import SimpleVectorMemory
 
 LOG_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"
 STATE_DIR = Path(".agent_state/chat_sessions")
 STATE_DIR.mkdir(parents=True, exist_ok=True)
 
-ALLOWED_TOOLS = {"code_executor", "file_reader", "file_writer", "shell", "code_search", "edit_file", "replace_in_files", "restore_backup", "git", "tests", "format", "lint"}
+ALLOWED_TOOLS = {
+    "code_executor",
+    "file_reader",
+    "file_writer",
+    "shell",
+    "code_search",
+    "edit_file",
+    "replace_in_files",
+    "restore_backup",
+    "git",
+    "tests",
+    "format",
+    "lint",
+}
 
 SYSTEM_PROMPT = (
     "You are a terminal agent. Respond concisely. "
     "When a tool is needed, output ONLY a compact JSON on a single line with one of: "
-    "1) {\"type\":\"tool\",\"tool\":(code_executor|file_reader|file_writer|shell|code_search|git|edit_file|replace_in_files|restore_backup|tests),\"args\":{...}} "
-    "2) {\"type\":\"tool_batch\",\"calls\":[{\"tool\":...,\"args\":{...}}, ...]} (max 5 calls). "
+    '1) {"type":"tool","tool":(code_executor|file_reader|file_writer|shell|code_search|git|edit_file|replace_in_files|restore_backup|tests),"args":{...}} '
+    '2) {"type":"tool_batch","calls":[{"tool":...,"args":{...}}, ...]} (max 5 calls). '
     "For shell: args {cmd: <ls|cat|head|tail|wc|grep|stat|pwd|echo>, args: [<tokens>]}. "
     "For code_search: args {pattern: <regex>, path: '.', include?: pattern|[...], exclude?: pattern|[...], max_results?: N}. "
     "For git: args {cmd: <status|log|diff>, n?: <1..100>, path?: <path>, range?: <rev..rev>}. "
     "For tests: args {path?: 'tests', pattern?: 'test*.py'}. "
     "Otherwise, output plain text. No markdown fences."
 )
+
 
 @dataclass
 class ChatState:
@@ -62,7 +88,11 @@ class ChatState:
 def save_session(state: ChatState) -> Path:
     path = STATE_DIR / ("session_" + str(len(list(STATE_DIR.glob("session_*.json"))) + 1) + ".json")
     with path.open("w", encoding="utf-8") as f:
-        json.dump({"provider": state.provider, "messages": state.messages, "summary": state.summary}, f, indent=2)
+        json.dump(
+            {"provider": state.provider, "messages": state.messages, "summary": state.summary},
+            f,
+            indent=2,
+        )
     return path
 
 
@@ -116,12 +146,19 @@ def sanitize_tool_call(data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         path = str(args.get("path", ".")).strip()
         search = args.get("search")
         replace = args.get("replace", "")
-        include = args.get("include", ["**/*"]) 
-        exclude = args.get("exclude", [".git/*", "*.pyc", "node_modules/*"]) 
+        include = args.get("include", ["**/*"])
+        exclude = args.get("exclude", [".git/*", "*.pyc", "node_modules/*"])
         max_edits = int(args.get("max_edits", 1000))
         if not search:
             return None
-        args = {"path": path, "search": str(search), "replace": str(replace), "include": include, "exclude": exclude, "max_edits": max_edits}
+        args = {
+            "path": path,
+            "search": str(search),
+            "replace": str(replace),
+            "include": include,
+            "exclude": exclude,
+            "max_edits": max_edits,
+        }
     elif tool == "restore_backup":
         latest = bool(args.get("latest", True))
         backup = args.get("backup")
@@ -158,13 +195,14 @@ def summarize(messages: List[Dict[str, str]], limit: int = 500) -> str:
                 prefix = "U:" if m["role"] == "user" else "A:"
                 chunks.append(f"{prefix} {txt}")
     text = " | ".join(chunks)
-    return (text[:limit] + ("…" if len(text) > limit else ""))
+    return text[:limit] + ("…" if len(text) > limit else "")
 
 
 def _extract_json_block(text: str) -> Optional[str]:
     # Try fenced blocks first
     try:
         import re
+
         m = re.search(r"```(?:json)?\s*({[\s\S]*?})\s*```", text, re.IGNORECASE)
         if m:
             return m.group(1)
@@ -190,9 +228,9 @@ def _extract_json_block(text: str) -> Optional[str]:
         else:
             if ch == '"':
                 in_str = True
-            elif ch == '{':
+            elif ch == "{":
                 depth += 1
-            elif ch == '}':
+            elif ch == "}":
                 depth -= 1
                 if depth == 0:
                     return s[start : i + 1]
@@ -293,7 +331,9 @@ async def run_chat(provider: str = "local", stream: bool = True):
         if user.startswith("/"):
             cmd, *rest = user[1:].split()
             if cmd == "help":
-                print("/provider <openai|anthropic|local>  /reset  /mem  /save  /load <path>  /loops <n>  /max <n>  /tool {json}  /context  /real <on|off>  /tools  /stats  /git ...  /tests  /format [path]  /lint [path]  /lintfix [path]  /undo  /backups  /todo add <text> [prio]  /todo ls  /todo done <id>  /todo clear  /redact <on|off>  /dump  /py <code>  /sh <cmd>  /ls [path]  /pwd  /cd <path>  /cat <path>  /write <path> <content>  /searchmem <regex>  /pin <text>  /unpin  /alias <name> {json}  /aliases  /unalias <name>  /run <name>  /plan <goal>  /runplan")
+                print(
+                    "/provider <openai|anthropic|local>  /reset  /mem  /save  /load <path>  /loops <n>  /max <n>  /tool {json}  /context  /real <on|off>  /tools  /stats  /git ...  /tests  /format [path]  /lint [path]  /lintfix [path]  /undo  /backups  /todo add <text> [prio]  /todo ls  /todo done <id>  /todo clear  /redact <on|off>  /dump  /py <code>  /sh <cmd>  /ls [path]  /pwd  /cd <path>  /cat <path>  /write <path> <content>  /searchmem <regex>  /pin <text>  /unpin  /alias <name> {json}  /aliases  /unalias <name>  /run <name>  /plan <goal>  /runplan"
+                )
                 continue
             if cmd == "provider" and rest:
                 cand = rest[0].lower()
@@ -312,7 +352,9 @@ async def run_chat(provider: str = "local", stream: bool = True):
                 print("reset")
                 continue
             if cmd == "context":
-                print(f"messages={len(state.messages)} summary_len={len(state.summary)} provider={current_provider}")
+                print(
+                    f"messages={len(state.messages)} summary_len={len(state.summary)} provider={current_provider}"
+                )
                 continue
             if cmd == "loops" and rest:
                 try:
@@ -345,9 +387,25 @@ async def run_chat(provider: str = "local", stream: bool = True):
                     for call in tool.get("calls", []):
                         tool_name = call.get("tool")
                         args = call.get("args", {})
-                        action = Action(id="manual_tool", name=tool_name, tool_name=tool_name, parameters=args, expected_outcome="tool_executed", cost=0.1)
+                        action = Action(
+                            id="manual_tool",
+                            name=tool_name,
+                            tool_name=tool_name,
+                            parameters=args,
+                            expected_outcome="tool_executed",
+                            cost=0.1,
+                        )
                         observation = state.tool_registry.execute_action(action)
-                        print(json.dumps({"tool": tool_name, "status": observation.status.value, "result": observation.result}, indent=2))
+                        print(
+                            json.dumps(
+                                {
+                                    "tool": tool_name,
+                                    "status": observation.status.value,
+                                    "result": observation.result,
+                                },
+                                indent=2,
+                            )
+                        )
                 else:
                     tool_name = tool.get("tool")
                     args = tool.get("args", {})
@@ -360,7 +418,12 @@ async def run_chat(provider: str = "local", stream: bool = True):
                         cost=0.1,
                     )
                     observation = state.tool_registry.execute_action(action)
-                    print(json.dumps({"status": observation.status.value, "result": observation.result}, indent=2))
+                    print(
+                        json.dumps(
+                            {"status": observation.status.value, "result": observation.result},
+                            indent=2,
+                        )
+                    )
                 continue
             if cmd == "mem":
                 top = memory.query("*", top_k=5)
@@ -404,23 +467,54 @@ async def run_chat(provider: str = "local", stream: bool = True):
                     for call in tool.get("calls", []):
                         tool_name = call.get("tool")
                         args = call.get("args", {})
-                        action = Action(id="alias_tool", name=tool_name, tool_name=tool_name, parameters=args, expected_outcome="tool_executed", cost=0.1)
+                        action = Action(
+                            id="alias_tool",
+                            name=tool_name,
+                            tool_name=tool_name,
+                            parameters=args,
+                            expected_outcome="tool_executed",
+                            cost=0.1,
+                        )
                         observation = state.tool_registry.execute_action(action)
-                        print(json.dumps({"tool": tool_name, "status": observation.status.value, "result": observation.result}, indent=2))
+                        print(
+                            json.dumps(
+                                {
+                                    "tool": tool_name,
+                                    "status": observation.status.value,
+                                    "result": observation.result,
+                                },
+                                indent=2,
+                            )
+                        )
                 else:
                     tool_name = tool.get("tool")
                     args = tool.get("args", {})
-                    action = Action(id="alias_tool", name=tool_name, tool_name=tool_name, parameters=args, expected_outcome="tool_executed", cost=0.1)
+                    action = Action(
+                        id="alias_tool",
+                        name=tool_name,
+                        tool_name=tool_name,
+                        parameters=args,
+                        expected_outcome="tool_executed",
+                        cost=0.1,
+                    )
                     observation = state.tool_registry.execute_action(action)
-                    print(json.dumps({"status": observation.status.value, "result": observation.result}, indent=2))
+                    print(
+                        json.dumps(
+                            {"status": observation.status.value, "result": observation.result},
+                            indent=2,
+                        )
+                    )
                 continue
             if cmd == "plan" and rest:
                 goal = user.split(" ", 1)[1]
                 planner_prompt = (
                     "Plan a minimal tool batch to accomplish the goal. Output ONLY JSON with schema: "
-                    "{\"type\":\"tool_batch\",\"calls\":[{\"tool\":...,\"args\":{...}}]}"
+                    '{"type":"tool_batch","calls":[{"tool":...,"args":{...}}]}'
                 )
-                tmp_msgs = state.messages + [{"role": "system", "content": planner_prompt}, {"role": "user", "content": goal}]
+                tmp_msgs = state.messages + [
+                    {"role": "system", "content": planner_prompt},
+                    {"role": "user", "content": goal},
+                ]
                 plan_text = await llm_manager.chat(tmp_msgs, provider=current_provider)
                 plan_obj = parse_tool_call(plan_text)
                 if not plan_obj or plan_obj.get("type") != "tool_batch":
@@ -436,30 +530,82 @@ async def run_chat(provider: str = "local", stream: bool = True):
                 for call in state.last_plan[:5]:
                     tool_name = call.get("tool")
                     args = call.get("args", {})
-                    action = Action(id="runplan_tool", name=tool_name, tool_name=tool_name, parameters=args, expected_outcome="tool_executed", cost=0.1)
+                    action = Action(
+                        id="runplan_tool",
+                        name=tool_name,
+                        tool_name=tool_name,
+                        parameters=args,
+                        expected_outcome="tool_executed",
+                        cost=0.1,
+                    )
                     observation = state.tool_registry.execute_action(action)
-                    print(json.dumps({"tool": tool_name, "status": observation.status.value, "result": observation.result}, indent=2))
+                    print(
+                        json.dumps(
+                            {
+                                "tool": tool_name,
+                                "status": observation.status.value,
+                                "result": observation.result,
+                            },
+                            indent=2,
+                        )
+                    )
                 continue
             if cmd == "py" and rest:
                 code = user.split(" ", 1)[1]
-                action = Action(id="py", name="code_executor", tool_name="code_executor", parameters={"language": "python", "code": code, "timeout": settings.CODE_EXECUTION_TIMEOUT}, expected_outcome="ok", cost=0.1)
+                action = Action(
+                    id="py",
+                    name="code_executor",
+                    tool_name="code_executor",
+                    parameters={
+                        "language": "python",
+                        "code": code,
+                        "timeout": settings.CODE_EXECUTION_TIMEOUT,
+                    },
+                    expected_outcome="ok",
+                    cost=0.1,
+                )
                 obs = state.tool_registry.execute_action(action)
                 print(json.dumps({"status": obs.status.value, "result": obs.result}, indent=2))
                 continue
             if cmd == "sh" and rest:
                 shcode = user.split(" ", 1)[1]
-                action = Action(id="sh", name="code_executor", tool_name="code_executor", parameters={"language": "bash", "code": shcode, "timeout": settings.CODE_EXECUTION_TIMEOUT}, expected_outcome="ok", cost=0.1)
+                action = Action(
+                    id="sh",
+                    name="code_executor",
+                    tool_name="code_executor",
+                    parameters={
+                        "language": "bash",
+                        "code": shcode,
+                        "timeout": settings.CODE_EXECUTION_TIMEOUT,
+                    },
+                    expected_outcome="ok",
+                    cost=0.1,
+                )
                 obs = state.tool_registry.execute_action(action)
                 print(json.dumps({"status": obs.status.value, "result": obs.result}, indent=2))
                 continue
             if cmd == "ls":
                 pth = rest[0] if rest else "."
-                action = Action(id="ls", name="shell", tool_name="shell", parameters={"cmd": "ls", "args": [pth]}, expected_outcome="ok", cost=0.02)
+                action = Action(
+                    id="ls",
+                    name="shell",
+                    tool_name="shell",
+                    parameters={"cmd": "ls", "args": [pth]},
+                    expected_outcome="ok",
+                    cost=0.02,
+                )
                 obs = state.tool_registry.execute_action(action)
                 print(json.dumps({"status": obs.status.value, "result": obs.result}, indent=2))
                 continue
             if cmd == "pwd":
-                action = Action(id="pwd", name="shell", tool_name="shell", parameters={"cmd": "pwd", "args": []}, expected_outcome="ok", cost=0.01)
+                action = Action(
+                    id="pwd",
+                    name="shell",
+                    tool_name="shell",
+                    parameters={"cmd": "pwd", "args": []},
+                    expected_outcome="ok",
+                    cost=0.01,
+                )
                 obs = state.tool_registry.execute_action(action)
                 print(json.dumps({"status": obs.status.value, "result": obs.result}, indent=2))
                 continue
@@ -476,19 +622,34 @@ async def run_chat(provider: str = "local", stream: bool = True):
                 continue
             if cmd == "cat" and rest:
                 pth = rest[0]
-                action = Action(id="cat", name="file_reader", tool_name="file_reader", parameters={"filepath": pth, "format": "auto"}, expected_outcome="ok", cost=0.05)
+                action = Action(
+                    id="cat",
+                    name="file_reader",
+                    tool_name="file_reader",
+                    parameters={"filepath": pth, "format": "auto"},
+                    expected_outcome="ok",
+                    cost=0.05,
+                )
                 obs = state.tool_registry.execute_action(action)
                 print(json.dumps({"status": obs.status.value, "result": obs.result}, indent=2))
                 continue
             if cmd == "write" and len(rest) >= 2:
                 pth = rest[0]
                 content = user.split(" ", 2)[2]
-                action = Action(id="write", name="file_writer", tool_name="file_writer", parameters={"filepath": pth, "content": content, "format": "text"}, expected_outcome="ok", cost=0.05)
+                action = Action(
+                    id="write",
+                    name="file_writer",
+                    tool_name="file_writer",
+                    parameters={"filepath": pth, "content": content, "format": "text"},
+                    expected_outcome="ok",
+                    cost=0.05,
+                )
                 obs = state.tool_registry.execute_action(action)
                 print(json.dumps({"status": obs.status.value, "result": obs.result}, indent=2))
                 continue
             if cmd == "searchmem" and rest:
                 import re as _re
+
                 patt = " ".join(rest)
                 try:
                     rx = _re.compile(patt, _re.IGNORECASE)
@@ -574,7 +735,14 @@ async def run_chat(provider: str = "local", stream: bool = True):
                 else:
                     print("unknown git subcmd")
                     continue
-                action = Action(id="git_cmd", name="git", tool_name="git", parameters=params, expected_outcome="git_ok", cost=0.05)
+                action = Action(
+                    id="git_cmd",
+                    name="git",
+                    tool_name="git",
+                    parameters=params,
+                    expected_outcome="git_ok",
+                    cost=0.05,
+                )
                 obs = state.tool_registry.execute_action(action)
                 print(json.dumps({"status": obs.status.value, "result": obs.result}, indent=2))
                 continue
@@ -582,37 +750,75 @@ async def run_chat(provider: str = "local", stream: bool = True):
                 params: Dict[str, Any] = {"path": "tests", "pattern": "test*.py"}
                 if rest:
                     params["path"] = rest[0]
-                action = Action(id="run_tests", name="tests", tool_name="tests", parameters=params, expected_outcome="tests_ok", cost=0.1)
+                action = Action(
+                    id="run_tests",
+                    name="tests",
+                    tool_name="tests",
+                    parameters=params,
+                    expected_outcome="tests_ok",
+                    cost=0.1,
+                )
                 obs = state.tool_registry.execute_action(action)
                 print(json.dumps({"status": obs.status.value, "result": obs.result}, indent=2))
                 continue
             if cmd == "format":
                 pth = rest[0] if rest else "."
-                action = Action(id="fmt", name="format", tool_name="format", parameters={"path": pth, "check": False}, expected_outcome="ok", cost=0.1)
+                action = Action(
+                    id="fmt",
+                    name="format",
+                    tool_name="format",
+                    parameters={"path": pth, "check": False},
+                    expected_outcome="ok",
+                    cost=0.1,
+                )
                 obs = state.tool_registry.execute_action(action)
                 print(json.dumps({"status": obs.status.value, "result": obs.result}, indent=2))
                 continue
             if cmd == "lint":
                 pth = rest[0] if rest else "."
-                action = Action(id="lint", name="lint", tool_name="lint", parameters={"path": pth, "fix": False}, expected_outcome="ok", cost=0.1)
+                action = Action(
+                    id="lint",
+                    name="lint",
+                    tool_name="lint",
+                    parameters={"path": pth, "fix": False},
+                    expected_outcome="ok",
+                    cost=0.1,
+                )
                 obs = state.tool_registry.execute_action(action)
                 print(json.dumps({"status": obs.status.value, "result": obs.result}, indent=2))
                 continue
             if cmd == "lintfix":
                 pth = rest[0] if rest else "."
-                action = Action(id="lintfix", name="lint", tool_name="lint", parameters={"path": pth, "fix": True}, expected_outcome="ok", cost=0.1)
+                action = Action(
+                    id="lintfix",
+                    name="lint",
+                    tool_name="lint",
+                    parameters={"path": pth, "fix": True},
+                    expected_outcome="ok",
+                    cost=0.1,
+                )
                 obs = state.tool_registry.execute_action(action)
                 print(json.dumps({"status": obs.status.value, "result": obs.result}, indent=2))
                 continue
             if cmd == "undo":
-                action = Action(id="undo", name="restore_backup", tool_name="restore_backup", parameters={"latest": True}, expected_outcome="restored", cost=0.05)
+                action = Action(
+                    id="undo",
+                    name="restore_backup",
+                    tool_name="restore_backup",
+                    parameters={"latest": True},
+                    expected_outcome="restored",
+                    cost=0.05,
+                )
                 obs = state.tool_registry.execute_action(action)
                 print(json.dumps({"status": obs.status.value, "result": obs.result}, indent=2))
                 continue
             if cmd == "backups":
                 from pathlib import Path as P
+
                 bdir = P(".agent_state/backups")
-                items = sorted(bdir.glob("*.meta.json"), key=lambda p: p.stat().st_mtime, reverse=True)[:20]
+                items = sorted(
+                    bdir.glob("*.meta.json"), key=lambda p: p.stat().st_mtime, reverse=True
+                )[:20]
                 print("backups:")
                 for it in items:
                     print("-", it)
@@ -636,7 +842,9 @@ async def run_chat(provider: str = "local", stream: bool = True):
                 if sub == "ls":
                     items = todos.list(include_done=True)
                     for t in items:
-                        print(f"({t.id}) [{'x' if t.status=='done' else ' '}] p{t.priority} {t.title}")
+                        print(
+                            f"({t.id}) [{'x' if t.status=='done' else ' '}] p{t.priority} {t.title}"
+                        )
                     continue
                 if sub == "done" and len(rest) >= 2:
                     try:
@@ -654,7 +862,19 @@ async def run_chat(provider: str = "local", stream: bool = True):
                 print("usage: /todo add <text> [prio] | /todo ls | /todo done <id> | /todo clear")
                 continue
             if cmd == "dump":
-                print(json.dumps({"provider": state.provider, "messages": state.messages, "summary": state.summary, "pinned": state.pinned, "aliases": list(state.aliases.keys()), "todos": [t.__dict__ for t in todos.list(include_done=True)]}, indent=2))
+                print(
+                    json.dumps(
+                        {
+                            "provider": state.provider,
+                            "messages": state.messages,
+                            "summary": state.summary,
+                            "pinned": state.pinned,
+                            "aliases": list(state.aliases.keys()),
+                            "todos": [t.__dict__ for t in todos.list(include_done=True)],
+                        },
+                        indent=2,
+                    )
+                )
                 continue
             if cmd == "redact" and rest:
                 val = rest[0].lower()
@@ -675,9 +895,25 @@ async def run_chat(provider: str = "local", stream: bool = True):
                 for call in tool.get("calls", []):
                     tool_name = call.get("tool")
                     args = call.get("args", {})
-                    action = Action(id="batch_tool", name=tool_name, tool_name=tool_name, parameters=args, expected_outcome="tool_executed", cost=0.1)
+                    action = Action(
+                        id="batch_tool",
+                        name=tool_name,
+                        tool_name=tool_name,
+                        parameters=args,
+                        expected_outcome="tool_executed",
+                        cost=0.1,
+                    )
                     observation = state.tool_registry.execute_action(action)
-                    print(json.dumps({"tool": tool_name, "status": observation.status.value, "result": observation.result}, indent=2))
+                    print(
+                        json.dumps(
+                            {
+                                "tool": tool_name,
+                                "status": observation.status.value,
+                                "result": observation.result,
+                            },
+                            indent=2,
+                        )
+                    )
                 continue
             print("unknown command")
             continue
@@ -692,17 +928,26 @@ async def run_chat(provider: str = "local", stream: bool = True):
         # Inject top TODOs
         todo_list = todos.list()
         if todo_list:
-            todo_ctx = "\n".join(f"- [{('x' if t.status=='done' else ' ')}] ({t.id}) p{t.priority} {t.title}" for t in todo_list[:5])
+            todo_ctx = "\n".join(
+                f"- [{('x' if t.status=='done' else ' ')}] ({t.id}) p{t.priority} {t.title}"
+                for t in todo_list[:5]
+            )
             state.add_system(f"TODOs:\n{todo_ctx}")
 
         # Allow up to N tool calls per turn
         tool_loops = 0
         while tool_loops < state.max_tool_loops:
+
             def redact(s: str) -> str:
                 if not redact_output:
                     return s
                 import re
-                s = re.sub(r"(?i)\b(ak-[A-Za-z0-9_\-]{20,}|sk-[A-Za-z0-9]{20,}|AIza[0-9A-Za-z\-_]{33})\b", "[REDACTED]", s)
+
+                s = re.sub(
+                    r"(?i)\b(ak-[A-Za-z0-9_\-]{20,}|sk-[A-Za-z0-9]{20,}|AIza[0-9A-Za-z\-_]{33})\b",
+                    "[REDACTED]",
+                    s,
+                )
                 s = re.sub(r"\b[A-Za-z0-9_\-]{32,}\b", "[REDACTED]", s)
                 return s
 
@@ -753,7 +998,9 @@ async def run_chat(provider: str = "local", stream: bool = True):
                     if observation.status.value != "success":
                         break
                 # Summarize batch
-                state.add_assistant(json.dumps({"type": "tool_batch_result", "results": batch_results}))
+                state.add_assistant(
+                    json.dumps({"type": "tool_batch_result", "results": batch_results})
+                )
                 tool_loops += 1
                 continue
             else:
@@ -773,7 +1020,7 @@ async def run_chat(provider: str = "local", stream: bool = True):
                     "type": "tool_result",
                     "tool": tool_name,
                     "status": observation.status.value,
-                    "result": observation.result
+                    "result": observation.result,
                 }
                 state.add_assistant(json.dumps(tool_result))
                 memory.add(json.dumps(tool_result), {"type": "tool_result", "tool": tool_name})
@@ -784,7 +1031,7 @@ async def run_chat(provider: str = "local", stream: bool = True):
         if len(state.messages) > state.max_messages:
             # Keep system and last messages
             base_sys = [m for m in state.messages if m["role"] == "system"][:1]
-            state.messages = base_sys + state.messages[-(state.max_messages-1):]
+            state.messages = base_sys + state.messages[-(state.max_messages - 1) :]
 
         # Persist after each turn
         save_session(state)

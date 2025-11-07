@@ -2,6 +2,7 @@
 Authentication System Setup Script
 Creates auth tables and initializes default data
 """
+
 from __future__ import annotations
 
 import logging
@@ -15,7 +16,7 @@ from agent_system.auth_models import Base, db_manager
 from agent_system.auth_service import auth_service
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 
@@ -42,9 +43,7 @@ def setup_authentication_system():
 
         # Create API token for admin
         api_token = auth_service.create_api_token(
-            admin_user.id,
-            "Default Admin Token",
-            ["read", "write", "admin"]
+            admin_user.id, "Default Admin Token", ["read", "write", "admin"]
         )
         logger.info(f"✅ Admin API token created: {api_token[:8]}...")
 
@@ -63,6 +62,7 @@ def create_default_admin():
         # Check if admin user already exists
         with db_manager.get_session() as session:
             from agent_system.auth_models import UserModel
+
             existing_admin = session.query(UserModel).filter(UserModel.username == "admin").first()
             if existing_admin:
                 logger.info("Admin user already exists")
@@ -74,7 +74,7 @@ def create_default_admin():
             email="admin@example.com",
             password="admin",  # Simple password
             full_name="System Administrator",
-            role_names=["admin"]
+            role_names=["admin"],
         )
 
         return admin_user
@@ -86,12 +86,12 @@ def create_default_admin():
 
 def print_auth_info(admin_user, api_token):
     """Print authentication system information."""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("🔐 AUTHENTICATION SYSTEM SETUP COMPLETE")
-    print("="*60)
+    print("=" * 60)
     print(f"Admin Username: {admin_user.username}")
     print(f"Admin Email: {admin_user.email}")
-    print(f"Admin Password: admin (CHANGE THIS IMMEDIATELY)")
+    print("Admin Password: admin (CHANGE THIS IMMEDIATELY)")
     print(f"Admin API Token: {api_token}")
     print(f"API Token Prefix: {api_token[:8]}")
     print("\n⚠️  SECURITY REMINDERS:")
@@ -99,7 +99,7 @@ def print_auth_info(admin_user, api_token):
     print("2. Store API tokens securely - they are only shown once")
     print("3. Use environment variables for JWT secret in production")
     print("4. Enable HTTPS for all authentication endpoints")
-    print("="*60)
+    print("=" * 60)
     print("\n📋 Available Roles:")
     print("• admin - Full system access")
     print("• manager - Elevated privileges")
@@ -111,7 +111,7 @@ def print_auth_info(admin_user, api_token):
     print("• actions.read/write")
     print("• system.read/write/admin")
     print("• users.read/write/delete/admin")
-    print("="*60)
+    print("=" * 60)
 
 
 if __name__ == "__main__":

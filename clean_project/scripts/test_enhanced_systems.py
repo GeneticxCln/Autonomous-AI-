@@ -4,11 +4,11 @@ Test Enhanced Systems
 Validates all new optimization and security improvements.
 """
 import sys
-import time
 from pathlib import Path
 
 # Add the project root to Python path
 sys.path.insert(0, str(Path(__file__).parent))
+
 
 def test_unified_config():
     """Test unified configuration system."""
@@ -64,7 +64,7 @@ def test_performance_optimizer():
 
         # Test comprehensive stats
         comprehensive_stats = performance_optimizer.get_comprehensive_stats()
-        print(f"✅ Comprehensive Stats: Available")
+        print("✅ Comprehensive Stats: Available")
 
         return True
 
@@ -139,7 +139,7 @@ def test_enhanced_agent():
     print("=" * 50)
 
     try:
-        from agent_system.enhanced_agent import EnhancedAutonomousAgent, create_enhanced_agent
+        from agent_system.enhanced_agent import create_enhanced_agent
 
         # Test enhanced agent creation
         agent = create_enhanced_agent()
@@ -147,8 +147,10 @@ def test_enhanced_agent():
 
         # Test enhanced status
         enhanced_status = agent.get_enhanced_status()
-        print(f"✅ Enhanced Status: Available")
-        print(f"✅ System Health: {enhanced_status['enhanced_features']['system_health']['overall_score']:.2f}")
+        print("✅ Enhanced Status: Available")
+        print(
+            f"✅ System Health: {enhanced_status['enhanced_features']['system_health']['overall_score']:.2f}"
+        )
 
         # Test recommendations
         recommendations = agent.get_system_recommendations()
@@ -194,7 +196,7 @@ def test_integration():
 
             # Health check
             health = agent.run_health_check()
-            print(f"✅ Health Check: Complete")
+            print("✅ Health Check: Complete")
 
             # Test export
             report_file = agent.export_comprehensive_report()
@@ -221,7 +223,7 @@ def main():
         ("Security Validation", test_security_validator),
         ("Health Dashboard", test_health_dashboard),
         ("Enhanced Agent", test_enhanced_agent),
-        ("System Integration", test_integration)
+        ("System Integration", test_integration),
     ]
 
     results = []

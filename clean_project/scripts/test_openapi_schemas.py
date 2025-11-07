@@ -2,12 +2,14 @@
 Test OpenAPI schema generation and documentation
 Verifies that comprehensive schemas are properly defined and documented
 """
-import json
+
 from fastapi.testclient import TestClient
+
 from agent_system.fastapi_app import app
 
 # Create test client
 client = TestClient(app)
+
 
 def test_openapi_schema_structure():
     """Test that OpenAPI schema has proper structure with comprehensive documentation."""
@@ -34,6 +36,7 @@ def test_openapi_schema_structure():
 
     print("✅ OpenAPI schema structure: PASSED")
 
+
 def test_comprehensive_schema_definitions():
     """Test that comprehensive schema definitions are present."""
     response = client.get("/openapi.json")
@@ -43,10 +46,7 @@ def test_comprehensive_schema_definitions():
     schemas = schema["components"]["schemas"]
 
     # Core authentication schemas
-    auth_schemas = [
-        "LoginRequest", "LoginResponse", "TokenRefreshRequest", "TokenData",
-        "UserInfo"
-    ]
+    auth_schemas = ["LoginRequest", "LoginResponse", "TokenRefreshRequest", "TokenData", "UserInfo"]
     for schema_name in auth_schemas:
         assert schema_name in schemas, f"Missing auth schema: {schema_name}"
 
@@ -87,6 +87,7 @@ def test_comprehensive_schema_definitions():
 
     print("✅ Comprehensive schema definitions: PASSED")
 
+
 def test_endpoint_documentation():
     """Test that endpoints have proper documentation."""
     response = client.get("/openapi.json")
@@ -111,6 +112,7 @@ def test_endpoint_documentation():
 
     print("✅ Endpoint documentation: PASSED")
 
+
 def test_enumeration_definitions():
     """Test that enums are properly defined."""
     response = client.get("/openapi.json")
@@ -123,6 +125,7 @@ def test_enumeration_definitions():
         assert enum_name in schemas, f"Missing enum: {enum_name}"
 
     print("✅ Enumeration definitions: PASSED")
+
 
 def test_swagger_ui_accessibility():
     """Test that documentation UIs are accessible."""
@@ -137,6 +140,7 @@ def test_swagger_ui_accessibility():
     assert "redoc" in redoc_response.text.lower()
 
     print("✅ Documentation UI accessibility: PASSED")
+
 
 def test_api_info_endpoint():
     """Test that API info endpoint provides comprehensive documentation."""
@@ -188,6 +192,7 @@ def test_api_info_endpoint():
 
     print("✅ API info endpoint: PASSED")
 
+
 def test_root_endpoint_info():
     """Test that root endpoint provides API information."""
     response = client.get("/")
@@ -210,6 +215,7 @@ def test_root_endpoint_info():
 
     print("✅ Root endpoint info: PASSED")
 
+
 def test_response_envelope_structure():
     """Test that response envelopes follow consistent structure."""
     # Test health endpoint (doesn't require auth)
@@ -224,6 +230,7 @@ def test_response_envelope_structure():
 
     print("✅ Response envelope structure: PASSED")
 
+
 def test_pagination_schema_presence():
     """Test that pagination schemas are defined."""
     response = client.get("/openapi.json")
@@ -235,6 +242,7 @@ def test_pagination_schema_presence():
     assert "PaginatedResponse" in schemas
 
     print("✅ Pagination schema presence: PASSED")
+
 
 def test_error_schema_presence():
     """Test that error schemas are properly defined."""
@@ -256,6 +264,7 @@ def test_error_schema_presence():
 
     print("✅ Error schema presence: PASSED")
 
+
 def test_bulk_operations_schema():
     """Test that bulk operations schemas are defined."""
     response = client.get("/openapi.json")
@@ -268,6 +277,7 @@ def test_bulk_operations_schema():
 
     print("✅ Bulk operations schema: PASSED")
 
+
 def test_webhook_schema_presence():
     """Test that webhook schemas are defined."""
     response = client.get("/openapi.json")
@@ -278,6 +288,7 @@ def test_webhook_schema_presence():
     assert "WebhookEvent" in schemas
 
     print("✅ Webhook schema presence: PASSED")
+
 
 if __name__ == "__main__":
     print("🚀 Starting OpenAPI Schema Tests\n")
@@ -302,5 +313,6 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"\n❌ Test failed: {e}")
         import traceback
+
         traceback.print_exc()
         raise

@@ -2,6 +2,7 @@
 Enhanced Autonomous Agent with improved architecture.
 Integrates all new optimization and security systems.
 """
+
 from __future__ import annotations
 
 import logging
@@ -9,11 +10,11 @@ import time
 from typing import Any, Dict, List, Optional
 
 from .agent import AutonomousAgent  # Import original agent
-from .unified_config import unified_config
+from .models import Goal
 from .performance_optimizer import performance_optimizer
-from .security_validator import security_audit, input_validator
+from .security_validator import input_validator, security_audit
 from .system_health_dashboard import system_health_monitor
-from .models import Goal, Action, ActionStatus, GoalStatus
+from .unified_config import unified_config
 
 logger = logging.getLogger(__name__)
 
@@ -45,11 +46,7 @@ class EnhancedAutonomousAgent(AutonomousAgent):
             log_format = self.config.logging.format
 
             # Configure root logger
-            logging.basicConfig(
-                level=log_level,
-                format=log_format,
-                handlers=[]
-            )
+            logging.basicConfig(level=log_level, format=log_format, handlers=[])
 
             # Add console handler if enabled
             if self.config.logging.enable_console:
@@ -62,10 +59,11 @@ class EnhancedAutonomousAgent(AutonomousAgent):
             if self.config.logging.enable_file:
                 try:
                     from logging.handlers import RotatingFileHandler
+
                     file_handler = RotatingFileHandler(
                         self.config.logging.file_path,
                         maxBytes=self.config.logging.max_file_size_mb * 1024 * 1024,
-                        backupCount=self.config.logging.backup_count
+                        backupCount=self.config.logging.backup_count,
                     )
                     file_handler.setLevel(log_level)
                     file_handler.setFormatter(logging.Formatter(log_format))
@@ -94,7 +92,9 @@ class EnhancedAutonomousAgent(AutonomousAgent):
 
             # Validate resource limits
             if self.config.security.max_memory_mb < 512:
-                logger.warning(f"Low memory limit configured: {self.config.security.max_memory_mb}MB")
+                logger.warning(
+                    f"Low memory limit configured: {self.config.security.max_memory_mb}MB"
+                )
 
         except Exception as e:
             logger.error(f"Configuration validation error: {e}")
@@ -117,14 +117,18 @@ class EnhancedAutonomousAgent(AutonomousAgent):
         except Exception as e:
             logger.error(f"Failed to start background monitoring: {e}")
 
-    def add_goal(self, description: str, priority: float = 0.5, constraints: Optional[Dict[str, Any]] = None) -> Goal:
+    def add_goal(
+        self, description: str, priority: float = 0.5, constraints: Optional[Dict[str, Any]] = None
+    ) -> Goal:
         """Add goal with security validation."""
         try:
             # Validate goal description
             if self.config.security.enable_input_validation:
                 validation_result = input_validator.validate_code(description)
                 if not validation_result.is_valid:
-                    logger.warning(f"Goal description validation failed: {validation_result.message}")
+                    logger.warning(
+                        f"Goal description validation failed: {validation_result.message}"
+                    )
                     # Don't reject, but log the issue
 
             # Call parent method
@@ -152,7 +156,9 @@ class EnhancedAutonomousAgent(AutonomousAgent):
 
             # Record successful operation
             duration = time.time() - start_time
-            self.performance_optimizer.response_optimizer.record_operation("run_cycle", duration, result)
+            self.performance_optimizer.response_optimizer.record_operation(
+                "run_cycle", duration, result
+            )
 
             # Perform periodic optimization
             if self.performance_optimizer.is_enabled:
@@ -163,7 +169,9 @@ class EnhancedAutonomousAgent(AutonomousAgent):
         except Exception as e:
             # Record failed operation
             duration = time.time() - start_time
-            self.performance_optimizer.response_optimizer.record_operation("run_cycle", duration, False)
+            self.performance_optimizer.response_optimizer.record_operation(
+                "run_cycle", duration, False
+            )
             logger.error(f"Error in run cycle: {e}")
             raise
 
@@ -184,34 +192,36 @@ class EnhancedAutonomousAgent(AutonomousAgent):
 
             # Get configuration summary
             config_summary = {
-                'configured_providers': self.config.get_configured_providers(),
-                'security_features': {
-                    'input_validation': self.config.security.enable_input_validation,
-                    'resource_limits': self.config.security.enable_resource_limits,
-                    'sandbox_mode': self.config.security.enable_sandbox
+                "configured_providers": self.config.get_configured_providers(),
+                "security_features": {
+                    "input_validation": self.config.security.enable_input_validation,
+                    "resource_limits": self.config.security.enable_resource_limits,
+                    "sandbox_mode": self.config.security.enable_sandbox,
                 },
-                'optimization_features': {
-                    'performance_monitoring': self.config.agent.enable_performance_monitoring,
-                    'memory_optimization': True,
-                    'security_auditing': True
-                }
+                "optimization_features": {
+                    "performance_monitoring": self.config.agent.enable_performance_monitoring,
+                    "memory_optimization": True,
+                    "security_auditing": True,
+                },
             }
 
             # Combine all status information
             enhanced_status = {
                 **original_status,
-                'enhanced_features': {
-                    'system_health': {
-                        'overall_score': system_health.overall_health_score,
-                        'status': self.health_monitor._get_health_status(system_health.overall_health_score),
-                        'active_issues': system_health.active_issues,
-                        'recommendations': system_health.recommendations
+                "enhanced_features": {
+                    "system_health": {
+                        "overall_score": system_health.overall_health_score,
+                        "status": self.health_monitor._get_health_status(
+                            system_health.overall_health_score
+                        ),
+                        "active_issues": system_health.active_issues,
+                        "recommendations": system_health.recommendations,
                     },
-                    'performance': performance_stats,
-                    'security': security_summary,
-                    'configuration': config_summary,
-                    'optimization_enabled': self.performance_optimizer.is_enabled
-                }
+                    "performance": performance_stats,
+                    "security": security_summary,
+                    "configuration": config_summary,
+                    "optimization_enabled": self.performance_optimizer.is_enabled,
+                },
             }
 
             return enhanced_status
@@ -235,7 +245,7 @@ class EnhancedAutonomousAgent(AutonomousAgent):
 
             # Get security-based recommendations
             security_report = self.security_audit.generate_security_report()
-            recommendations.extend(security_report.get('recommendations', []))
+            recommendations.extend(security_report.get("recommendations", []))
 
             # Configuration recommendations
             configured_providers = self.config.get_configured_providers()
@@ -258,7 +268,7 @@ class EnhancedAutonomousAgent(AutonomousAgent):
             return health_status.to_dict()
         except Exception as e:
             logger.error(f"Error running health check: {e}")
-            return {'error': str(e)}
+            return {"error": str(e)}
 
     def enable_optimization(self):
         """Enable performance optimization."""
@@ -273,24 +283,25 @@ class EnhancedAutonomousAgent(AutonomousAgent):
     def export_comprehensive_report(self) -> str:
         """Export comprehensive system report."""
         try:
-            timestamp = time.strftime('%Y%m%d_%H%M%S')
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
             report_file = f"agent_comprehensive_report_{timestamp}.json"
 
             report_data = {
-                'export_timestamp': time.time(),
-                'system_info': {
-                    'agent_type': 'Enhanced Autonomous Agent',
-                    'version': '2.0.0',
-                    'configuration': self.config._dataclass_to_dict(self.config.agent)
+                "export_timestamp": time.time(),
+                "system_info": {
+                    "agent_type": "Enhanced Autonomous Agent",
+                    "version": "2.0.0",
+                    "configuration": self.config._dataclass_to_dict(self.config.agent),
                 },
-                'current_status': self.get_enhanced_status(),
-                'health_check': self.run_health_check(),
-                'recommendations': self.get_system_recommendations(),
-                'optimization_suggestions': self.performance_optimizer.create_optimization_suggestions()
+                "current_status": self.get_enhanced_status(),
+                "health_check": self.run_health_check(),
+                "recommendations": self.get_system_recommendations(),
+                "optimization_suggestions": self.performance_optimizer.create_optimization_suggestions(),
             }
 
             import json
-            with open(report_file, 'w') as f:
+
+            with open(report_file, "w") as f:
                 json.dump(report_data, f, indent=2, default=str)
 
             logger.info(f"Comprehensive report exported to {report_file}")

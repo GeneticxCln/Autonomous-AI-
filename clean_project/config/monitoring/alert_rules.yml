@@ -1,0 +1,72 @@
+groups:
+  - name: agent_system_alerts
+    rules:
+      # API Service Down
+      - alert: APIServiceDown
+        expr: up{job="agent-api"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Agent API service is down"
+          description: "Agent API service has been down for more than 1 minute"
+
+      # Redis Service Down
+      - alert: RedisServiceDown
+        expr: up{job="redis"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Redis service is down"
+          description: "Redis service has been down for more than 1 minute"
+
+      # High API Response Time
+      - alert: HighAPIResponseTime
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job="agent-api"}[5m])) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High API response time"
+          description: "95th percentile API response time is above 1 second for 5 minutes"
+
+      # High Error Rate
+      - alert: HighAPIErrorRate
+        expr: rate(http_requests_total{job="agent-api",status=~"5.."}[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High API error rate"
+          description: "API error rate is above 10% for 5 minutes"
+
+      # Redis Memory Usage High
+      - alert: RedisMemoryUsageHigh
+        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Redis memory usage is high"
+          description: "Redis memory usage is above 90% for 5 minutes"
+
+      # Task Queue Backlog High
+      - alert: TaskQueueBacklogHigh
+        expr: rq_jobs_total{status="queued"} > 100
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Task queue backlog is high"
+          description: "Task queue has more than 100 jobs waiting for processing"
+
+      # Cache Hit Rate Low
+      - alert: LowCacheHitRate
+        expr: rate(redis_keyspace_hits_total[5m]) / (rate(redis_keyspace_hits_total[5m]) + rate(redis_keyspace_misses_total[5m])) < 0.8
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Cache hit rate is low"
+          description: "Cache hit rate is below 80% for 10 minutes"

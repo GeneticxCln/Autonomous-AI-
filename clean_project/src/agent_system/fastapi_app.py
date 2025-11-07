@@ -2,35 +2,37 @@
 FastAPI Enterprise Application
 Production-ready API server with authentication and security
 """
+
 from __future__ import annotations
 
 import logging
 import os
 from contextlib import asynccontextmanager
-from typing import Dict, Any
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from fastapi.responses import JSONResponse
-from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
+from fastapi.responses import JSONResponse
 
-from .api_security import (
-    RateLimitMiddleware, SecurityMiddleware, api_security_config,
-    create_error_response, log_api_access
-)
 from .api_endpoints import api_router
+from .api_security import (
+    RateLimitMiddleware,
+    SecurityMiddleware,
+    api_security_config,
+    create_error_response,
+    log_api_access,
+)
 from .auth_models import db_manager as auth_db_manager
 from .auth_service import auth_service
 from .database_models import db_manager
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -63,6 +65,7 @@ async def lifespan(app: FastAPI):
         logger.info("🔄 Shutting down Agent Enterprise API Server")
         db_manager.close()
         logger.info("✅ Application shutdown completed")
+
 
 def create_app() -> FastAPI:
     """Create and configure FastAPI application."""
@@ -104,7 +107,7 @@ def create_app() -> FastAPI:
         docs_url="/docs",
         redoc_url="/redoc",
         openapi_url="/openapi.json",
-        lifespan=lifespan
+        lifespan=lifespan,
     )
 
     # Add security middleware
@@ -129,8 +132,7 @@ def create_app() -> FastAPI:
     # Add trusted host middleware for production
     if os.getenv("ENVIRONMENT") == "production":
         app.add_middleware(
-            TrustedHostMiddleware,
-            allowed_hosts=["localhost", "127.0.0.1", "*.yourdomain.com"]
+            TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1", "*.yourdomain.com"]
         )
         logger.info("✅ Trusted host middleware enabled")
 
@@ -144,9 +146,7 @@ def create_app() -> FastAPI:
         """Handle HTTP exceptions with consistent error format."""
         log_api_access(request, status_code=exc.status_code)
         return create_error_response(
-            message=exc.detail,
-            error_type="HTTP_EXCEPTION",
-            status_code=exc.status_code
+            message=exc.detail, error_type="HTTP_EXCEPTION", status_code=exc.status_code
         )
 
     @app.exception_handler(Exception)
@@ -155,9 +155,7 @@ def create_app() -> FastAPI:
         logger.error(f"Unexpected error: {exc}", exc_info=True)
         log_api_access(request, status_code=500)
         return create_error_response(
-            message="Internal server error",
-            error_type="INTERNAL_ERROR",
-            status_code=500
+            message="Internal server error", error_type="INTERNAL_ERROR", status_code=500
         )
 
     # Custom OpenAPI schema
@@ -179,14 +177,14 @@ def create_app() -> FastAPI:
                 "type": "http",
                 "scheme": "bearer",
                 "bearerFormat": "JWT",
-                "description": "JWT access token"
+                "description": "JWT access token",
             },
             "ApiKeyAuth": {
                 "type": "apiKey",
                 "in": "header",
                 "name": "X-API-Key",
-                "description": "API token for programmatic access"
-            }
+                "description": "API token for programmatic access",
+            },
         }
 
         # Add global security requirement
@@ -207,7 +205,7 @@ def create_app() -> FastAPI:
             "status": "running",
             "docs": "/docs",
             "redoc": "/redoc",
-            "health": "/api/v1/system/health"
+            "health": "/api/v1/system/health",
         }
 
     # Health check endpoint (no auth required)
@@ -218,12 +216,13 @@ def create_app() -> FastAPI:
             # Use auth service's database manager for consistency
             with auth_service.db.get_session() as session:
                 from sqlalchemy import text
+
                 session.execute(text("SELECT 1"))
             return {"status": "healthy", "database": "connected"}
         except Exception as e:
             return JSONResponse(
                 status_code=503,
-                content={"status": "unhealthy", "database": "disconnected", "error": str(e)}
+                content={"status": "unhealthy", "database": "disconnected", "error": str(e)},
             )
 
     # API information endpoint
@@ -238,44 +237,40 @@ def create_app() -> FastAPI:
                     "login": "POST /api/v1/auth/login",
                     "logout": "POST /api/v1/auth/logout",
                     "refresh": "POST /api/v1/auth/refresh",
-                    "me": "GET /api/v1/auth/me"
+                    "me": "GET /api/v1/auth/me",
                 },
-                "users": {
-                    "create": "POST /api/v1/users",
-                    "list": "GET /api/v1/users"
-                },
+                "users": {"create": "POST /api/v1/users", "list": "GET /api/v1/users"},
                 "agents": {
                     "create": "POST /api/v1/agents",
                     "list": "GET /api/v1/agents",
                     "get": "GET /api/v1/agents/{id}",
-                    "execute": "POST /api/v1/agents/{id}/execute"
+                    "execute": "POST /api/v1/agents/{id}/execute",
                 },
-                "goals": {
-                    "create": "POST /api/v1/goals",
-                    "list": "GET /api/v1/goals"
-                },
+                "goals": {"create": "POST /api/v1/goals", "list": "GET /api/v1/goals"},
                 "api_tokens": {
                     "create": "POST /api/v1/api-tokens",
-                    "list": "GET /api/v1/api-tokens"
+                    "list": "GET /api/v1/api-tokens",
                 },
                 "system": {
                     "health": "GET /api/v1/system/health",
-                    "info": "GET /api/v1/system/info"
-                }
+                    "info": "GET /api/v1/system/info",
+                },
             },
             "authentication": "JWT Bearer tokens or API keys",
-            "rate_limit": "100 requests per minute per IP"
+            "rate_limit": "100 requests per minute per IP",
         }
 
     return app
+
 
 # Create global app instance
 app = create_app()
 
 # Application entry points
 if __name__ == "__main__":
-    import uvicorn
     import argparse
+
+    import uvicorn
 
     parser = argparse.ArgumentParser(description="Agent Enterprise API Server")
     parser.add_argument("--host", default="127.0.0.1", help="Host to bind to")
@@ -292,5 +287,5 @@ if __name__ == "__main__":
         port=args.port,
         reload=args.reload,
         workers=args.workers if not args.reload else 1,
-        log_level="info"
+        log_level="info",
     )

@@ -2,23 +2,38 @@
 Authentication & Authorization Service
 Enterprise-grade JWT-based authentication with RBAC
 """
+
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, UTC
-from typing import Optional, List, Dict, Any
-from jose import jwt, JWTError
+from datetime import UTC, datetime, timedelta
+from typing import Dict, List
+
+from jose import JWTError, jwt
 from passlib.context import CryptContext
-from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_
+from sqlalchemy.orm import Session
 
 from .auth_models import (
+    DEFAULT_PERMISSIONS,
+    DEFAULT_ROLE_PERMISSIONS,
+    DEFAULT_ROLES,
+    AccountLockedError,
+    APITokenModel,
+    AuthenticationError,
+    AuthSecurityEventModel,
+    InsufficientPermissionsError,
+    InvalidCredentialsError,
+    PermissionModel,
+    RoleModel,
+    SecurityContext,
+    TokenExpiredError,
+    UserModel,
+    UserNotFoundError,
+    UserSessionModel,
     db_manager,
-    UserModel, RoleModel, PermissionModel, UserSessionModel, APITokenModel,
-    AuthSecurityEventModel, PasswordResetModel, DEFAULT_ROLES, DEFAULT_PERMISSIONS,
-    DEFAULT_ROLE_PERMISSIONS, SecurityContext, generate_secure_token, hash_token,
-    AuthenticationError, AuthorizationError, UserNotFoundError, InvalidCredentialsError,
-    AccountLockedError, TokenExpiredError, InsufficientPermissionsError,
+    generate_secure_token,
+    hash_token,
 )
 
 logger = logging.getLogger(__name__)
@@ -26,6 +41,7 @@ logger = logging.getLogger(__name__)
 # JWT Configuration from production_config (fallbacks provided)
 try:
     from .production_config import get_config
+
     _cfg = get_config()
     JWT_SECRET_KEY = _cfg.jwt_secret_key
     JWT_ALGORITHM = _cfg.jwt_algorithm
@@ -95,7 +111,7 @@ class AuthService:
             permission = PermissionModel(**perm_data)
             session.add(permission)
             session.flush()
-            permissions_map[perm_data['name']] = permission
+            permissions_map[perm_data["name"]] = permission
 
         # Create roles
         roles_map = {}
@@ -103,7 +119,7 @@ class AuthService:
             role = RoleModel(**role_data)
             session.add(role)
             session.flush()
-            roles_map[role_data['name']] = role
+            roles_map[role_data["name"]] = role
 
         # Assign permissions to roles
         for role_name, permission_names in DEFAULT_ROLE_PERMISSIONS.items():
@@ -128,10 +144,10 @@ class AuthService:
                 full_name="System Administrator",
                 hashed_password=hashed_password,
                 is_active=True,
-                status='active'
+                status="active",
             )
             # Attach admin role
-            admin_role = session.query(RoleModel).filter(RoleModel.name == 'admin').first()
+            admin_role = session.query(RoleModel).filter(RoleModel.name == "admin").first()
             if admin_role:
                 admin_user.roles.append(admin_role)
 
@@ -141,28 +157,46 @@ class AuthService:
         except Exception as e:
             logger.error(f"Failed to ensure default admin user: {e}")
 
-    def authenticate_user(self, username: str, password: str, ip_address: str = None, user_agent: str = None) -> SecurityContext:
+    def authenticate_user(
+        self, username: str, password: str, ip_address: str = None, user_agent: str = None
+    ) -> SecurityContext:
         """Authenticate user and return security context."""
         self._ensure_initialized()
         try:
             with self.db.get_session() as session:
                 # Find user by username or email
-                user = session.query(UserModel).filter(
-                    or_(UserModel.username == username, UserModel.email == username)
-                ).first()
+                user = (
+                    session.query(UserModel)
+                    .filter(or_(UserModel.username == username, UserModel.email == username))
+                    .first()
+                )
 
                 if not user:
-                    self._log_security_event(session, None, "failed_login", "warning",
-                                           f"Login attempt with unknown username: {username}",
-                                           ip_address, user_agent)
+                    self._log_security_event(
+                        session,
+                        None,
+                        "failed_login",
+                        "warning",
+                        f"Login attempt with unknown username: {username}",
+                        ip_address,
+                        user_agent,
+                    )
                     raise UserNotFoundError("Invalid username or email")
 
                 # Check if account is locked
                 if self._is_account_locked(user):
-                    self._log_security_event(session, user.id, "account_locked", "warning",
-                                           f"Login attempt on locked account: {username}",
-                                           ip_address, user_agent)
-                    raise AccountLockedError("Account is temporarily locked due to multiple failed attempts")
+                    self._log_security_event(
+                        session,
+                        user.id,
+                        "account_locked",
+                        "warning",
+                        f"Login attempt on locked account: {username}",
+                        ip_address,
+                        user_agent,
+                    )
+                    raise AccountLockedError(
+                        "Account is temporarily locked due to multiple failed attempts"
+                    )
 
                 # Verify password
                 if not user.check_password(password):
@@ -170,10 +204,16 @@ class AuthService:
                     raise InvalidCredentialsError("Invalid password")
 
                 # Check if account is active
-                if not user.is_active or user.status != 'active':
-                    self._log_security_event(session, user.id, "inactive_login", "warning",
-                                           f"Login attempt on inactive account: {username}",
-                                           ip_address, user_agent)
+                if not user.is_active or user.status != "active":
+                    self._log_security_event(
+                        session,
+                        user.id,
+                        "inactive_login",
+                        "warning",
+                        f"Login attempt on inactive account: {username}",
+                        ip_address,
+                        user_agent,
+                    )
                     raise AccountLockedError("Account is not active")
 
                 # Reset failed login attempts on successful login
@@ -182,9 +222,15 @@ class AuthService:
                 session.commit()
 
                 # Log successful login
-                self._log_security_event(session, user.id, "login", "info",
-                                       f"Successful login: {username}",
-                                       ip_address, user_agent)
+                self._log_security_event(
+                    session,
+                    user.id,
+                    "login",
+                    "info",
+                    f"Successful login: {username}",
+                    ip_address,
+                    user_agent,
+                )
 
                 # Get user permissions
                 permissions = self._get_user_permissions(user)
@@ -209,22 +255,36 @@ class AuthService:
                     return True
         return False
 
-    def _handle_failed_login(self, session: Session, user: UserModel, ip_address: str, user_agent: str):
+    def _handle_failed_login(
+        self, session: Session, user: UserModel, ip_address: str, user_agent: str
+    ):
         """Handle failed login attempt."""
         user.failed_login_attempts += 1
         user.last_login_attempt = datetime.now(UTC)
         session.commit()
 
         # Log failed login
-        self._log_security_event(session, user.id, "failed_login", "warning",
-                               f"Failed login attempt (attempt {user.failed_login_attempts}): {user.username}",
-                               ip_address, user_agent)
+        self._log_security_event(
+            session,
+            user.id,
+            "failed_login",
+            "warning",
+            f"Failed login attempt (attempt {user.failed_login_attempts}): {user.username}",
+            ip_address,
+            user_agent,
+        )
 
         # Log security event for lockout
         if self._is_account_locked(user):
-            self._log_security_event(session, user.id, "account_locked", "warning",
-                                   f"Account locked due to failed attempts: {user.username}",
-                                   ip_address, user_agent)
+            self._log_security_event(
+                session,
+                user.id,
+                "account_locked",
+                "warning",
+                f"Account locked due to failed attempts: {user.username}",
+                ip_address,
+                user_agent,
+            )
 
     def _get_user_permissions(self, user: UserModel) -> List[str]:
         """Get all permissions for a user."""
@@ -234,7 +294,9 @@ class AuthService:
                 permissions.add(permission.name)
         return list(permissions)
 
-    def create_access_token(self, user_id: str, permissions: List[str], session_id: str = None) -> str:
+    def create_access_token(
+        self, user_id: str, permissions: List[str], session_id: str = None
+    ) -> str:
         """Create JWT access token."""
         expire = datetime.now(UTC) + timedelta(minutes=self.JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
         exp_ms = int(expire.timestamp() * 1000)
@@ -253,12 +315,7 @@ class AuthService:
     def create_refresh_token(self, user_id: str, session_id: str = None) -> str:
         """Create JWT refresh token."""
         expire = datetime.now(UTC) + timedelta(days=self.JWT_REFRESH_TOKEN_EXPIRE_DAYS)
-        to_encode = {
-            "sub": user_id,
-            "exp": expire,
-            "iat": datetime.now(UTC),
-            "type": "refresh"
-        }
+        to_encode = {"sub": user_id, "exp": expire, "iat": datetime.now(UTC), "type": "refresh"}
         if session_id:
             to_encode["session_id"] = session_id
         return jwt.encode(to_encode, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
@@ -310,7 +367,9 @@ class AuthService:
             logger.error(f"Token verification error: {e}")
             raise AuthenticationError(str(e))
 
-    def create_user_session(self, user_id: str, ip_address: str = None, user_agent: str = None) -> Dict[str, str]:
+    def create_user_session(
+        self, user_id: str, ip_address: str = None, user_agent: str = None
+    ) -> Dict[str, str]:
         """Create user session and return tokens."""
         with self.db.get_session() as session:
             user = session.query(UserModel).filter(UserModel.id == user_id).first()
@@ -328,7 +387,7 @@ class AuthService:
                 refresh_token=hash_token(refresh_token),
                 ip_address=ip_address,
                 user_agent=user_agent,
-                expires_at=expires_at
+                expires_at=expires_at,
             )
 
             session.add(session_record)
@@ -343,7 +402,7 @@ class AuthService:
                 "access_token": access_token,
                 "refresh_token": refresh_token_signed,
                 "token_type": "bearer",
-                "expires_in": JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60
+                "expires_in": JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60,
             }
 
     def refresh_access_token(self, refresh_token: str) -> Dict[str, str]:
@@ -358,14 +417,18 @@ class AuthService:
 
             # Verify session exists and is valid
             with self.db.get_session() as session:
-                session_record = session.query(UserSessionModel).filter(
-                    and_(
-                        UserSessionModel.id == session_id,
-                        UserSessionModel.user_id == user_id,
-                        UserSessionModel.is_active == True,
-                        UserSessionModel.expires_at > datetime.now(UTC)
+                session_record = (
+                    session.query(UserSessionModel)
+                    .filter(
+                        and_(
+                            UserSessionModel.id == session_id,
+                            UserSessionModel.user_id == user_id,
+                            UserSessionModel.is_active.is_(True),
+                            UserSessionModel.expires_at > datetime.now(UTC),
+                        )
                     )
-                ).first()
+                    .first()
+                )
 
                 if not session_record:
                     raise AuthenticationError("Invalid or expired session")
@@ -382,7 +445,7 @@ class AuthService:
                 return {
                     "access_token": access_token,
                     "token_type": "bearer",
-                    "expires_in": JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60
+                    "expires_in": JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60,
                 }
 
         except JWTError as e:
@@ -394,12 +457,13 @@ class AuthService:
         with self.db.get_session() as session:
             # Invalidate session
             if session_id:
-                session_record = session.query(UserSessionModel).filter(
-                    and_(
-                        UserSessionModel.id == session_id,
-                        UserSessionModel.user_id == user_id
+                session_record = (
+                    session.query(UserSessionModel)
+                    .filter(
+                        and_(UserSessionModel.id == session_id, UserSessionModel.user_id == user_id)
                     )
-                ).first()
+                    .first()
+                )
                 if session_record:
                     session_record.is_active = False
                     session_record.revoked_at = datetime.now(UTC)
@@ -408,13 +472,17 @@ class AuthService:
             # Log logout event
             self._log_security_event(session, user_id, "logout", "info", "User logged out")
 
-    def create_user(self, username: str, email: str, password: str, full_name: str, role_names: List[str] = None) -> UserModel:
+    def create_user(
+        self, username: str, email: str, password: str, full_name: str, role_names: List[str] = None
+    ) -> UserModel:
         """Create new user account."""
         with self.db.get_session() as session:
             # Check if user already exists
-            existing_user = session.query(UserModel).filter(
-                or_(UserModel.username == username, UserModel.email == email)
-            ).first()
+            existing_user = (
+                session.query(UserModel)
+                .filter(or_(UserModel.username == username, UserModel.email == email))
+                .first()
+            )
             if existing_user:
                 raise ValueError("User with this username or email already exists")
 
@@ -428,7 +496,7 @@ class AuthService:
                 full_name=full_name,
                 hashed_password=hashed_password,
                 is_active=True,
-                status='active'
+                status="active",
             )
 
             # Assign roles
@@ -440,12 +508,15 @@ class AuthService:
             session.commit()
 
             # Log user creation
-            self._log_security_event(session, user.id, "user_created", "info",
-                                   f"User created: {username}")
+            self._log_security_event(
+                session, user.id, "user_created", "info", f"User created: {username}"
+            )
 
             return user
 
-    def create_api_token(self, user_id: str, name: str, scopes: List[str], expires_days: int = 30) -> str:
+    def create_api_token(
+        self, user_id: str, name: str, scopes: List[str], expires_days: int = 30
+    ) -> str:
         """Create API token for user."""
         with self.db.get_session() as session:
             user = session.query(UserModel).filter(UserModel.id == user_id).first()
@@ -465,7 +536,7 @@ class AuthService:
                 token_hash=token_hash,
                 token_prefix=token_prefix,
                 scopes=scopes,
-                expires_at=expires_at
+                expires_at=expires_at,
             )
 
             session.add(api_token)
@@ -478,16 +549,20 @@ class AuthService:
         token_hash = hash_token(token)
 
         with self.db.get_session() as session:
-            api_token = session.query(APITokenModel).filter(
-                and_(
-                    APITokenModel.token_hash == token_hash,
-                    APITokenModel.is_active == True,
-                    or_(
-                        APITokenModel.expires_at == None,
-                        APITokenModel.expires_at > datetime.now(UTC)
+            api_token = (
+                session.query(APITokenModel)
+                .filter(
+                    and_(
+                        APITokenModel.token_hash == token_hash,
+                        APITokenModel.is_active.is_(True),
+                        or_(
+                            APITokenModel.expires_at.is_(None),
+                            APITokenModel.expires_at > datetime.now(UTC),
+                        ),
                     )
                 )
-            ).first()
+                .first()
+            )
 
             if not api_token:
                 raise AuthenticationError("Invalid or expired API token")
@@ -511,9 +586,9 @@ class AuthService:
         """Build full permission names from API scopes."""
         # Simple scope to permission mapping
         scope_mapping = {
-            'read': ['agent.read', 'goals.read', 'actions.read', 'system.read', 'users.read'],
-            'write': ['agent.write', 'goals.write', 'actions.write', 'system.write', 'users.write'],
-            'admin': ['agent.admin', 'system.admin', 'users.admin']
+            "read": ["agent.read", "goals.read", "actions.read", "system.read", "users.read"],
+            "write": ["agent.write", "goals.write", "actions.write", "system.write", "users.write"],
+            "admin": ["agent.admin", "system.admin", "users.admin"],
         }
 
         permissions = set()
@@ -527,8 +602,16 @@ class AuthService:
         permissions.update(scopes)
         return list(permissions)
 
-    def _log_security_event(self, session: Session, user_id: str, event_type: str, severity: str,
-                          description: str, ip_address: str = None, user_agent: str = None):
+    def _log_security_event(
+        self,
+        session: Session,
+        user_id: str,
+        event_type: str,
+        severity: str,
+        description: str,
+        ip_address: str = None,
+        user_agent: str = None,
+    ):
         """Log security event."""
         event = AuthSecurityEventModel(
             user_id=user_id,
@@ -536,7 +619,7 @@ class AuthService:
             severity=severity,
             description=description,
             ip_address=ip_address,
-            user_agent=user_agent
+            user_agent=user_agent,
         )
         session.add(event)
         session.commit()

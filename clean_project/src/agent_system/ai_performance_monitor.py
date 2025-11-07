@@ -1,30 +1,34 @@
 """
 AI Performance Monitoring system for real-time tracking and optimization.
 """
+
 from __future__ import annotations
 
+import json
 import logging
 import time
-import json
-from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Callable
-from dataclasses import dataclass, asdict, field
 from collections import defaultdict, deque
-from pathlib import Path
+from dataclasses import asdict, dataclass, field
+from datetime import datetime, timedelta
 from enum import Enum
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional
 
 # Try to import numpy for performance calculations
 NUMPY_AVAILABLE = False
 try:
     import numpy as np
+
     NUMPY_AVAILABLE = True
 except ImportError:
     NUMPY_AVAILABLE = False
+
     # Create a minimal numpy-like fallback for basic operations
     class np:
         @staticmethod
         def mean(arr):
             return sum(arr) / len(arr) if arr else 0
+
         @staticmethod
         def std(arr):
             if not arr:
@@ -32,20 +36,23 @@ except ImportError:
             mean_val = sum(arr) / len(arr)
             return (sum((x - mean_val) ** 2 for x in arr) / len(arr)) ** 0.5
 
+
 logger = logging.getLogger(__name__)
 
 
 class PerformanceLevel(Enum):
     """Performance levels for metrics."""
-    EXCELLENT = "excellent"      # 90-100%
-    GOOD = "good"               # 75-89%
-    AVERAGE = "average"         # 60-74%
-    POOR = "poor"               # 40-59%
-    CRITICAL = "critical"       # 0-39%
+
+    EXCELLENT = "excellent"  # 90-100%
+    GOOD = "good"  # 75-89%
+    AVERAGE = "average"  # 60-74%
+    POOR = "poor"  # 40-59%
+    CRITICAL = "critical"  # 0-39%
 
 
 class AlertSeverity(Enum):
     """Alert severity levels."""
+
     INFO = "info"
     WARNING = "warning"
     ERROR = "error"
@@ -55,25 +62,24 @@ class AlertSeverity(Enum):
 @dataclass
 class MetricPoint:
     """Represents a single metric data point."""
+
     timestamp: datetime
     value: float
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
-            **asdict(self),
-            'timestamp': self.timestamp.isoformat()
-        }
+        return {**asdict(self), "timestamp": self.timestamp.isoformat()}
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> MetricPoint:
-        data['timestamp'] = datetime.fromisoformat(data['timestamp'])
+        data["timestamp"] = datetime.fromisoformat(data["timestamp"])
         return cls(**data)
 
 
 @dataclass
 class PerformanceAlert:
     """Represents a performance alert."""
+
     alert_id: str
     timestamp: datetime
     severity: AlertSeverity
@@ -86,14 +92,15 @@ class PerformanceAlert:
     def to_dict(self) -> Dict[str, Any]:
         return {
             **asdict(self),
-            'timestamp': self.timestamp.isoformat(),
-            'severity': self.severity.value
+            "timestamp": self.timestamp.isoformat(),
+            "severity": self.severity.value,
         }
 
 
 @dataclass
 class MetricThresholds:
     """Defines thresholds for a performance metric."""
+
     warning_low: float
     warning_high: float
     error_low: float
@@ -152,41 +159,62 @@ class AIPerformanceMonitor:
     def _setup_default_thresholds(self) -> Dict[str, MetricThresholds]:
         """Setup default performance thresholds."""
         return {
-            'decision_accuracy': MetricThresholds(
-                warning_low=0.6, warning_high=1.0,
-                error_low=0.4, error_high=1.0,
-                unit="ratio", description="Accuracy of AI decisions"
+            "decision_accuracy": MetricThresholds(
+                warning_low=0.6,
+                warning_high=1.0,
+                error_low=0.4,
+                error_high=1.0,
+                unit="ratio",
+                description="Accuracy of AI decisions",
             ),
-            'decision_time_ms': MetricThresholds(
-                warning_low=0, warning_high=2000,
-                error_low=0, error_high=5000,
-                unit="ms", description="Time to make decisions"
+            "decision_time_ms": MetricThresholds(
+                warning_low=0,
+                warning_high=2000,
+                error_low=0,
+                error_high=5000,
+                unit="ms",
+                description="Time to make decisions",
             ),
-            'goal_completion_rate': MetricThresholds(
-                warning_low=0.5, warning_high=1.0,
-                error_low=0.3, error_high=1.0,
-                unit="ratio", description="Rate of goal completion"
+            "goal_completion_rate": MetricThresholds(
+                warning_low=0.5,
+                warning_high=1.0,
+                error_low=0.3,
+                error_high=1.0,
+                unit="ratio",
+                description="Rate of goal completion",
             ),
-            'learning_velocity': MetricThresholds(
-                warning_low=0.1, warning_high=1.0,
-                error_low=0.0, error_high=1.0,
-                unit="rate", description="Speed of learning new patterns"
+            "learning_velocity": MetricThresholds(
+                warning_low=0.1,
+                warning_high=1.0,
+                error_low=0.0,
+                error_high=1.0,
+                unit="rate",
+                description="Speed of learning new patterns",
             ),
-            'semantic_similarity_quality': MetricThresholds(
-                warning_low=0.5, warning_high=1.0,
-                error_low=0.3, error_high=1.0,
-                unit="score", description="Quality of semantic similarity matches"
+            "semantic_similarity_quality": MetricThresholds(
+                warning_low=0.5,
+                warning_high=1.0,
+                error_low=0.3,
+                error_high=1.0,
+                unit="score",
+                description="Quality of semantic similarity matches",
             ),
-            'cross_session_knowledge_retention': MetricThresholds(
-                warning_low=0.4, warning_high=1.0,
-                error_low=0.2, error_high=1.0,
-                unit="ratio", description="Knowledge retention between sessions"
+            "cross_session_knowledge_retention": MetricThresholds(
+                warning_low=0.4,
+                warning_high=1.0,
+                error_low=0.2,
+                error_high=1.0,
+                unit="ratio",
+                description="Knowledge retention between sessions",
             ),
-            'planning_confidence': MetricThresholds(
-                warning_low=0.5, warning_high=1.0,
-                error_low=0.3, error_high=1.0,
-                unit="score", description="Confidence in planning decisions"
-            )
+            "planning_confidence": MetricThresholds(
+                warning_low=0.5,
+                warning_high=1.0,
+                error_low=0.3,
+                error_high=1.0,
+                unit="score",
+                description="Confidence in planning decisions",
+            ),
         }
 
     def _start_monitoring(self):
@@ -204,22 +232,22 @@ class AIPerformanceMonitor:
         execution_time_ms: float,
         confidence: float,
         success: bool,
-        metadata: Dict[str, Any] = None
+        metadata: Dict[str, Any] = None,
     ):
         """Record metrics for an AI decision."""
-        timestamp = datetime.now()
+        # timestamp intentionally omitted; each metric point stores its own timestamp
 
         # Record decision time
-        self._record_metric('decision_time_ms', execution_time_ms, {
-            'decision_type': decision_type,
-            'confidence': confidence
-        })
+        self._record_metric(
+            "decision_time_ms",
+            execution_time_ms,
+            {"decision_type": decision_type, "confidence": confidence},
+        )
 
         # Record confidence level
-        self._record_metric('decision_confidence', confidence, {
-            'decision_type': decision_type,
-            'success': success
-        })
+        self._record_metric(
+            "decision_confidence", confidence, {"decision_type": decision_type, "success": success}
+        )
 
         # Update decision time history
         self.decision_times.append(execution_time_ms)
@@ -227,79 +255,100 @@ class AIPerformanceMonitor:
         # Calculate and record accuracy
         accuracy = confidence if success else (1.0 - confidence)
         self.accuracy_scores.append(accuracy)
-        self._record_metric('decision_accuracy', accuracy, {
-            'decision_type': decision_type,
-            'execution_time': execution_time_ms
-        })
+        self._record_metric(
+            "decision_accuracy",
+            accuracy,
+            {"decision_type": decision_type, "execution_time": execution_time_ms},
+        )
 
     def record_goal_metrics(self, goal_completed: bool, total_goals: int, completed_goals: int):
         """Record goal completion metrics."""
         completion_rate = completed_goals / total_goals if total_goals > 0 else 0.0
         self.goal_completion_rates.append(completion_rate)
 
-        self._record_metric('goal_completion_rate', completion_rate, {
-            'completed': completed_goals,
-            'total': total_goals,
-            'last_goal_success': goal_completed
-        })
+        self._record_metric(
+            "goal_completion_rate",
+            completion_rate,
+            {
+                "completed": completed_goals,
+                "total": total_goals,
+                "last_goal_success": goal_completed,
+            },
+        )
 
         # Trigger alerts if necessary
-        self._check_thresholds('goal_completion_rate', completion_rate)
+        self._check_thresholds("goal_completion_rate", completion_rate)
 
-    def record_learning_metrics(self, patterns_learned: int, knowledge_base_size: int, confidence_scores: List[float]):
+    def record_learning_metrics(
+        self, patterns_learned: int, knowledge_base_size: int, confidence_scores: List[float]
+    ):
         """Record learning system performance metrics."""
-        timestamp = datetime.now()
+        # timestamp intentionally omitted; each metric point stores its own timestamp
 
         # Learning velocity (patterns per time period)
         self.learning_progress.append(patterns_learned)
         learning_velocity = patterns_learned  # Simplified for now
 
-        self._record_metric('learning_velocity', learning_velocity, {
-            'patterns_learned': patterns_learned,
-            'knowledge_base_size': knowledge_base_size
-        })
+        self._record_metric(
+            "learning_velocity",
+            learning_velocity,
+            {"patterns_learned": patterns_learned, "knowledge_base_size": knowledge_base_size},
+        )
 
         # Average confidence of learned patterns
         if confidence_scores:
             avg_confidence = sum(confidence_scores) / len(confidence_scores)
-            self._record_metric('learned_pattern_confidence', avg_confidence, {
-                'pattern_count': len(confidence_scores),
-                'min_confidence': min(confidence_scores),
-                'max_confidence': max(confidence_scores)
-            })
+            self._record_metric(
+                "learned_pattern_confidence",
+                avg_confidence,
+                {
+                    "pattern_count": len(confidence_scores),
+                    "min_confidence": min(confidence_scores),
+                    "max_confidence": max(confidence_scores),
+                },
+            )
 
-    def record_semantic_similarity_metrics(self, similarity_scores: List[float], match_quality: float):
+    def record_semantic_similarity_metrics(
+        self, similarity_scores: List[float], match_quality: float
+    ):
         """Record semantic similarity performance metrics."""
         if similarity_scores:
             avg_similarity = sum(similarity_scores) / len(similarity_scores)
-            self._record_metric('semantic_similarity_quality', avg_similarity, {
-                'match_quality': match_quality,
-                'score_count': len(similarity_scores),
-                'min_score': min(similarity_scores),
-                'max_score': max(similarity_scores)
-            })
+            self._record_metric(
+                "semantic_similarity_quality",
+                avg_similarity,
+                {
+                    "match_quality": match_quality,
+                    "score_count": len(similarity_scores),
+                    "min_score": min(similarity_scores),
+                    "max_score": max(similarity_scores),
+                },
+            )
 
-    def record_planning_metrics(self, plan_confidence: float, action_count: int, execution_success_rate: float):
+    def record_planning_metrics(
+        self, plan_confidence: float, action_count: int, execution_success_rate: float
+    ):
         """Record planning system performance metrics."""
-        self._record_metric('planning_confidence', plan_confidence, {
-            'action_count': action_count,
-            'execution_success_rate': execution_success_rate
-        })
+        self._record_metric(
+            "planning_confidence",
+            plan_confidence,
+            {"action_count": action_count, "execution_success_rate": execution_success_rate},
+        )
 
-    def record_cross_session_metrics(self, knowledge_retention_rate: float, pattern_reuse_success: float):
+    def record_cross_session_metrics(
+        self, knowledge_retention_rate: float, pattern_reuse_success: float
+    ):
         """Record cross-session learning performance metrics."""
-        self._record_metric('cross_session_knowledge_retention', knowledge_retention_rate, {
-            'pattern_reuse_success': pattern_reuse_success
-        })
+        self._record_metric(
+            "cross_session_knowledge_retention",
+            knowledge_retention_rate,
+            {"pattern_reuse_success": pattern_reuse_success},
+        )
 
     def _record_metric(self, metric_name: str, value: float, metadata: Dict[str, Any] = None):
         """Record a metric data point."""
         timestamp = datetime.now()
-        metric_point = MetricPoint(
-            timestamp=timestamp,
-            value=value,
-            metadata=metadata or {}
-        )
+        metric_point = MetricPoint(timestamp=timestamp, value=value, metadata=metadata or {})
 
         # Store in history
         self.metrics_history[metric_name].append(metric_point)
@@ -329,14 +378,15 @@ class AIPerformanceMonitor:
         metric_name: str,
         current_value: float,
         level: PerformanceLevel,
-        thresholds: MetricThresholds
+        thresholds: MetricThresholds,
     ) -> Optional[PerformanceAlert]:
         """Create a performance alert."""
         # Check if similar alert already exists (avoid spam)
         recent_alerts = [
-            a for a in self.active_alerts
-            if a.metric_name == metric_name and
-            (datetime.now() - a.timestamp).seconds < 300  # 5 minutes
+            a
+            for a in self.active_alerts
+            if a.metric_name == metric_name
+            and (datetime.now() - a.timestamp).seconds < 300  # 5 minutes
         ]
         if recent_alerts:
             return None  # Don't create duplicate alerts
@@ -360,9 +410,11 @@ class AIPerformanceMonitor:
             severity=severity,
             metric_name=metric_name,
             current_value=current_value,
-            threshold=thresholds.warning_low if level == PerformanceLevel.POOR else thresholds.error_low,
+            threshold=(
+                thresholds.warning_low if level == PerformanceLevel.POOR else thresholds.error_low
+            ),
             message=message,
-            suggested_actions=suggested_actions
+            suggested_actions=suggested_actions,
         )
 
         return alert
@@ -372,10 +424,10 @@ class AIPerformanceMonitor:
         metric_name: str,
         current_value: float,
         level: PerformanceLevel,
-        thresholds: MetricThresholds
+        thresholds: MetricThresholds,
     ) -> tuple[str, List[str]]:
         """Generate alert message and suggested actions."""
-        metric_display = metric_name.replace('_', ' ').title()
+        metric_display = metric_name.replace("_", " ").title()
 
         if level == PerformanceLevel.CRITICAL:
             message = f"CRITICAL: {metric_display} is critically low at {current_value:.2f}"
@@ -383,15 +435,17 @@ class AIPerformanceMonitor:
                 "Immediately review AI decision algorithms",
                 "Check input data quality",
                 "Consider reverting to previous stable configuration",
-                "Enable manual oversight for critical decisions"
+                "Enable manual oversight for critical decisions",
             ]
         elif level == PerformanceLevel.POOR:
-            message = f"WARNING: {metric_display} is below acceptable threshold at {current_value:.2f}"
+            message = (
+                f"WARNING: {metric_display} is below acceptable threshold at {current_value:.2f}"
+            )
             suggestions = [
                 "Analyze recent decision patterns for anomalies",
                 "Review training data and learning algorithms",
                 "Check system resources and performance",
-                "Consider adjusting confidence thresholds"
+                "Consider adjusting confidence thresholds",
             ]
         else:
             message = f"INFO: {metric_display} at {current_value:.2f}"
@@ -421,21 +475,21 @@ class AIPerformanceMonitor:
     def get_current_performance(self) -> Dict[str, Any]:
         """Get current performance metrics."""
         performance_data = {
-            'timestamp': datetime.now().isoformat(),
-            'current_metrics': dict(self.current_metrics),
-            'performance_levels': {},
-            'active_alerts': [asdict(alert) for alert in self.active_alerts],
-            'summary': self._generate_performance_summary()
+            "timestamp": datetime.now().isoformat(),
+            "current_metrics": dict(self.current_metrics),
+            "performance_levels": {},
+            "active_alerts": [asdict(alert) for alert in self.active_alerts],
+            "summary": self._generate_performance_summary(),
         }
 
         # Calculate performance levels for each metric
         for metric_name, value in self.current_metrics.items():
             if metric_name in self.thresholds:
                 level = self.thresholds[metric_name].evaluate(value)
-                performance_data['performance_levels'][metric_name] = {
-                    'level': level.value,
-                    'value': value,
-                    'target': self._get_metric_target(metric_name)
+                performance_data["performance_levels"][metric_name] = {
+                    "level": level.value,
+                    "value": value,
+                    "target": self._get_metric_target(metric_name),
                 }
 
         return performance_data
@@ -443,19 +497,19 @@ class AIPerformanceMonitor:
     def _get_metric_target(self, metric_name: str) -> str:
         """Get target performance for a metric."""
         targets = {
-            'decision_accuracy': '> 80%',
-            'decision_time_ms': '< 1000ms',
-            'goal_completion_rate': '> 70%',
-            'learning_velocity': '> 0.5',
-            'semantic_similarity_quality': '> 70%',
-            'planning_confidence': '> 60%'
+            "decision_accuracy": "> 80%",
+            "decision_time_ms": "< 1000ms",
+            "goal_completion_rate": "> 70%",
+            "learning_velocity": "> 0.5",
+            "semantic_similarity_quality": "> 70%",
+            "planning_confidence": "> 60%",
         }
-        return targets.get(metric_name, 'N/A')
+        return targets.get(metric_name, "N/A")
 
     def _generate_performance_summary(self) -> Dict[str, Any]:
         """Generate overall performance summary."""
         if not self.current_metrics:
-            return {'overall_health': 'unknown', 'score': 0}
+            return {"overall_health": "unknown", "score": 0}
 
         # Calculate overall health score
         total_score = 0
@@ -470,7 +524,7 @@ class AIPerformanceMonitor:
                     PerformanceLevel.GOOD: 80,
                     PerformanceLevel.AVERAGE: 60,
                     PerformanceLevel.POOR: 30,
-                    PerformanceLevel.CRITICAL: 10
+                    PerformanceLevel.CRITICAL: 10,
                 }
                 total_score += level_scores.get(level, 50)
                 metric_count += 1
@@ -479,21 +533,21 @@ class AIPerformanceMonitor:
 
         # Determine overall health
         if overall_score >= 90:
-            health = 'excellent'
+            health = "excellent"
         elif overall_score >= 75:
-            health = 'good'
+            health = "good"
         elif overall_score >= 60:
-            health = 'average'
+            health = "average"
         elif overall_score >= 40:
-            health = 'poor'
+            health = "poor"
         else:
-            health = 'critical'
+            health = "critical"
 
         return {
-            'overall_health': health,
-            'score': overall_score,
-            'active_alert_count': len(self.active_alerts),
-            'monitored_metrics': len(self.current_metrics)
+            "overall_health": health,
+            "score": overall_score,
+            "active_alert_count": len(self.active_alerts),
+            "monitored_metrics": len(self.current_metrics),
         }
 
     def get_performance_trends(self, hours: int = 24) -> Dict[str, Any]:
@@ -503,38 +557,35 @@ class AIPerformanceMonitor:
 
         for metric_name, history in self.metrics_history.items():
             # Filter data points within time window
-            recent_points = [
-                point for point in history
-                if point.timestamp >= cutoff_time
-            ]
+            recent_points = [point for point in history if point.timestamp >= cutoff_time]
 
             if recent_points:
                 values = [point.value for point in recent_points]
                 trends[metric_name] = {
-                    'data_points': len(values),
-                    'min_value': min(values),
-                    'max_value': max(values),
-                    'avg_value': sum(values) / len(values),
-                    'current_value': self.current_metrics.get(metric_name, 0),
-                    'trend': self._calculate_trend(values),
-                    'time_span_hours': hours
+                    "data_points": len(values),
+                    "min_value": min(values),
+                    "max_value": max(values),
+                    "avg_value": sum(values) / len(values),
+                    "current_value": self.current_metrics.get(metric_name, 0),
+                    "trend": self._calculate_trend(values),
+                    "time_span_hours": hours,
                 }
 
         return {
-            'trend_period_hours': hours,
-            'generated_at': datetime.now().isoformat(),
-            'trends': trends,
-            'summary': self._analyze_trends(trends)
+            "trend_period_hours": hours,
+            "generated_at": datetime.now().isoformat(),
+            "trends": trends,
+            "summary": self._analyze_trends(trends),
         }
 
     def _calculate_trend(self, values: List[float]) -> str:
         """Calculate trend direction for a series of values."""
         if len(values) < 2:
-            return 'stable'
+            return "stable"
 
         # Simple linear trend calculation
-        first_half = values[:len(values)//2]
-        second_half = values[len(values)//2:]
+        first_half = values[: len(values) // 2]
+        second_half = values[len(values) // 2 :]
 
         first_avg = sum(first_half) / len(first_half)
         second_avg = sum(second_half) / len(second_half)
@@ -542,11 +593,11 @@ class AIPerformanceMonitor:
         change_percent = ((second_avg - first_avg) / first_avg) * 100
 
         if change_percent > 5:
-            return 'improving'
+            return "improving"
         elif change_percent < -5:
-            return 'declining'
+            return "declining"
         else:
-            return 'stable'
+            return "stable"
 
     def _analyze_trends(self, trends: Dict[str, Any]) -> Dict[str, Any]:
         """Analyze overall trends and generate insights."""
@@ -555,22 +606,22 @@ class AIPerformanceMonitor:
         stable_metrics = []
 
         for metric_name, trend_data in trends.items():
-            trend = trend_data.get('trend', 'stable')
-            if trend == 'improving':
+            trend = trend_data.get("trend", "stable")
+            if trend == "improving":
                 improving_metrics.append(metric_name)
-            elif trend == 'declining':
+            elif trend == "declining":
                 declining_metrics.append(metric_name)
             else:
                 stable_metrics.append(metric_name)
 
         return {
-            'improving_count': len(improving_metrics),
-            'declining_count': len(declining_metrics),
-            'stable_count': len(stable_metrics),
-            'improving_metrics': improving_metrics,
-            'declining_metrics': declining_metrics,
-            'stable_metrics': stable_metrics,
-            'insights': self._generate_trend_insights(improving_metrics, declining_metrics)
+            "improving_count": len(improving_metrics),
+            "declining_count": len(declining_metrics),
+            "stable_count": len(stable_metrics),
+            "improving_metrics": improving_metrics,
+            "declining_metrics": declining_metrics,
+            "stable_metrics": stable_metrics,
+            "insights": self._generate_trend_insights(improving_metrics, declining_metrics),
         }
 
     def _generate_trend_insights(self, improving: List[str], declining: List[str]) -> List[str]:
@@ -592,23 +643,25 @@ class AIPerformanceMonitor:
     def export_performance_data(self, filepath: str = None) -> str:
         """Export all performance data to file."""
         if not filepath:
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filepath = self.monitor_dir / f"performance_export_{timestamp}.json"
 
         export_data = {
-            'export_timestamp': datetime.now().isoformat(),
-            'export_period': 'all',
-            'current_performance': self.get_current_performance(),
-            'trends_24h': self.get_performance_trends(24),
-            'trends_7d': self.get_performance_trends(168),  # 7 days
-            'alert_history': [asdict(alert) for alert in self.alert_history[-100:]],  # Last 100 alerts
-            'metrics_history': {
+            "export_timestamp": datetime.now().isoformat(),
+            "export_period": "all",
+            "current_performance": self.get_current_performance(),
+            "trends_24h": self.get_performance_trends(24),
+            "trends_7d": self.get_performance_trends(168),  # 7 days
+            "alert_history": [
+                asdict(alert) for alert in self.alert_history[-100:]
+            ],  # Last 100 alerts
+            "metrics_history": {
                 metric_name: [point.to_dict() for point in history]
                 for metric_name, history in self.metrics_history.items()
-            }
+            },
         }
 
-        with open(filepath, 'w') as f:
+        with open(filepath, "w") as f:
             json.dump(export_data, f, indent=2, default=str)
 
         logger.info(f"Performance data exported to {filepath}")
@@ -620,65 +673,67 @@ class AIPerformanceMonitor:
         current_perf = self.get_current_performance()
 
         # Analyze current performance
-        for metric_name, perf_data in current_perf.get('performance_levels', {}).items():
-            level = perf_data['level']
-            value = perf_data['value']
+        for metric_name, perf_data in current_perf.get("performance_levels", {}).items():
+            level = perf_data["level"]
+            value = perf_data["value"]
 
-            if level in ['poor', 'critical']:
+            if level in ["poor", "critical"]:
                 suggestion = {
-                    'metric': metric_name,
-                    'current_level': level,
-                    'current_value': value,
-                    'target_value': perf_data['target'],
-                    'priority': 'high' if level == 'critical' else 'medium',
-                    'actions': self._get_optimization_actions(metric_name, level)
+                    "metric": metric_name,
+                    "current_level": level,
+                    "current_value": value,
+                    "target_value": perf_data["target"],
+                    "priority": "high" if level == "critical" else "medium",
+                    "actions": self._get_optimization_actions(metric_name, level),
                 }
                 suggestions.append(suggestion)
 
         # Add proactive suggestions based on trends
         trends = self.get_performance_trends(24)
-        for metric_name, trend_data in trends.get('trends', {}).items():
-            if trend_data.get('trend') == 'declining':
-                suggestions.append({
-                    'metric': metric_name,
-                    'current_level': 'declining',
-                    'priority': 'medium',
-                    'actions': [
-                        f"Investigate root cause of declining {metric_name}",
-                        "Review recent configuration changes",
-                        "Monitor for patterns in declining performance"
-                    ]
-                })
+        for metric_name, trend_data in trends.get("trends", {}).items():
+            if trend_data.get("trend") == "declining":
+                suggestions.append(
+                    {
+                        "metric": metric_name,
+                        "current_level": "declining",
+                        "priority": "medium",
+                        "actions": [
+                            f"Investigate root cause of declining {metric_name}",
+                            "Review recent configuration changes",
+                            "Monitor for patterns in declining performance",
+                        ],
+                    }
+                )
 
         return suggestions
 
     def _get_optimization_actions(self, metric_name: str, level: str) -> List[str]:
         """Get specific optimization actions for a metric."""
         action_map = {
-            'decision_accuracy': [
+            "decision_accuracy": [
                 "Review decision algorithm parameters",
                 "Improve training data quality",
                 "Adjust confidence thresholds",
-                "Enable ensemble methods for critical decisions"
+                "Enable ensemble methods for critical decisions",
             ],
-            'decision_time_ms': [
+            "decision_time_ms": [
                 "Optimize algorithm complexity",
                 "Implement caching for frequent operations",
                 "Use faster hardware or distributed processing",
-                "Profile and optimize slow code paths"
+                "Profile and optimize slow code paths",
             ],
-            'goal_completion_rate': [
+            "goal_completion_rate": [
                 "Improve goal decomposition algorithms",
                 "Enhance action selection strategy",
                 "Add more sophisticated planning heuristics",
-                "Implement goal retry mechanisms"
+                "Implement goal retry mechanisms",
             ],
-            'learning_velocity': [
+            "learning_velocity": [
                 "Increase learning rate parameters",
                 "Improve pattern recognition algorithms",
                 "Add more diverse training examples",
-                "Implement active learning strategies"
-            ]
+                "Implement active learning strategies",
+            ],
         }
 
         return action_map.get(metric_name, ["Review and optimize the relevant algorithms"])

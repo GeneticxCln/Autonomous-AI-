@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
@@ -54,7 +53,9 @@ class SimpleVectorMemory:
             with self.path.open("r", encoding="utf-8") as f:
                 for line in f:
                     obj = json.loads(line)
-                    self.items.append(MemoryItem(text=obj.get("text", ""), meta=obj.get("meta", {})))
+                    self.items.append(
+                        MemoryItem(text=obj.get("text", ""), meta=obj.get("meta", {}))
+                    )
         except Exception:
             # If corrupted, start fresh
             self.items = []

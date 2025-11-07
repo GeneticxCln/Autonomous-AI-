@@ -1,0 +1,167 @@
+# Istio Peer Authentication for mTLS
+# Ensures all service-to-service communication is encrypted
+
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: agent-system
+  labels:
+    app: agent-system
+    component: security
+spec:
+  # Apply to all services in the namespace
+  mtls:
+    mode: STRICT  # All traffic must use mTLS
+
+---
+# Peer Authentication for specific services
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: api-peer-auth
+  namespace: agent-system
+  labels:
+    app: agent-system
+    component: security
+spec:
+  # Selector for specific service
+  selector:
+    matchLabels:
+      app: agent-system
+      component: api
+  # Port-specific mTLS configuration
+  portLevelMtls:
+    8000:
+      mode: STRICT
+    9090:
+      mode: PERMISSIVE  # Allow both mTLS and plaintext for metrics
+
+---
+# Peer Authentication for monitoring services
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: monitoring-peer-auth
+  namespace: agent-system
+  labels:
+    app: agent-system
+    component: monitoring
+spec:
+  selector:
+    matchLabels:
+      component: monitoring
+  mtls:
+    mode: PERMISSIVE  # Allow plaintext for Grafana/Prometheus
+
+---
+# Destination Rule for TLS Configuration
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: api-tls
+  namespace: agent-system
+  labels:
+    app: agent-system
+    component: security
+spec:
+  host: agent-api-service.agent-system.svc.cluster.local
+  trafficPolicy:
+    # TLS configuration for outbound traffic
+    tls:
+      mode: ISTIO_MUTUAL  # Use Istio's automatic mTLS
+    # Connection pool settings
+    connectionPool:
+      tcp:
+        maxConnections: 100
+        connectTimeout: 30s
+        tcpKeepalive:
+          time: 7200s
+          interval: 75s
+      http:
+        http1MaxPendingRequests: 50
+        http2MaxRequests: 100
+        maxRequestsPerConnection: 2
+        maxRetries: 3
+        consecutiveGatewayErrors: 5
+        interval: 30s
+        baseEjectionTime: 30s
+        maxEjectionPercent: 50
+        minHealthPercent: 50
+    # Outlier detection for circuit breaking
+    outlierDetection:
+      consecutive5xxErrors: 3
+      interval: 30s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50
+      minHealthPercent: 50
+    # Load balancing
+    loadBalancer:
+      simple: LEAST_CONN  # Use least connections algorithm
+    # Port-specific settings
+    portLevelSettings:
+      - port:
+          number: 8000
+        connectionPool:
+          tcp:
+            maxConnections: 200
+          http:
+            http2MaxRequests: 1000
+            maxRequestsPerConnection: 10
+        outlierDetection:
+          consecutive5xxErrors: 5
+          interval: 30s
+          baseEjectionTime: 30s
+          maxEjectionPercent: 50
+
+---
+# Destination Rule for Redis
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: redis-tls
+  namespace: agent-system
+  labels:
+    app: agent-system
+    component: redis
+spec:
+  host: redis-service.agent-system.svc.cluster.local
+  trafficPolicy:
+    tls:
+      mode: ISTIO_MUTUAL
+    connectionPool:
+      tcp:
+        maxConnections: 50
+        connectTimeout: 10s
+    outlierDetection:
+      consecutiveErrors: 3
+      interval: 30s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50
+
+---
+# Destination Rule for Workers
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: worker-tls
+  namespace: agent-system
+  labels:
+    app: agent-system
+    component: worker
+spec:
+  host: agent-worker-service.agent-system.svc.cluster.local
+  trafficPolicy:
+    tls:
+      mode: ISTIO_MUTUAL
+    connectionPool:
+      tcp:
+        maxConnections: 100
+      http:
+        http1MaxPendingRequests: 50
+        maxRequestsPerConnection: 5
+    outlierDetection:
+      consecutiveErrors: 5
+      interval: 30s
+      baseEjectionTime: 60s
+      maxEjectionPercent: 50

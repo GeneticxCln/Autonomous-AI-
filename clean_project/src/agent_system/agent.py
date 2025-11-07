@@ -4,34 +4,29 @@ import logging
 import time
 from typing import Any, Dict, List, Optional
 
-from .action_selector import ActionSelector
+from .ai_debugging import ai_debugger
+from .ai_performance_monitor import ai_performance_monitor
+from .ai_planner import AIHierarchicalPlanner
 from .config_simple import settings
+from .cross_session_learning import cross_session_learning
+from .enhanced_persistence import get_storage_info, load_all, save_all
+from .enhanced_tools import EnhancedToolRegistry
 from .goal_manager import GoalManager
+from .intelligent_action_selector import IntelligentActionSelector
+from .intelligent_observation_analyzer import intelligent_analyzer
 from .learning import LearningSystem
 from .memory import MemorySystem
-from .models import Action, ActionStatus, Goal, GoalStatus, Plan
-from .observation import ObservationAnalyzer
-from .planning import HierarchicalPlanner
+from .models import ActionStatus, Goal, GoalStatus, Plan
+from .plugin_loader import load_plugins
+
+# Import intelligent components
 from .tools import (
     CodeExecutorTool,
     FileReaderTool,
     FileWriterTool,
     GenericTool,
-    ToolRegistry,
     WebSearchTool,
 )
-from .enhanced_tools import EnhancedToolRegistry
-from .enhanced_persistence import load_all, save_all, get_storage_info
-from .plugin_loader import load_plugins
-
-# Import intelligent components
-from .reasoning_engine import reasoning_engine
-from .ai_planner import AIHierarchicalPlanner
-from .intelligent_action_selector import IntelligentActionSelector
-from .intelligent_observation_analyzer import intelligent_analyzer
-from .cross_session_learning import cross_session_learning
-from .ai_debugging import ai_debugger
-from .ai_performance_monitor import ai_performance_monitor
 
 logger = logging.getLogger(__name__)
 
@@ -77,14 +72,15 @@ class AutonomousAgent:
         # Log storage information
         storage_info = get_storage_info()
         logger.info(f"Agent initialized with {storage_info['storage_type']} persistence")
-        if storage_info.get('database_stats'):
-            total_records = sum(storage_info['database_stats'].values())
+        if storage_info.get("database_stats"):
+            total_records = sum(storage_info["database_stats"].values())
             logger.info(f"Database contains {total_records} total records")
 
     def _should_use_real_tools(self) -> bool:
         """Determine if real tools should be used based on configuration."""
         # Prefer explicit environment setting; otherwise, enable by default.
         from .config_simple import get_api_key, settings
+
         if hasattr(settings, "USE_REAL_TOOLS"):
             return bool(settings.USE_REAL_TOOLS)
         return bool(get_api_key("serpapi") or get_api_key("bing") or get_api_key("google"))
@@ -144,24 +140,32 @@ class AutonomousAgent:
             logger.info("Starting goal: %s", self.current_goal.description)
 
             # Check for cross-session learning patterns
-            best_sequence = self.cross_session_learning.get_best_action_sequence(self.current_goal.description)
+            best_sequence = self.cross_session_learning.get_best_action_sequence(
+                self.current_goal.description
+            )
             if best_sequence:
                 logger.info("Found cross-session pattern: %s", " -> ".join(best_sequence))
 
             # Log goal analysis decision and record performance metrics
             start_time = time.time() * 1000
-            if hasattr(self.planner, 'reasoning_engine') and self.planner.reasoning_engine:
-                if hasattr(self.planner.reasoning_engine, 'enhanced_analyze_goal'):
-                    goal_analysis = self.planner.reasoning_engine.enhanced_analyze_goal(self.current_goal.description)
+            if hasattr(self.planner, "reasoning_engine") and self.planner.reasoning_engine:
+                if hasattr(self.planner.reasoning_engine, "enhanced_analyze_goal"):
+                    goal_analysis = self.planner.reasoning_engine.enhanced_analyze_goal(
+                        self.current_goal.description
+                    )
                 else:
-                    goal_analysis = self.planner.reasoning_engine.analyze_goal(self.current_goal.description)
-                execution_time = (time.time() * 1000 - start_time)
-                self.ai_debugger.log_goal_analysis(self.current_goal.description, goal_analysis, execution_time)
+                    goal_analysis = self.planner.reasoning_engine.analyze_goal(
+                        self.current_goal.description
+                    )
+                execution_time = time.time() * 1000 - start_time
+                self.ai_debugger.log_goal_analysis(
+                    self.current_goal.description, goal_analysis, execution_time
+                )
 
                 # Record performance metrics
-                confidence = goal_analysis.get('confidence', 0.0)
+                confidence = goal_analysis.get("confidence", 0.0)
                 self.performance_monitor.record_decision_metrics(
-                    'goal_analysis', execution_time, confidence, True
+                    "goal_analysis", execution_time, confidence, True
                 )
 
             context = self.memory_system.get_working_memory_context()
@@ -181,7 +185,9 @@ class AutonomousAgent:
             return False
 
         available_actions = [
-            action for action in self.current_plan.actions if action.id not in self.completed_actions
+            action
+            for action in self.current_plan.actions
+            if action.id not in self.completed_actions
         ]
 
         if not available_actions:
@@ -196,35 +202,38 @@ class AutonomousAgent:
             self.memory_system.get_working_memory_context(),
             self.completed_actions,
         )
-        execution_time = (time.time() * 1000 - start_time)
+        execution_time = time.time() * 1000 - start_time
 
         # Log the action selection decision with debugging info
-        if hasattr(selected_action, '__dict__'):
+        if hasattr(selected_action, "__dict__"):
             action_dict = {
-                'name': selected_action.name,
-                'id': selected_action.id,
-                'tool_name': getattr(selected_action, 'tool_name', ''),
-                'parameters': getattr(selected_action, 'parameters', {})
+                "name": selected_action.name,
+                "id": selected_action.id,
+                "tool_name": getattr(selected_action, "tool_name", ""),
+                "parameters": getattr(selected_action, "parameters", {}),
             }
         else:
             action_dict = selected_action if selected_action else None
 
         selection_criteria = {
-            'final_score': 0.7,  # Placeholder - in real implementation, get from action selector
-            'context_match': 0.8,
-            'learning_bonus': 0.1
+            "final_score": 0.7,  # Placeholder - in real implementation, get from action selector
+            "context_match": 0.8,
+            "learning_bonus": 0.1,
         }
         self.ai_debugger.log_action_selection(
-            [{'name': a.name, 'id': a.id, 'tool_name': getattr(a, 'tool_name', '')} for a in available_actions],
+            [
+                {"name": a.name, "id": a.id, "tool_name": getattr(a, "tool_name", "")}
+                for a in available_actions
+            ],
             action_dict,
             selection_criteria,
-            execution_time
+            execution_time,
         )
 
         # Record action selection performance metrics
-        confidence = selection_criteria.get('final_score', 0.0)
+        confidence = selection_criteria.get("final_score", 0.0)
         self.performance_monitor.record_decision_metrics(
-            'action_selection', execution_time, confidence, selected_action is not None
+            "action_selection", execution_time, confidence, selected_action is not None
         )
 
         if not selected_action:
@@ -239,24 +248,27 @@ class AutonomousAgent:
         analysis = self.observation_analyzer.analyze_observation(
             observation, selected_action.expected_outcome, self.current_goal
         )
-        execution_time = (time.time() * 1000 - start_time)
+        execution_time = time.time() * 1000 - start_time
 
         # Log the observation analysis decision
         self.ai_debugger.log_observation_analysis(
             {
-                'status': observation.status.value,
-                'result': str(observation.result)[:200] if observation.result else '',
-                'tool_name': selected_action.tool_name
+                "status": observation.status.value,
+                "result": str(observation.result)[:200] if observation.result else "",
+                "tool_name": selected_action.tool_name,
             },
             selected_action.expected_outcome,
             analysis,
-            execution_time
+            execution_time,
         )
 
         # Record observation analysis performance metrics
-        analysis_confidence = analysis.get('confidence', 0.0)
+        analysis_confidence = analysis.get("confidence", 0.0)
         self.performance_monitor.record_decision_metrics(
-            'observation_analysis', execution_time, analysis_confidence, observation.status == ActionStatus.SUCCESS
+            "observation_analysis",
+            execution_time,
+            analysis_confidence,
+            observation.status == ActionStatus.SUCCESS,
         )
 
         logger.info("Action result: %s - %s", observation.status.value, analysis)
@@ -305,9 +317,7 @@ class AutonomousAgent:
         )
 
         actions_taken = [
-            action
-            for action in self.current_plan.actions
-            if action.id in self.completed_actions
+            action for action in self.current_plan.actions if action.id in self.completed_actions
         ]
         observations = [
             memory.observation
@@ -322,10 +332,10 @@ class AutonomousAgent:
         # Learn from this goal for cross-session knowledge
         action_dicts = [
             {
-                'id': action.id,
-                'name': action.name,
-                'tool_name': getattr(action, 'tool_name', ''),
-                'parameters': getattr(action, 'parameters', {})
+                "id": action.id,
+                "name": action.name,
+                "tool_name": getattr(action, "tool_name", ""),
+                "parameters": getattr(action, "parameters", {}),
             }
             for action in actions_taken
         ]
@@ -340,9 +350,9 @@ class AutonomousAgent:
         # Record learning metrics
         knowledge_stats = self.cross_session_learning.get_knowledge_statistics()
         self.performance_monitor.record_learning_metrics(
-            patterns_learned=knowledge_stats.get('total_patterns', 0),
-            knowledge_base_size=knowledge_stats.get('high_confidence_patterns', 0),
-            confidence_scores=[success_score]  # Simplified for now
+            patterns_learned=knowledge_stats.get("total_patterns", 0),
+            knowledge_base_size=knowledge_stats.get("high_confidence_patterns", 0),
+            confidence_scores=[success_score],  # Simplified for now
         )
 
         logger.info("Goal %s: %s", final_status.value, self.current_goal.description)
@@ -382,9 +392,9 @@ class AutonomousAgent:
     def get_performance_metrics(self) -> Dict[str, Any]:
         """Get real-time performance monitoring metrics."""
         return {
-            'current_performance': self.performance_monitor.get_current_performance(),
-            'trends_24h': self.performance_monitor.get_performance_trends(24),
-            'optimization_suggestions': self.performance_monitor.get_optimization_suggestions()
+            "current_performance": self.performance_monitor.get_current_performance(),
+            "trends_24h": self.performance_monitor.get_performance_trends(24),
+            "optimization_suggestions": self.performance_monitor.get_optimization_suggestions(),
         }
 
     def save_performance_data(self) -> str:
@@ -398,9 +408,9 @@ class AutonomousAgent:
         suggestions = self.performance_monitor.get_optimization_suggestions()
 
         return {
-            'overall_health': current_perf.get('summary', {}),
-            'trends_analysis': trends.get('summary', {}),
-            'critical_issues': [s for s in suggestions if s.get('priority') == 'high'],
-            'improvement_opportunities': [s for s in suggestions if s.get('priority') == 'medium'],
-            'performance_baseline_comparison': self.performance_monitor.get_baseline_comparison()
+            "overall_health": current_perf.get("summary", {}),
+            "trends_analysis": trends.get("summary", {}),
+            "critical_issues": [s for s in suggestions if s.get("priority") == "high"],
+            "improvement_opportunities": [s for s in suggestions if s.get("priority") == "medium"],
+            "performance_baseline_comparison": self.performance_monitor.get_baseline_comparison(),
         }

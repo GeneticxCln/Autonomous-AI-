@@ -13,9 +13,7 @@ class PlanningStrategy(ABC):
     """Abstract base class for planning strategies."""
 
     @abstractmethod
-    def create_plan(
-        self, goal: Goal, available_tools: List[str], context: Dict[str, Any]
-    ) -> Plan:
+    def create_plan(self, goal: Goal, available_tools: List[str], context: Dict[str, Any]) -> Plan:
         raise NotImplementedError
 
 
@@ -142,9 +140,7 @@ class HierarchicalPlanner(PlanningStrategy):
             },
         }
 
-    def create_plan(
-        self, goal: Goal, available_tools: List[str], context: Dict[str, Any]
-    ) -> Plan:
+    def create_plan(self, goal: Goal, available_tools: List[str], context: Dict[str, Any]) -> Plan:
         """Create a hierarchical plan for the goal."""
         goal_type = self._classify_goal(goal.description)
         subgoals = self.decomposition_rules.get(goal_type, ["execute_generic_task"])
@@ -248,9 +244,9 @@ class HierarchicalPlanner(PlanningStrategy):
         if not actions:
             return 0.0
 
-        tools_available = sum(
-            1 for action in actions if action.tool_name in available_tools
-        ) / len(actions)
+        tools_available = sum(1 for action in actions if action.tool_name in available_tools) / len(
+            actions
+        )
 
         context_score = min(len(context) / 10.0, 1.0) if context else 0.0
 

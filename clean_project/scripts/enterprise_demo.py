@@ -2,28 +2,30 @@
 Enterprise Authentication System Demonstration
 Complete showcase of JWT authentication, RBAC, and security features
 """
+
 import sys
-import json
 import time
 from pathlib import Path
-from datetime import datetime, timedelta
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from agent_system.auth_models import db_manager, UserModel, RoleModel, PermissionModel, SecurityContext
+from agent_system.auth_models import PermissionModel, RoleModel, UserModel, db_manager
 from agent_system.auth_service import auth_service
+
 
 def print_section(title: str):
     """Print section header."""
     print(f"\n{'=' * 60}")
     print(f"🔐 {title}")
-    print('=' * 60)
+    print("=" * 60)
+
 
 def print_subsection(title: str):
     """Print subsection header."""
     print(f"\n📋 {title}")
-    print('-' * 40)
+    print("-" * 40)
+
 
 def test_enterprise_features():
     """Comprehensive test of enterprise authentication features."""
@@ -70,7 +72,7 @@ def test_enterprise_features():
         print(f"⏰ Expires: {tokens['expires_in']} seconds")
 
         # Verify token
-        verified_context = auth_service.verify_token(tokens['access_token'])
+        verified_context = auth_service.verify_token(tokens["access_token"])
         print(f"✅ Token verified: {verified_context.user.username}")
         print(f"🔍 Session ID: {verified_context.session_id}")
     except Exception as e:
@@ -82,15 +84,12 @@ def test_enterprise_features():
     print_subsection("Create API Token for Programmatic Access")
     try:
         api_token = auth_service.create_api_token(
-            security_context.user.id,
-            "Demo API Token",
-            ["read", "write", "admin"],
-            expires_days=30
+            security_context.user.id, "Demo API Token", ["read", "write", "admin"], expires_days=30
         )
         print(f"✅ API Token Created: {api_token[:20]}...")
         print(f"🏷️  Token Prefix: {api_token[:8]}")
-        print(f"🔑 Scopes: read, write, admin")
-        print(f"⏰ Valid for: 30 days")
+        print("🔑 Scopes: read, write, admin")
+        print("⏰ Valid for: 30 days")
 
         # Verify API token
         api_context = auth_service.verify_api_token(api_token)
@@ -109,7 +108,7 @@ def test_enterprise_features():
         ("system", "admin", "Full system access"),
         ("agent", "read", "View agent information"),
         ("goals", "write", "Create/modify goals"),
-        ("users", "read", "View user information")
+        ("users", "read", "View user information"),
     ]
 
     for resource, action, description in permissions_to_test:
@@ -129,7 +128,7 @@ def test_enterprise_features():
             email="demo@example.com",
             password="demopass123",
             full_name="Demo User",
-            role_names=["user"]
+            role_names=["user"],
         )
         print(f"✅ New user created: {new_user.username}")
         print(f"   📧 Email: {new_user.email}")
@@ -149,7 +148,7 @@ def test_enterprise_features():
     for attempt in range(max_attempts):
         try:
             auth_service.authenticate_user("demo_user", "wrong_password")
-            print(f"❌ Security breach: Wrong password accepted")
+            print("❌ Security breach: Wrong password accepted")
         except Exception:
             failed_attempts += 1
             print(f"🔒 Failed login attempt {failed_attempts}: Correctly rejected")
@@ -162,13 +161,19 @@ def test_enterprise_features():
     try:
         with auth_service.db.get_session() as session:
             from agent_system.auth_models import AuthSecurityEventModel
-            events = session.query(AuthSecurityEventModel).order_by(
-                AuthSecurityEventModel.created_at.desc()
-            ).limit(5).all()
+
+            events = (
+                session.query(AuthSecurityEventModel)
+                .order_by(AuthSecurityEventModel.created_at.desc())
+                .limit(5)
+                .all()
+            )
 
             print(f"📈 Recent Security Events ({len(events)} total):")
             for event in events:
-                print(f"   🕐 {event.created_at.strftime('%H:%M:%S')} - {event.event_type}: {event.description}")
+                print(
+                    f"   🕐 {event.created_at.strftime('%H:%M:%S')} - {event.event_type}: {event.description}"
+                )
     except Exception as e:
         print(f"❌ Audit log access failed: {e}")
 
@@ -190,7 +195,9 @@ def test_enterprise_features():
     if auth_times:
         avg_auth_time = sum(auth_times) / len(auth_times)
         print(f"⚡ Average Authentication Time: {avg_auth_time:.2f}ms")
-        print(f"🚀 Performance: {'Excellent' if avg_auth_time < 50 else 'Good' if avg_auth_time < 100 else 'Acceptable'}")
+        print(
+            f"🚀 Performance: {'Excellent' if avg_auth_time < 50 else 'Good' if avg_auth_time < 100 else 'Acceptable'}"
+        )
 
     # Test 9: Security Context
     print_section("9. Security Context Features")
@@ -201,9 +208,9 @@ def test_enterprise_features():
         print(f"✅ Has system.admin: {security_context.has_permission('system', 'admin')}")
 
         # Test permission combinations
-        test_permissions = ['agent.read', 'goals.write', 'system.admin']
+        test_permissions = ["agent.read", "goals.write", "system.admin"]
         has_all = security_context.has_all_permissions(test_permissions)
-        has_any = security_context.has_any_permission(['users.read', 'nonexistent'])
+        has_any = security_context.has_any_permission(["users.read", "nonexistent"])
 
         print(f"✅ Has all permissions {test_permissions}: {has_all}")
         print(f"✅ Has any permission from ['users.read', 'nonexistent']: {has_any}")
@@ -247,6 +254,7 @@ def test_enterprise_features():
 
     return True
 
+
 def show_database_stats():
     """Show database statistics."""
     print_section("Database Statistics")
@@ -261,7 +269,7 @@ def show_database_stats():
             print(f"🛡️  Total Permissions: {permission_count}")
 
             # Show users with roles
-            print(f"\n📋 User-Role Assignments:")
+            print("\n📋 User-Role Assignments:")
             users = session.query(UserModel).all()
             for user in users:
                 roles = [r.name for r in user.roles]
@@ -270,19 +278,20 @@ def show_database_stats():
     except Exception as e:
         print(f"❌ Database statistics failed: {e}")
 
+
 if __name__ == "__main__":
     try:
         success = test_enterprise_features()
         show_database_stats()
 
         if success:
-            print(f"\n🎉 AGENT ENTERPRISE AUTHENTICATION SYSTEM")
+            print("\n🎉 AGENT ENTERPRISE AUTHENTICATION SYSTEM")
             print("=" * 60)
             print("✅ ALL ENTERPRISE FEATURES VERIFIED")
             print("🚀 Ready for production deployment")
             print("=" * 60)
         else:
-            print(f"\n❌ Some enterprise features failed")
+            print("\n❌ Some enterprise features failed")
             sys.exit(1)
 
     except Exception as e:

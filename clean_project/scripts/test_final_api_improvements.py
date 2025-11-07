@@ -2,11 +2,14 @@
 Final comprehensive test for API documentation improvements
 Verifies that comprehensive schemas are properly integrated and working
 """
+
 from fastapi.testclient import TestClient
+
 from agent_system.fastapi_app import app
 
 # Create test client
 client = TestClient(app)
+
 
 def test_openapi_generation_success():
     """Test that OpenAPI schema generates successfully."""
@@ -28,6 +31,7 @@ def test_openapi_generation_success():
 
     print("✅ OpenAPI generation success: PASSED")
 
+
 def test_comprehensive_schemas_imported():
     """Test that comprehensive schemas are imported and available."""
     response = client.get("/openapi.json")
@@ -36,14 +40,22 @@ def test_comprehensive_schemas_imported():
 
     # Check that key comprehensive schemas are included
     expected_schemas = [
-        "LoginRequest", "TokenRefreshRequest", "UserCreate", "AgentCreate", "GoalCreate",
-        "APITokenCreate", "APIResponse", "APIError", "ErrorDetail"
+        "LoginRequest",
+        "TokenRefreshRequest",
+        "UserCreate",
+        "AgentCreate",
+        "GoalCreate",
+        "APITokenCreate",
+        "APIResponse",
+        "APIError",
+        "ErrorDetail",
     ]
 
     for schema_name in expected_schemas:
         assert schema_name in schemas, f"Missing expected schema: {schema_name}"
 
     print("✅ Comprehensive schemas imported: PASSED")
+
 
 def test_security_schemes_defined():
     """Test that security schemes are properly defined."""
@@ -69,6 +81,7 @@ def test_security_schemes_defined():
 
     print("✅ Security schemes defined: PASSED")
 
+
 def test_comprehensive_endpoint_coverage():
     """Test that all major endpoints are documented."""
     response = client.get("/openapi.json")
@@ -88,13 +101,14 @@ def test_comprehensive_endpoint_coverage():
         "/api/v1/goals",
         "/api/v1/api-tokens",
         "/api/v1/system/health",
-        "/api/v1/system/info"
+        "/api/v1/system/info",
     ]
 
     for endpoint in expected_endpoints:
         assert endpoint in paths, f"Missing endpoint: {endpoint}"
 
     print("✅ Comprehensive endpoint coverage: PASSED")
+
 
 def test_enhanced_login_endpoint():
     """Test that login endpoint has enhanced documentation."""
@@ -117,6 +131,7 @@ def test_enhanced_login_endpoint():
 
     print("✅ Enhanced login endpoint documentation: PASSED")
 
+
 def test_enhanced_refresh_endpoint():
     """Test that refresh endpoint has enhanced documentation."""
     response = client.get("/openapi.json")
@@ -128,6 +143,7 @@ def test_enhanced_refresh_endpoint():
     assert "description" in refresh_path
 
     print("✅ Enhanced refresh endpoint documentation: PASSED")
+
 
 def test_documentation_ui_accessibility():
     """Test that documentation UIs are accessible."""
@@ -142,6 +158,7 @@ def test_documentation_ui_accessibility():
     assert "redoc" in redoc_response.text.lower()
 
     print("✅ Documentation UI accessibility: PASSED")
+
 
 def test_api_info_endpoint():
     """Test that API info endpoint provides comprehensive information."""
@@ -164,6 +181,7 @@ def test_api_info_endpoint():
 
     print("✅ API info endpoint: PASSED")
 
+
 def test_root_endpoint():
     """Test that root endpoint provides navigation."""
     response = client.get("/")
@@ -180,6 +198,7 @@ def test_root_endpoint():
     assert data["health"] == "/api/v1/system/health"
 
     print("✅ Root endpoint: PASSED")
+
 
 def test_health_endpoint():
     """Test that health endpoint is accessible without auth."""
@@ -199,6 +218,7 @@ def test_health_endpoint():
         assert "database" in data
 
     print("✅ Health endpoint: PASSED")
+
 
 def test_schema_type_definitions():
     """Test that schemas have proper type definitions."""
@@ -230,6 +250,7 @@ def test_schema_type_definitions():
 
     print("✅ Schema type definitions: PASSED")
 
+
 def test_validation_error_handling():
     """Test that validation errors are properly handled."""
     # Test with invalid login data (missing required fields)
@@ -242,12 +263,11 @@ def test_validation_error_handling():
 
     print("✅ Validation error handling: PASSED")
 
+
 def test_comprehensive_enumeration_support():
     """Test that enums are defined in comprehensive schemas."""
     # Verify that the comprehensive schemas file exists and has enums
-    from agent_system.api_schemas import (
-        UserStatus, RoleLevel, SecurityEventType, SecuritySeverity
-    )
+    from agent_system.api_schemas import RoleLevel, SecurityEventType, SecuritySeverity, UserStatus
 
     # Test that enums have values
     assert len(UserStatus.__members__) > 0
@@ -256,6 +276,7 @@ def test_comprehensive_enumeration_support():
     assert len(SecuritySeverity.__members__) > 0
 
     print("✅ Comprehensive enumeration support: PASSED")
+
 
 def test_response_envelope_consistency():
     """Test that response envelopes follow consistent structure."""
@@ -273,6 +294,7 @@ def test_response_envelope_consistency():
 
     print("✅ Response envelope consistency: PASSED")
 
+
 def test_performance_with_comprehensive_schemas():
     """Test that comprehensive schemas don't impact performance significantly."""
     import time
@@ -288,6 +310,7 @@ def test_performance_with_comprehensive_schemas():
     assert avg_time < 0.1  # Should be fast
 
     print(f"✅ Performance with comprehensive schemas: PASSED ({avg_time*1000:.2f}ms avg)")
+
 
 if __name__ == "__main__":
     print("🚀 Starting Final API Documentation Improvements Test\n")
@@ -323,5 +346,6 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"\n❌ Test failed: {e}")
         import traceback
+
         traceback.print_exc()
         raise

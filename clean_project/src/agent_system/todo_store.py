@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, asdict
-from datetime import datetime, UTC
+from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 
 STATE_FILE = Path(".agent_state/todos.json")
 STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -15,7 +15,7 @@ class Todo:
     id: int
     title: str
     status: str = "open"  # open|done
-    priority: int = 3      # 1..5
+    priority: int = 3  # 1..5
     created_at: str = datetime.now(UTC).isoformat()
     completed_at: Optional[str] = None
 

@@ -2,20 +2,18 @@
 Enterprise Persistence Layer
 Hybrid persistence system with database primary and JSON fallback
 """
+
 from __future__ import annotations
 
 import logging
-import os
-from typing import Any, Dict, List, Optional
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 from .database_persistence import db_persistence
-from .persistence import (
-    save_action_selector as json_save_action_selector,
-    load_action_selector as json_load_action_selector,
-    save_learning_system as json_save_learning_system,
-    load_learning_system as json_load_learning_system
-)
+from .persistence import load_action_selector as json_load_action_selector
+from .persistence import load_learning_system as json_load_learning_system
+from .persistence import save_action_selector as json_save_action_selector
+from .persistence import save_learning_system as json_save_learning_system
 
 logger = logging.getLogger(__name__)
 
@@ -39,8 +37,8 @@ class EnterprisePersistence:
             return
 
         try:
-            from .database_models import db_manager
             from .data_migration import run_migration
+            from .database_models import db_manager
 
             # Use custom database URL if provided
             if self.database_url:
@@ -58,7 +56,9 @@ class EnterprisePersistence:
                 logger.info("Found existing JSON files, running migration...")
                 try:
                     migration_report = run_migration()
-                    logger.info(f"Migration completed: {migration_report['migration_summary']['records_migrated']} records migrated")
+                    logger.info(
+                        f"Migration completed: {migration_report['migration_summary']['records_migrated']} records migrated"
+                    )
                 except Exception as e:
                     logger.warning(f"Migration failed, falling back to JSON: {e}")
                     self._database_available = False
@@ -71,11 +71,13 @@ class EnterprisePersistence:
         """Check if database is available."""
         return self._database_available
 
-    def save_action_selector(self, selector_data: Dict[str, Any], filename: str = "action_selector.json") -> None:
+    def save_action_selector(
+        self, selector_data: Dict[str, Any], filename: str = "action_selector.json"
+    ) -> None:
         """Save action selector using primary storage (database or JSON)."""
         if self._database_available:
             try:
-                selector_type = selector_data.get('type', 'intelligent')
+                selector_type = selector_data.get("type", "intelligent")
                 db_persistence.save_action_selector(selector_data, selector_type)
                 logger.debug(f"Action selector saved to database: {selector_type}")
             except Exception as e:
@@ -84,11 +86,13 @@ class EnterprisePersistence:
         else:
             json_save_action_selector(selector_data, filename)
 
-    def load_action_selector(self, filename: str = "action_selector.json") -> Optional[Dict[str, Any]]:
+    def load_action_selector(
+        self, filename: str = "action_selector.json"
+    ) -> Optional[Dict[str, Any]]:
         """Load action selector using primary storage (database or JSON)."""
         if self._database_available:
             try:
-                result = db_persistence.load_action_selector('intelligent')
+                result = db_persistence.load_action_selector("intelligent")
                 if result:
                     logger.debug("Action selector loaded from database")
                     return result
@@ -101,11 +105,13 @@ class EnterprisePersistence:
             logger.debug("Action selector loaded from JSON file")
         return result
 
-    def save_learning_system(self, learning_data: Dict[str, Any], filename: str = "learning_system.json") -> None:
+    def save_learning_system(
+        self, learning_data: Dict[str, Any], filename: str = "learning_system.json"
+    ) -> None:
         """Save learning system using primary storage (database or JSON)."""
         if self._database_available:
             try:
-                db_persistence.save_learning_system(learning_data, 'default')
+                db_persistence.save_learning_system(learning_data, "default")
                 logger.debug("Learning system saved to database")
             except Exception as e:
                 logger.warning(f"Database save failed, falling back to JSON: {e}")
@@ -113,11 +119,13 @@ class EnterprisePersistence:
         else:
             json_save_learning_system(learning_data, filename)
 
-    def load_learning_system(self, filename: str = "learning_system.json") -> Optional[Dict[str, Any]]:
+    def load_learning_system(
+        self, filename: str = "learning_system.json"
+    ) -> Optional[Dict[str, Any]]:
         """Load learning system using primary storage (database or JSON)."""
         if self._database_available:
             try:
-                result = db_persistence.load_learning_system('default')
+                result = db_persistence.load_learning_system("default")
                 if result:
                     logger.debug("Learning system loaded from database")
                     return result
@@ -130,7 +138,9 @@ class EnterprisePersistence:
             logger.debug("Learning system loaded from JSON file")
         return result
 
-    def save_memories(self, memories: List[Dict[str, Any]], filename: str = "episodic_memory.json") -> None:
+    def save_memories(
+        self, memories: List[Dict[str, Any]], filename: str = "episodic_memory.json"
+    ) -> None:
         """Save memories using primary storage (database or JSON)."""
         if self._database_available:
             try:
@@ -145,8 +155,9 @@ class EnterprisePersistence:
     def _save_memories_json(self, memories: List[Dict[str, Any]], filename: str):
         """Save memories to JSON file."""
         try:
-            from .persistence import _write_json
             from pathlib import Path
+
+            from .persistence import _write_json
 
             state_dir = Path(".agent_state")
             path = state_dir / filename
@@ -154,15 +165,17 @@ class EnterprisePersistence:
             # Convert memories to JSON-serializable format
             json_data = []
             for memory in memories:
-                json_data.append({
-                    'id': memory.get('id'),
-                    'goal_id': memory.get('goal_id'),
-                    'action': memory.get('action', {}),
-                    'observation': memory.get('observation', {}),
-                    'context': memory.get('context', {}),
-                    'success_score': memory.get('success_score', 0.0),
-                    'type': memory.get('type', 'episodic')
-                })
+                json_data.append(
+                    {
+                        "id": memory.get("id"),
+                        "goal_id": memory.get("goal_id"),
+                        "action": memory.get("action", {}),
+                        "observation": memory.get("observation", {}),
+                        "context": memory.get("context", {}),
+                        "success_score": memory.get("success_score", 0.0),
+                        "type": memory.get("type", "episodic"),
+                    }
+                )
 
             _write_json(path, json_data)
             logger.debug(f"Memories saved to JSON file: {len(memories)} items")
@@ -188,8 +201,9 @@ class EnterprisePersistence:
     def _load_memories_json(self, filename: str) -> List[Dict[str, Any]]:
         """Load memories from JSON file."""
         try:
-            from .persistence import _read_json
             from pathlib import Path
+
+            from .persistence import _read_json
 
             state_dir = Path(".agent_state")
             path = state_dir / filename
@@ -201,7 +215,7 @@ class EnterprisePersistence:
             if isinstance(data, list):
                 memories = data
             else:
-                memories = data.get('memories', data.get('episodic_memory', []))
+                memories = data.get("memories", data.get("episodic_memory", []))
 
             logger.debug(f"Memories loaded from JSON file: {len(memories)} items")
             return memories
@@ -213,16 +227,16 @@ class EnterprisePersistence:
     def get_storage_info(self) -> Dict[str, Any]:
         """Get information about current storage system."""
         info = {
-            'storage_type': 'database' if self._database_available else 'json_files',
-            'database_available': self._database_available,
-            'database_url': self.database_url if self._database_available else None
+            "storage_type": "database" if self._database_available else "json_files",
+            "database_available": self._database_available,
+            "database_url": self.database_url if self._database_available else None,
         }
 
         if self._database_available:
             try:
-                info['database_stats'] = db_persistence.get_database_stats()
+                info["database_stats"] = db_persistence.get_database_stats()
             except Exception as e:
-                info['database_error'] = str(e)
+                info["database_error"] = str(e)
 
         return info
 

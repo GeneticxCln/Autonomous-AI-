@@ -18,7 +18,9 @@ class CLITests(unittest.TestCase):
         self.assertFalse(status["is_running"])
 
     def test_goal_priority_default_applied(self):
-        status = main(["--max-cycles", "0", "--goal", "Default priority task", "--log-level", "ERROR"])
+        status = main(
+            ["--max-cycles", "0", "--goal", "Default priority task", "--log-level", "ERROR"]
+        )
         goals = status["goals"]["goals"]
         self.assertEqual(goals[0]["priority"], 0.5)
 

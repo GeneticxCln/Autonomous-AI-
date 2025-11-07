@@ -1,15 +1,15 @@
 """
 FastAPI web interface for the autonomous agent.
 """
+
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 app = FastAPI(
     title="Autonomous Agent System",
     description="A web interface for managing and monitoring the autonomous agent",
-    version="2.0.0"
+    version="2.0.0",
 )
 
 # Global agent instance
@@ -281,7 +281,7 @@ async def get_status():
     async with agent_lock:
         if agent is None:
             raise HTTPException(status_code=503, detail="Agent not initialized")
-        
+
         try:
             status = agent.get_status()
             status["llm_providers"] = llm_manager.get_available_providers()
@@ -298,10 +298,10 @@ async def start_agent(background_tasks: BackgroundTasks, max_cycles: int = 10):
         global agent
         if agent is None:
             agent = AutonomousAgent()
-        
+
         if agent.is_running:
             return JSONResponse(content={"message": "Agent is already running"}, status_code=200)
-        
+
         # Start agent in background
         background_tasks.add_task(run_agent_background, agent, max_cycles)
         return JSONResponse(content={"message": "Agent started"}, status_code=200)
@@ -314,10 +314,10 @@ async def stop_agent():
         global agent
         if agent is None:
             raise HTTPException(status_code=503, detail="Agent not initialized")
-        
+
         if not agent.is_running:
             return JSONResponse(content={"message": "Agent is not running"}, status_code=200)
-        
+
         agent.stop()
         return JSONResponse(content={"message": "Agent stopped"}, status_code=200)
 
@@ -329,18 +329,21 @@ async def add_goal_api(goal_request: GoalRequest):
         global agent
         if agent is None:
             agent = AutonomousAgent()
-        
+
         try:
             goal = agent.add_goal(
                 description=goal_request.description,
                 priority=goal_request.priority,
-                constraints=goal_request.constraints
+                constraints=goal_request.constraints,
             )
-            return JSONResponse(content={
-                "message": "Goal added successfully",
-                "goal_id": goal.id,
-                "description": goal.description
-            }, status_code=200)
+            return JSONResponse(
+                content={
+                    "message": "Goal added successfully",
+                    "goal_id": goal.id,
+                    "description": goal.description,
+                },
+                status_code=200,
+            )
         except Exception as e:
             logger.error(f"Error adding goal: {e}")
             raise HTTPException(status_code=500, detail=str(e))
@@ -352,7 +355,7 @@ async def get_goals():
     async with agent_lock:
         if agent is None:
             return JSONResponse(content={"goals": []}, status_code=200)
-        
+
         try:
             status = agent.get_status()
             return JSONResponse(content=status["goals"], status_code=200)
@@ -367,14 +370,17 @@ async def execute_tool(tool_name: str, action_request: ActionRequest):
     async with agent_lock:
         if agent is None:
             raise HTTPException(status_code=503, detail="Agent not initialized")
-        
+
         try:
             # This would need to be implemented based on your tool structure
-            return JSONResponse(content={
-                "message": f"Tool {tool_name} execution requested",
-                "action": action_request.action,
-                "parameters": action_request.parameters
-            }, status_code=200)
+            return JSONResponse(
+                content={
+                    "message": f"Tool {tool_name} execution requested",
+                    "action": action_request.action,
+                    "parameters": action_request.parameters,
+                },
+                status_code=200,
+            )
         except Exception as e:
             logger.error(f"Error executing tool {tool_name}: {e}")
             raise HTTPException(status_code=500, detail=str(e))
@@ -383,10 +389,13 @@ async def execute_tool(tool_name: str, action_request: ActionRequest):
 @app.get("/api/llm/providers")
 async def get_llm_providers():
     """Get available LLM providers."""
-    return JSONResponse(content={
-        "providers": llm_manager.get_available_providers(),
-        "available": {name: llm_manager.is_available(name) for name in llm_manager.providers}
-    }, status_code=200)
+    return JSONResponse(
+        content={
+            "providers": llm_manager.get_available_providers(),
+            "available": {name: llm_manager.is_available(name) for name in llm_manager.providers},
+        },
+        status_code=200,
+    )
 
 
 async def run_agent_background(agent_instance: AutonomousAgent, max_cycles: int):
@@ -402,13 +411,17 @@ async def run_agent_background(agent_instance: AutonomousAgent, max_cycles: int)
 @app.get("/health")
 async def health_check():
     """Health check endpoint."""
-    return JSONResponse(content={
-        "status": "healthy",
-        "agent_initialized": agent is not None,
-        "llm_providers": len(llm_manager.get_available_providers())
-    }, status_code=200)
+    return JSONResponse(
+        content={
+            "status": "healthy",
+            "agent_initialized": agent is not None,
+            "llm_providers": len(llm_manager.get_available_providers()),
+        },
+        status_code=200,
+    )
 
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")

@@ -4,21 +4,26 @@ import argparse
 import json
 import logging
 import os
-from typing import Any, Dict, Optional, Sequence, Tuple
+from collections.abc import Sequence
+from typing import Any, Dict, Optional, Tuple
 
 from .agent import AutonomousAgent
-from .fastapi_app import app
+from .auth_models import SecurityContext, db_manager
 from .auth_service import auth_service
-from .auth_models import db_manager, SecurityContext
+from .fastapi_app import app
 
 # Version information
 __version__ = "1.0.0"
 
+
 # System configuration
 class Config:
     """Application configuration."""
+
     DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./agent_enterprise.db")
-    JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "your-super-secret-jwt-key-change-in-production")
+    JWT_SECRET_KEY: str = os.getenv(
+        "JWT_SECRET_KEY", "your-super-secret-jwt-key-change-in-production"
+    )
     JWT_ALGORITHM: str = "HS256"
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 30
@@ -33,7 +38,9 @@ class Config:
     CORS_ORIGINS: list = os.getenv("CORS_ORIGINS", "*").split(",")
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
 
+
 config = Config()
+
 
 # Configure logging
 def _configure_logging(log_level: str) -> None:
@@ -43,8 +50,7 @@ def _configure_logging(log_level: str) -> None:
     # Configure enterprise-grade logging
     if not root_logger.handlers:
         logging.basicConfig(
-            level=level,
-            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+            level=level, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
         )
     else:
         root_logger.setLevel(level)
@@ -55,9 +61,12 @@ def _configure_logging(log_level: str) -> None:
     logger = logging.getLogger(__name__)
     logger.info(f"🚀 Agent Enterprise System v{__version__} initialized")
     logger.info(f"📊 Database: {config.DATABASE_URL}")
-    logger.info(f"🔐 JWT Secret: {'*' * (len(config.JWT_SECRET_KEY) - 4) + config.JWT_SECRET_KEY[-4:] if len(config.JWT_SECRET_KEY) > 4 else '***'}")
+    logger.info(
+        f"🔐 JWT Secret: {'*' * (len(config.JWT_SECRET_KEY) - 4) + config.JWT_SECRET_KEY[-4:] if len(config.JWT_SECRET_KEY) > 4 else '***'}"
+    )
     logger.info(f"🌍 Environment: {config.ENVIRONMENT}")
     logger.info(f"🔗 API Server: {config.API_HOST}:{config.API_PORT}")
+
 
 __all__ = [
     "AutonomousAgent",
@@ -68,7 +77,7 @@ __all__ = [
     "SecurityContext",
     "Config",
     "config",
-    "__version__"
+    "__version__",
 ]
 
 DEFAULT_GOALS: Tuple[Tuple[str, float], ...] = (
@@ -76,17 +85,6 @@ DEFAULT_GOALS: Tuple[Tuple[str, float], ...] = (
     ("Analyze sales data", 0.6),
     ("Create project report", 0.9),
 )
-
-
-def _configure_logging(log_level: str) -> None:
-    level = getattr(logging, log_level.upper(), logging.INFO)
-    root_logger = logging.getLogger()
-    if not root_logger.handlers:
-        logging.basicConfig(level=level)
-    else:
-        root_logger.setLevel(level)
-        for handler in root_logger.handlers:
-            handler.setLevel(level)
 
 
 def _parse_goal_argument(goal_arg: str) -> Tuple[str, float]:
@@ -141,15 +139,26 @@ def main(argv: Optional[Sequence[str]] = None) -> Dict[str, Any]:
     if args.interactive:
         # Defer to interactive CLI
         from .terminal_cli import run_interactive
+
         run_interactive(max_cycles=args.max_cycles)
         # After interactive exits, also return the final status (if any)
         # Provide an empty baseline structure when interactive is used
         return {
             "current_goal": None,
             "goals": {"goals": []},
-            "memory_stats": {"working_memory_size": 0, "episodic_memory_size": 0, "total_memories": 0, "avg_success_score": 0.0},
+            "memory_stats": {
+                "working_memory_size": 0,
+                "episodic_memory_size": 0,
+                "total_memories": 0,
+                "avg_success_score": 0.0,
+            },
             "tool_stats": {},
-            "learning_stats": {"strategies_learned": 0, "patterns_learned": 0, "total_episodes": 0, "best_strategies": {}},
+            "learning_stats": {
+                "strategies_learned": 0,
+                "patterns_learned": 0,
+                "total_episodes": 0,
+                "best_strategies": {},
+            },
             "is_running": False,
         }
 

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
@@ -38,29 +37,30 @@ def _write_json(path: Path, data: Any) -> None:
 
 # ---------- ActionSelector persistence ----------
 
+
 def save_action_selector(selector: Any, filename: str = "action_selector.json") -> None:
     path = STATE_DIR / filename
-    
+
     # Handle both old and new action selectors
-    if hasattr(selector, 'action_scores'):  # Old ActionSelector
+    if hasattr(selector, "action_scores"):  # Old ActionSelector
         payload = {
             "action_scores": selector.action_scores,
             "action_counts": selector.action_counts,
             "learning_rate": getattr(selector, "learning_rate", 0.1),
             "epsilon": getattr(selector, "epsilon", 0.1),
-            "type": "old"
+            "type": "old",
         }
-    elif hasattr(selector, 'action_history'):  # IntelligentActionSelector
+    elif hasattr(selector, "action_history"):  # IntelligentActionSelector
         payload = {
             "action_history": selector.action_history,
-            "context_weights": getattr(selector, 'context_weights', {}),
-            "goal_patterns": getattr(selector, 'goal_patterns', {}),
-            "type": "intelligent"
+            "context_weights": getattr(selector, "context_weights", {}),
+            "goal_patterns": getattr(selector, "goal_patterns", {}),
+            "type": "intelligent",
         }
     else:
         logger.warning(f"Unknown action selector type: {type(selector)}")
         payload = {"type": "unknown"}
-    
+
     _write_json(path, payload)
 
 
@@ -69,10 +69,10 @@ def load_action_selector(selector: Any, filename: str = "action_selector.json") 
     payload = _read_json(path)
     if not isinstance(payload, dict):
         return
-    
+
     selector_type = payload.get("type", "unknown")
-    
-    if selector_type == "old" and hasattr(selector, 'action_scores'):
+
+    if selector_type == "old" and hasattr(selector, "action_scores"):
         # Load old action selector data
         selector.action_scores.update(payload.get("action_scores", {}))
         selector.action_counts.update(payload.get("action_counts", {}))
@@ -80,18 +80,21 @@ def load_action_selector(selector: Any, filename: str = "action_selector.json") 
             selector.learning_rate = float(payload["learning_rate"])
         if "epsilon" in payload:
             selector.epsilon = float(payload["epsilon"])
-            
-    elif selector_type == "intelligent" and hasattr(selector, 'action_history'):
+
+    elif selector_type == "intelligent" and hasattr(selector, "action_history"):
         # Load intelligent action selector data
         selector.action_history.update(payload.get("action_history", {}))
         selector.context_weights.update(payload.get("context_weights", {}))
         selector.goal_patterns.update(payload.get("goal_patterns", {}))
-        
+
     else:
-        logger.warning(f"Cannot load action selector data - type mismatch or unsupported type: {selector_type}")
+        logger.warning(
+            f"Cannot load action selector data - type mismatch or unsupported type: {selector_type}"
+        )
 
 
 # ---------- LearningSystem persistence ----------
+
 
 def save_learning_system(learning: Any, filename: str = "learning_system.json") -> None:
     path = STATE_DIR / filename
@@ -114,6 +117,7 @@ def load_learning_system(learning: Any, filename: str = "learning_system.json") 
 # ---------- MemorySystem persistence (episodic only) ----------
 
 # Minimal serialization for Memory avoiding deep recursion and non-JSON types
+
 
 def _serialize_memory(mem: Memory) -> Dict[str, Any]:
     return {
@@ -194,6 +198,7 @@ def load_memory_system(memory_sys: Any, filename: str = "episodic_memory.json") 
 
 
 # ---------- High-level helpers ----------
+
 
 def save_all(agent: Any) -> None:
     """Persist all supported subsystems of the agent."""

@@ -4,10 +4,12 @@ Configuration management for the autonomous agent.
 This module now proxies to unified_config while preserving the legacy
 `settings` interface used across the codebase.
 """
+
 from __future__ import annotations
 
 import os
 from typing import Optional
+
 from .unified_config import unified_config
 
 

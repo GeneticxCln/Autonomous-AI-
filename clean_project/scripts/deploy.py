@@ -6,32 +6,27 @@ This script helps you set up and deploy the agent with real capabilities.
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
-import os
 import sys
 from pathlib import Path
-from typing import Dict, Any
 
 # Add the project root to Python path
 sys.path.insert(0, str(Path(__file__).parent))
 
+import uvicorn
+
 from agent_system.agent import AutonomousAgent
-from agent_system.config_simple import settings, get_api_key
+from agent_system.config_simple import get_api_key, settings
 from agent_system.llm_integration import llm_manager
 from agent_system.web_interface import app
-import uvicorn
 
 
 def setup_logging():
     """Configure logging for production."""
     logging.basicConfig(
         level=getattr(logging, settings.LOG_LEVEL),
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.StreamHandler(sys.stdout),
-            logging.FileHandler('agent.log')
-        ]
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        handlers=[logging.StreamHandler(sys.stdout), logging.FileHandler("agent.log")],
     )
     return logging.getLogger(__name__)
 
@@ -72,7 +67,7 @@ BLOCKED_FILE_PATHS=/etc,/bin,/usr,/var/log
 # Rate Limiting
 REQUESTS_PER_MINUTE=60
 """
-    
+
     env_file = Path(".env")
     if not env_file.exists():
         env_file.write_text(env_content)
@@ -84,22 +79,20 @@ REQUESTS_PER_MINUTE=60
 
 def check_dependencies():
     """Check if required dependencies are installed."""
-    required_packages = [
-        "requests", "fastapi", "uvicorn", "aiofiles"
-    ]
-    
+    required_packages = ["requests", "fastapi", "uvicorn", "aiofiles"]
+
     missing_packages = []
     for package in required_packages:
         try:
             __import__(package)
         except ImportError:
             missing_packages.append(package)
-    
+
     if missing_packages:
         print(f"❌ Missing packages: {', '.join(missing_packages)}")
         print("Install with: pip install " + " ".join(missing_packages))
         return False
-    
+
     print("✅ All required packages are installed")
     return True
 
@@ -110,32 +103,32 @@ def check_api_configuration():
         "SERPAPI": get_api_key("serpapi"),
         "OpenAI": get_api_key("openai"),
         "Anthropic": get_api_key("anthropic"),
-        "Bing Search": get_api_key("bing")
+        "Bing Search": get_api_key("bing"),
     }
-    
+
     configured = sum(1 for key in providers.values() if key)
-    
+
     print("\n🔑 API Configuration Status:")
     for name, key in providers.items():
         status = "✅ Configured" if key else "❌ Not configured"
         print(f"   {name}: {status}")
-    
+
     if configured == 0:
         print("\n⚠️  No API keys configured. The agent will use mock tools.")
         print("   For real functionality, configure at least one API key in .env")
     else:
         print(f"\n✅ {configured} API provider(s) configured")
-    
+
     return configured > 0
 
 
 def demo_real_capabilities():
     """Demonstrate the agent's real capabilities."""
     print("\n🧪 Testing Real Capabilities...")
-    
+
     try:
         agent = AutonomousAgent()
-        
+
         # Test goal with web search
         if get_api_key("serpapi") or get_api_key("bing") or get_api_key("google"):
             print("   Testing web search...")
@@ -144,7 +137,7 @@ def demo_real_capabilities():
             print("   ✅ Web search test completed")
         else:
             print("   ⏭️  Skipping web search (no API keys)")
-        
+
         # Test LLM capabilities
         available_providers = llm_manager.get_available_providers()
         if available_providers:
@@ -153,17 +146,17 @@ def demo_real_capabilities():
             print("   ✅ LLM providers available")
         else:
             print("   ⏭️  Skipping LLM test (no API keys)")
-        
+
         # Test file operations
         print("   Testing file operations...")
         test_file = Path("test_deployment.txt")
         test_file.write_text("Deployment test file")
         test_file.unlink()
         print("   ✅ File operations test completed")
-        
+
         print("✅ All capability tests passed")
         return True
-        
+
     except Exception as e:
         print(f"❌ Capability test failed: {e}")
         return False
@@ -175,14 +168,10 @@ async def start_web_interface(host: str = "0.0.0.0", port: int = 8000):
     print("   Dashboard: http://localhost:8000")
     print("   API docs: http://localhost:8000/docs")
     print("   Health check: http://localhost:8000/health")
-    
+
     try:
         config = uvicorn.Config(
-            app,
-            host=host,
-            port=port,
-            log_level=settings.LOG_LEVEL.lower(),
-            access_log=True
+            app, host=host, port=port, log_level=settings.LOG_LEVEL.lower(), access_log=True
         )
         server = uvicorn.Server(config)
         await server.serve()
@@ -225,11 +214,11 @@ python3 -m agent_system.web_interface
 # echo "🤖 Running standalone agent..."
 # python3 -m agent_system --max-cycles 100 --goal "Your goal here::0.8"
 """
-    
+
     script_path = Path("start_agent.sh")
     script_path.write_text(startup_script)
     script_path.chmod(0o755)
-    
+
     print(f"✅ Created startup script: {script_path}")
     print("   Run with: ./start_agent.sh")
 
@@ -237,14 +226,14 @@ python3 -m agent_system.web_interface
 def main():
     """Main deployment function."""
     logger = setup_logging()
-    
+
     print("🚀 Autonomous Agent System - Production Deployment")
     print("=" * 60)
-    
+
     # Parse command line arguments
     if len(sys.argv) > 1:
         command = sys.argv[1]
-        
+
         if command == "--create-env":
             create_environment_file()
             return
@@ -263,27 +252,27 @@ def main():
         elif command == "--create-startup":
             create_startup_script()
             return
-    
+
     # Default deployment process
     print("\n📋 Deployment Checklist:")
-    
+
     # 1. Check dependencies
     if not check_dependencies():
         print("\n❌ Please install missing dependencies first")
         return
-    
+
     # 2. Create environment file
     create_environment_file()
-    
+
     # 3. Check API configuration
     has_apis = check_api_configuration()
-    
+
     # 4. Test capabilities
     demo_real_capabilities()
-    
+
     # 5. Create startup script
     create_startup_script()
-    
+
     print("\n" + "=" * 60)
     print("🎉 Deployment preparation complete!")
     print("\nNext steps:")
@@ -293,8 +282,8 @@ def main():
     print("1. Start web interface: python3 -m agent_system.web_interface")
     print("2. Or run agent directly: python3 -m agent_system")
     print("3. View dashboard at: http://localhost:8000")
-    
-    print(f"\n💡 Configuration Summary:")
+
+    print("\n💡 Configuration Summary:")
     print(f"   - Max Cycles: {settings.MAX_CYCLES}")
     print(f"   - Tool Timeout: {settings.TOOL_TIMEOUT}s")
     print(f"   - Log Level: {settings.LOG_LEVEL}")

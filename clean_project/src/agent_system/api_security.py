@@ -2,21 +2,24 @@
 FastAPI Security Middleware
 Enterprise-grade security for API endpoints
 """
+
 from __future__ import annotations
 
+import json
 import logging
-from typing import Optional, Dict, Any
-from fastapi import Request, HTTPException, Depends, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+import time
+from collections import defaultdict
+import os
+from typing import Any, Optional
+
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from starlette.middleware.base import BaseHTTPMiddleware
-import time
-import json
-from collections import defaultdict
 
-from .auth_service import auth_service, AuthenticationError, AuthorizationError, SecurityContext
-from .auth_models import UserModel
+from .auth_models import UserModel, SecurityContext, AuthorizationError
+from .auth_service import AuthenticationError, auth_service
 
 logger = logging.getLogger(__name__)
 
@@ -30,30 +33,61 @@ RATE_LIMIT_WINDOW = 60  # seconds
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
-    """Rate limiting middleware."""
+    """Rate limiting middleware with optional Redis backend."""
+
+    def __init__(self, app):
+        super().__init__(app)
+        self._redis = None
+        self._redis_enabled = False
+        redis_url = os.getenv("REDIS_URL") or os.getenv("REDIS_URI")
+        if redis_url:
+            try:
+                import redis  # type: ignore
+
+                self._redis = redis.Redis.from_url(redis_url, decode_responses=True)
+                self._redis.ping()
+                self._redis_enabled = True
+                logger.info("RateLimitMiddleware: using Redis backend")
+            except Exception as e:
+                logger.warning(f"RateLimitMiddleware: Redis unavailable, falling back to in-memory: {e}")
 
     async def dispatch(self, request: Request, call_next):
         client_ip = request.client.host if request.client else "unknown"
         current_time = time.time()
 
-        # Clean old entries
-        rate_limit_store[client_ip] = [
-            timestamp for timestamp in rate_limit_store[client_ip]
-            if current_time - timestamp < RATE_LIMIT_WINDOW
-        ]
+        # Prefer Redis if configured and healthy
+        if self._redis_enabled and self._redis is not None:
+            bucket = int(current_time // RATE_LIMIT_WINDOW)
+            key = f"ratelimit:{client_ip}:{bucket}"
+            try:
+                count = self._redis.incr(key)
+                if count == 1:
+                    self._redis.expire(key, RATE_LIMIT_WINDOW)
+                if count > RATE_LIMIT_REQUESTS:
+                    logger.warning(f"Rate limit exceeded (redis) for IP: {client_ip}")
+                    return JSONResponse(
+                        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                        content={
+                            "error": "Rate limit exceeded",
+                            "message": f"Maximum {RATE_LIMIT_REQUESTS} requests per minute allowed",
+                        },
+                    )
+            except Exception as e:
+                logger.warning(f"RateLimitMiddleware: Redis error, using in-memory fallback: {e}")
 
-        # Check rate limit
+        # In-memory fallback
+        rate_limit_store[client_ip] = [
+            t for t in rate_limit_store[client_ip] if current_time - t < RATE_LIMIT_WINDOW
+        ]
         if len(rate_limit_store[client_ip]) >= RATE_LIMIT_REQUESTS:
             logger.warning(f"Rate limit exceeded for IP: {client_ip}")
             return JSONResponse(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 content={
                     "error": "Rate limit exceeded",
-                    "message": f"Maximum {RATE_LIMIT_REQUESTS} requests per minute allowed"
-                }
+                    "message": f"Maximum {RATE_LIMIT_REQUESTS} requests per minute allowed",
+                },
             )
-
-        # Add current request
         rate_limit_store[client_ip].append(current_time)
 
         response = await call_next(request)
@@ -86,7 +120,7 @@ class SecurityMiddleware(BaseHTTPMiddleware):
 
 
 async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
 ) -> UserModel:
     """Get current authenticated user from JWT token."""
     try:
@@ -102,7 +136,7 @@ async def get_current_user(
 
 
 async def get_current_security_context(
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
 ) -> SecurityContext:
     """Get current security context with permissions."""
     try:
@@ -119,7 +153,10 @@ async def get_current_security_context(
 
 def require_permission(resource: str, action: str):
     """Dependency to require specific permission."""
-    async def permission_checker(security_context: SecurityContext = Depends(get_current_security_context)):
+
+    async def permission_checker(
+        security_context: SecurityContext = Depends(get_current_security_context),
+    ):
         if not security_context.has_permission(resource, action):
             logger.warning(
                 f"Permission denied: {security_context.user.username} "
@@ -127,24 +164,26 @@ def require_permission(resource: str, action: str):
             )
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Insufficient permissions: {resource}.{action}"
+                detail=f"Insufficient permissions: {resource}.{action}",
             )
         return security_context
+
     return permission_checker
 
 
 def require_admin():
     """Dependency to require admin privileges."""
-    async def admin_checker(security_context: SecurityContext = Depends(get_current_security_context)):
+
+    async def admin_checker(
+        security_context: SecurityContext = Depends(get_current_security_context),
+    ):
         if not security_context.is_admin:
-            logger.warning(
-                f"Admin access denied: {security_context.user.username}"
-            )
+            logger.warning(f"Admin access denied: {security_context.user.username}")
             raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Admin privileges required"
+                status_code=status.HTTP_403_FORBIDDEN, detail="Admin privileges required"
             )
         return security_context
+
     return admin_checker
 
 
@@ -167,15 +206,13 @@ class APISecurityConfig:
         )
 
 
-def create_security_error_response(error_type: str, message: str, status_code: int = 400) -> JSONResponse:
+def create_security_error_response(
+    error_type: str, message: str, status_code: int = 400
+) -> JSONResponse:
     """Create standardized security error response."""
     return JSONResponse(
         status_code=status_code,
-        content={
-            "error": error_type,
-            "message": message,
-            "timestamp": time.time()
-        }
+        content={"error": error_type, "message": message, "timestamp": time.time()},
     )
 
 
@@ -187,7 +224,7 @@ def log_api_access(request: Request, user: Optional[UserModel] = None, status_co
         "path": str(request.url.path),
         "ip": request.client.host if request.client else "unknown",
         "user_agent": request.headers.get("user-agent"),
-        "status_code": status_code
+        "status_code": status_code,
     }
 
     if user:
@@ -197,13 +234,11 @@ def log_api_access(request: Request, user: Optional[UserModel] = None, status_co
     logger.info(f"API Access: {json.dumps(log_data)}")
 
 
-def create_api_response(data: Any = None, message: str = "Success", status_code: int = 200) -> JSONResponse:
+def create_api_response(
+    data: Any = None, message: str = "Success", status_code: int = 200
+) -> JSONResponse:
     """Create standardized API response."""
-    response_data = {
-        "success": True,
-        "message": message,
-        "timestamp": time.time()
-    }
+    response_data = {"success": True, "message": message, "timestamp": time.time()}
 
     if data is not None:
         response_data["data"] = data
@@ -211,7 +246,9 @@ def create_api_response(data: Any = None, message: str = "Success", status_code:
     return JSONResponse(status_code=status_code, content=response_data)
 
 
-def create_error_response(message: str, error_type: str = "API_ERROR", status_code: int = 400) -> JSONResponse:
+def create_error_response(
+    message: str, error_type: str = "API_ERROR", status_code: int = 400
+) -> JSONResponse:
     """Create standardized error response."""
     return JSONResponse(
         status_code=status_code,
@@ -219,8 +256,8 @@ def create_error_response(message: str, error_type: str = "API_ERROR", status_co
             "success": False,
             "error": error_type,
             "message": message,
-            "timestamp": time.time()
-        }
+            "timestamp": time.time(),
+        },
     )
 
 

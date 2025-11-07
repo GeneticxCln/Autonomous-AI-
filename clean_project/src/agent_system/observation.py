@@ -40,9 +40,7 @@ class ObservationAnalyzer:
 
         if observation.metrics:
             if observation.metrics.get("error_rate", 0) > 0.5:
-                analysis["recommendations"].append(
-                    "High error rate detected, verify inputs"
-                )
+                analysis["recommendations"].append("High error rate detected, verify inputs")
 
         return analysis
 

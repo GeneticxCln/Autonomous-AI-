@@ -11,7 +11,7 @@ class GoalManagerTests(unittest.TestCase):
         self.manager = GoalManager()
 
     def test_highest_priority_goal_selected_first(self):
-        low = self.manager.add_goal("Low priority task", priority=0.1)
+        self.manager.add_goal("Low priority task", priority=0.1)
         high = self.manager.add_goal("High priority task", priority=0.9)
 
         next_goal = self.manager.get_next_goal()
