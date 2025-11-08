@@ -218,8 +218,19 @@ class UserModel(Base):
         """Check password; supports argon2/sha256_crypt and migrates legacy sha256 to argon2 on success."""
         try:
             # Passlib-managed hashes
-            if self.hashed_password and self.hashed_password.startswith(("$argon2", "$5$")):
+            if self.hashed_password and self.hashed_password.startswith("$argon2"):
                 return pwd_context.verify(password, self.hashed_password)
+
+            # sha256_crypt ($5$) -> migrate to argon2 on success
+            if self.hashed_password and self.hashed_password.startswith("$5$"):
+                ok = pwd_context.verify(password, self.hashed_password)
+                if ok:
+                    try:
+                        self.hashed_password = pwd_context.hash(password)
+                        self.password_changed_at = datetime.now(UTC)
+                    except Exception:
+                        pass
+                return ok
 
             # Legacy sha256 hex hash
             import hashlib

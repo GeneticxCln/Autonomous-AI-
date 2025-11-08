@@ -13,9 +13,49 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.openapi.utils import get_openapi
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
+try:
+    from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
+    _PROM = True
+except Exception:
+    _PROM = False
 
 from .api_endpoints import api_router
+from .api_schemas import (
+    APIError,
+    APIResponse,
+    APITokenCreate,
+    APITokenResponse,
+    AgentCreate,
+    AgentExecutionResponse,
+    AgentResponse,
+    AgentExecute,
+    BulkOperationRequest,
+    BulkOperationResponse,
+    ErrorDetail,
+    GoalCreate,
+    GoalResponse,
+    LoginRequest,
+    LoginResponse,
+    PaginationInfo,
+    PaginatedResponse,
+    RateLimitInfo,
+    SecurityEventResponse,
+    SecurityEventType,
+    SecuritySeverity,
+    SystemHealth,
+    SystemInfo,
+    TokenData,
+    TokenRefreshRequest,
+    UserCreate,
+    UserUpdate,
+    UserInfo,
+    UserResponse,
+    UserStatus,
+    RoleLevel,
+    WebhookEvent,
+)
+from .production_config import get_config
 from .api_security import (
     RateLimitMiddleware,
     SecurityMiddleware,
@@ -130,15 +170,42 @@ def create_app() -> FastAPI:
     logger.info(f"✅ CORS middleware enabled for origins: {api_security_config.cors_origins}")
 
     # Add trusted host middleware for production
-    if os.getenv("ENVIRONMENT") == "production":
+    cfg = get_config()
+    if cfg.is_production():
         app.add_middleware(
-            TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1", "*.yourdomain.com"]
+            TrustedHostMiddleware, allowed_hosts=cfg.get_allowed_hosts()
         )
         logger.info("✅ Trusted host middleware enabled")
 
     # Include API router
     app.include_router(api_router)
     logger.info("✅ API routes included")
+
+    if _PROM:
+        # Basic Prometheus metrics
+        REQUEST_COUNT = Counter(
+            "http_requests_total", "Total HTTP requests", ["method", "path", "status"]
+        )
+        REQUEST_LATENCY = Histogram(
+            "http_request_duration_seconds", "Request latency", ["method", "path"]
+        )
+
+        @app.middleware("http")
+        async def metrics_middleware(request: Request, call_next):
+            start = time.perf_counter()
+            response = await call_next(request)
+            try:
+                route = getattr(request.scope.get("route"), "path", request.url.path)
+                REQUEST_COUNT.labels(request.method, route, str(response.status_code)).inc()
+                REQUEST_LATENCY.labels(request.method, route).observe(time.perf_counter() - start)
+            except Exception:
+                pass
+            return response
+
+        if cfg.enable_metrics:
+            @app.get("/metrics")
+            async def metrics() -> Response:
+                return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
     # Global exception handler
     @app.exception_handler(HTTPException)
@@ -190,6 +257,63 @@ def create_app() -> FastAPI:
         # Add global security requirement
         openapi_schema["security"] = [{"BearerAuth": []}]
 
+        # Explicitly include important schemas that are used in envelope `data`
+        # so they appear in the OpenAPI components for documentation/tests.
+        try:
+            schemas = openapi_schema.setdefault("components", {}).setdefault("schemas", {})
+            # Pydantic models to include explicitly (used inside envelope 'data')
+            models_to_include = [
+                # Auth
+                LoginRequest,
+                LoginResponse,
+                TokenRefreshRequest,
+                TokenData,
+                UserInfo,
+                UserCreate,
+                UserResponse,
+                UserUpdate,
+                # Agents & Goals
+                AgentCreate,
+                AgentResponse,
+                AgentExecute,
+                AgentExecutionResponse,
+                GoalCreate,
+                GoalResponse,
+                # Tokens
+                APITokenCreate,
+                APITokenResponse,
+                # System
+                SystemHealth,
+                SystemInfo,
+                # Base / Misc
+                APIResponse,
+                APIError,
+                ErrorDetail,
+                PaginationInfo,
+                PaginatedResponse,
+                RateLimitInfo,
+                SecurityEventResponse,
+                BulkOperationRequest,
+                BulkOperationResponse,
+                WebhookEvent,
+            ]
+            for model in models_to_include:
+                name = getattr(model, "__name__", str(model))
+                schema_fn = getattr(model, "model_json_schema", None)
+                if callable(schema_fn):
+                    schemas[name] = schema_fn()
+
+            # Enum types (not Pydantic models)
+            enums = [UserStatus, RoleLevel, SecurityEventType, SecuritySeverity]
+            for enum in enums:
+                schemas[enum.__name__] = {
+                    "title": enum.__name__,
+                    "type": "string",
+                    "enum": [m.value for m in enum],
+                }
+        except Exception:
+            pass
+
         app.openapi_schema = openapi_schema
         return app.openapi_schema
 
@@ -220,10 +344,17 @@ def create_app() -> FastAPI:
                 session.execute(text("SELECT 1"))
             return {"status": "healthy", "database": "connected"}
         except Exception as e:
-            return JSONResponse(
-                status_code=503,
-                content={"status": "unhealthy", "database": "disconnected", "error": str(e)},
-            )
+            # In production, reflect failure; in non-prod, degrade gracefully
+            if cfg.is_production():
+                return JSONResponse(
+                    status_code=503,
+                    content={
+                        "status": "unhealthy",
+                        "database": "disconnected",
+                        "error": str(e),
+                    },
+                )
+            return {"status": "degraded", "database": "unknown", "error": str(e)}
 
     # API information endpoint
     @app.get("/api/info", tags=["System"])

@@ -514,13 +514,14 @@ class AdvancedMonitoringSystem:
         except Exception as e:
             logger.error(f"Error adding business metric: {e}")
 
-    def get_business_metrics(self) -> Dict[str, Any]:
+    async def get_business_metrics(self) -> Dict[str, Any]:
         """Get all business metrics."""
         try:
             # Load from cache
             cached_metrics = {}
-            for key in await cache_manager.get("metrics", "business:*"):
-                pass  # This would need pattern matching in cache_manager
+            # Note: Pattern matching would need to be implemented in cache_manager
+            # for key in await cache_manager.get("metrics", "business:*"):
+            #     pass
 
             # Get from memory
             return {

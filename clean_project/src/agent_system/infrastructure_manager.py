@@ -144,6 +144,21 @@ class InfrastructureManager:
         except Exception as e:
             logger.debug(f"Queue stats caching failed: {e}")
 
+    def get_status(self) -> Dict[str, Any]:
+        """Get infrastructure status for validation purposes."""
+        try:
+            return {
+                "initialized": self.is_initialized,
+                "health_status": self.health_status,
+                "startup_time": self.startup_time.isoformat() if self.startup_time else None
+            }
+        except Exception as e:
+            logger.error(f"Error getting infrastructure status: {e}")
+            return {
+                "initialized": False,
+                "error": str(e)
+            }
+
     async def get_health_status(self) -> Dict[str, Any]:
         """Get comprehensive infrastructure health status."""
         try:
@@ -457,7 +472,7 @@ async def performance_monitor():
         metrics = await get_performance_stats()
 
         # Cache performance metrics
-        await infrastructure_manager.cache_manager.set(
+        await cache_manager.set(
             "infrastructure:performance",
             {**metrics, "timestamp": datetime.now().isoformat()},
             ttl=600,  # 10 minutes
@@ -477,7 +492,7 @@ async def infrastructure_cleanup_scheduler():
         cleanup_results = await infrastructure_manager.cleanup_infrastructure()
 
         # Cache cleanup results
-        await infrastructure_manager.cache_manager.set(
+        await cache_manager.set(
             "infrastructure:last_cleanup",
             {**cleanup_results, "timestamp": datetime.now().isoformat()},
             ttl=3600,  # 1 hour

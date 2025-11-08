@@ -10,6 +10,18 @@ import logging
 import time
 from collections import defaultdict
 import os
+
+try:
+    from .production_config import get_config
+    _cfg = get_config()
+    RATE_LIMIT_REQUESTS = int(_cfg.rate_limit_requests)
+    RATE_LIMIT_WINDOW = int(_cfg.rate_limit_window)
+    _CORS_ORIGINS = _cfg.get_cors_origins()
+except Exception:
+    # Safe fallbacks
+    RATE_LIMIT_REQUESTS = 100
+    RATE_LIMIT_WINDOW = 60
+    _CORS_ORIGINS = ["*"]
 from typing import Any, Optional
 
 from fastapi import Depends, HTTPException, Request, status
@@ -28,8 +40,56 @@ security = HTTPBearer()
 
 # Rate limiting storage (in production, use Redis)
 rate_limit_store = defaultdict(list)
-RATE_LIMIT_REQUESTS = 100  # requests per minute
-RATE_LIMIT_WINDOW = 60  # seconds
+_custom_rate_limit_store = defaultdict(list)
+_custom_rl_redis = None
+_custom_rl_enabled = False
+_custom_rl_inited = False
+
+
+def _init_custom_rl():
+    """Initialize Redis client for custom rate limits if REDIS_URL/URI is set."""
+    global _custom_rl_inited, _custom_rl_enabled, _custom_rl_redis
+    if _custom_rl_inited:
+        return
+    _custom_rl_inited = True
+    redis_url = os.getenv("REDIS_URL") or os.getenv("REDIS_URI")
+    if not redis_url:
+        return
+    try:
+        import redis  # type: ignore
+
+        _custom_rl_redis = redis.Redis.from_url(redis_url, decode_responses=True)
+        _custom_rl_redis.ping()
+        _custom_rl_enabled = True
+        logger.info("Custom rate-limit: using Redis backend")
+    except Exception as e:
+        logger.warning(f"Custom rate-limit: Redis unavailable, using memory: {e}")
+
+
+def check_custom_rate_limit(namespace: str, key: str, limit: int, window_seconds: int) -> bool:
+    """Return True if rate limit exceeded for custom buckets (e.g., login)."""
+    _init_custom_rl()
+    now = time.time()
+    if _custom_rl_enabled and _custom_rl_redis is not None:
+        bucket = int(now // window_seconds)
+        redis_key = f"rl:{namespace}:{key}:{bucket}"
+        try:
+            count = _custom_rl_redis.incr(redis_key)
+            if count == 1:
+                _custom_rl_redis.expire(redis_key, window_seconds)
+            return count > limit
+        except Exception as e:
+            logger.warning(f"Custom rate-limit redis error: {e}; falling back to memory")
+
+    # In-memory fallback
+    mem_key = f"{namespace}:{key}"
+    _custom_rate_limit_store[mem_key] = [
+        t for t in _custom_rate_limit_store[mem_key] if now - t < window_seconds
+    ]
+    if len(_custom_rate_limit_store[mem_key]) >= limit:
+        return True
+    _custom_rate_limit_store[mem_key].append(now)
+    return False
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
@@ -55,7 +115,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         client_ip = request.client.host if request.client else "unknown"
         current_time = time.time()
 
-        # Prefer Redis if configured and healthy
+        # Prefer Redis if configured and healthy; in-memory only if Redis unavailable
         if self._redis_enabled and self._redis is not None:
             bucket = int(current_time // RATE_LIMIT_WINDOW)
             key = f"ratelimit:{client_ip}:{bucket}"
@@ -72,6 +132,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                             "message": f"Maximum {RATE_LIMIT_REQUESTS} requests per minute allowed",
                         },
                     )
+                # Redis path OK - proceed without touching in-memory store
+                response = await call_next(request)
+                return response
             except Exception as e:
                 logger.warning(f"RateLimitMiddleware: Redis error, using in-memory fallback: {e}")
 
@@ -104,9 +167,20 @@ class SecurityMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
-        response.headers["X-XSS-Protection"] = "1; mode=block"
+        # X-XSS-Protection is deprecated; rely on CSP instead
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        # Content Security Policy
+        try:
+            from .production_config import get_config
+            cfg = get_config()
+            if cfg.is_production():
+                csp = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; frame-ancestors 'none'; object-src 'none'"
+            else:
+                csp = "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; img-src 'self' data:"
+            response.headers["Content-Security-Policy"] = csp
+        except Exception:
+            pass
 
         # Log API access
         process_time = time.time() - start_time
@@ -191,16 +265,17 @@ class APISecurityConfig:
     """API security configuration."""
 
     def __init__(self):
-        self.cors_origins = ["*"]  # Configure appropriately for production
+        self.cors_origins = _CORS_ORIGINS
         self.rate_limit_enabled = True
         self.security_headers_enabled = True
         self.audit_logging_enabled = True
 
     def get_cors_middleware(self):
         """Get configured CORS middleware."""
+        allow_creds = not (self.cors_origins == ["*"] or "*" in self.cors_origins)
         return CORSMiddleware(
             allow_origins=self.cors_origins,
-            allow_credentials=True,
+            allow_credentials=allow_creds,
             allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
             allow_headers=["*"],
         )

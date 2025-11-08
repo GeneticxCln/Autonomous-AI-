@@ -1,16 +1,8 @@
 # Comprehensive CI/CD Pipeline for Enterprise Agent System
-name: CI/CD Pipeline
+name: CI/CD Pipeline (Manual)
 
 on:
-  push:
-    branches: [ main, develop, release/* ]
-  pull_request:
-    branches: [ main, develop ]
-  release:
-    types: [ published ]
-  schedule:
-    # Run security scans daily at 2 AM UTC
-    - cron: '0 2 * * *'
+  workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io

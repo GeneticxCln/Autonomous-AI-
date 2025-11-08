@@ -64,6 +64,10 @@ class ProductionConfig:
         else:
             self.cors_origins = [origin.strip() for origin in cors_origins.split(",")]
 
+        # Allowed hosts for TrustedHost middleware (comma-separated)
+        allowed_hosts = self.get_env("ALLOWED_HOSTS", "localhost,127.0.0.1")
+        self.allowed_hosts = [h.strip() for h in allowed_hosts.split(",") if h.strip()]
+
         # Security Features
         self.secure_headers = self.get_env("SECURE_HEADERS", "true").lower() == "true"
         self.enable_https = self.get_env("ENABLE_HTTPS", "false").lower() == "true"
@@ -205,6 +209,12 @@ class ProductionConfig:
             raise ConfigError("CORS_ORIGINS must be explicitly configured for production")
 
         return self.cors_origins
+
+    def get_allowed_hosts(self) -> List[str]:
+        """Return allowed hosts list for TrustedHost middleware."""
+        if self.is_production() and not self.allowed_hosts:
+            raise ConfigError("ALLOWED_HOSTS must be set in production")
+        return self.allowed_hosts
 
     def should_use_redis(self) -> bool:
         """Check if Redis should be used for session storage."""

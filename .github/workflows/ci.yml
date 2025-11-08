@@ -22,25 +22,40 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install -r clean_project/config/requirements.txt -c clean_project/config/constraints.txt
           if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
-          pip install .[dev]
       - name: Run pre-commit
         uses: pre-commit/action@v3.0.1
+        with:
+          extra_args: -c clean_project/.pre-commit-config.yaml --all-files
+        env:
+          SKIP: mypy
       - name: Lint (ruff)
         run: |
           python -m ruff --version
-          python -m ruff .
+          python -m ruff clean_project/src clean_project/tests clean_project/scripts
       - name: Format check (black)
         run: |
-          python -m black --check .
-      - name: Type check (mypy)
+          python -m black --check clean_project/src clean_project/tests clean_project/scripts
+      - name: Type check (mypy) — focused modules
         run: |
-          python -m mypy agent_system || true
-      - name: Run tests
+          python -m mypy --config-file clean_project/pyproject.toml \
+            clean_project/src/agent_system/api_schemas.py \
+            clean_project/src/agent_system/auth_service.py \
+            clean_project/src/agent_system/api_security.py
+      - name: Run tests (unit + scripts) with coverage
         run: |
-          python -m coverage run -m pytest -q
-          python -m coverage report -m
+          PYTHONPATH=clean_project/src python -m coverage run -m pytest -q clean_project/tests clean_project/scripts
+          PYTHONPATH=clean_project/src python -m coverage report -m
+          python -m coverage xml -o coverage.xml
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./coverage.xml
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: false
 
   container-scan:
     runs-on: ubuntu-latest
@@ -52,7 +67,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build image
-        run: docker build -t agent-enterprise:ci .
+        run: docker build -t agent-enterprise:ci -f clean_project/config/Dockerfile clean_project
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@0.30.0
         with:

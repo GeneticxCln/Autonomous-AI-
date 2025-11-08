@@ -5,7 +5,7 @@ PKG=src.agent_system
 
 install:
 	$(PY) -m pip install --upgrade pip
-	$(PY) -m pip install -r config/requirements.txt
+	$(PY) -m pip install -r config/requirements.txt -c config/constraints.txt
 
 dev:
 	$(PY) -m pip install -e .[dev]
@@ -27,6 +27,16 @@ cov:
 	$(PY) -m coverage report -m
 
 ci: lint typecheck test
+
+# Utilities
+migrate-passwords:
+	PYTHONPATH=src $(PY) scripts/migrate_password_hashes.py
+
+auth-report-legacy:
+	PYTHONPATH=src $(PY) scripts/auth_management.py report-legacy
+
+auth-create-reset:
+	PYTHONPATH=src $(PY) scripts/auth_management.py create-reset-tokens --limit $${LIMIT:-50} --output $${OUTPUT:-reset_tokens.csv}
 
 # Run the agent with default goals
 run:

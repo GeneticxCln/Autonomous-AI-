@@ -39,6 +39,7 @@ from .api_security import (
     create_error_response,
     get_current_security_context,
     require_permission,
+    check_custom_rate_limit,
 )
 from .auth_models import (
     AccountLockedError,
@@ -51,6 +52,7 @@ from .auth_models import (
 )
 from .auth_service import auth_service
 from .database_models import ActionModel, AgentModel, GoalModel
+from .production_config import get_config
 
 logger = logging.getLogger(__name__)
 
@@ -184,6 +186,15 @@ async def login(request: Request, login_data: LoginRequest):
     ```
     """
     try:
+        cfg = get_config()
+        if cfg.is_production():
+            ip = request.client.host if request.client else "unknown"
+            if check_custom_rate_limit("login", f"{ip}:{login_data.username}", 5, 900):
+                return create_error_response(
+                    message="Too many login attempts. Please try again later.",
+                    error_type="RATE_LIMIT_EXCEEDED",
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                )
         # Authenticate user with IP and user agent tracking
         security_context = auth_service.authenticate_user(
             login_data.username,
@@ -849,6 +860,21 @@ async def system_info(
 
     except Exception as e:
         logger.error(f"Failed to get system info: {str(e)}")
-        return create_error_response(
-            message="Failed to retrieve system information", error_type="SYSTEM_INFO_FAILED"
+        cfg = get_config()
+        if cfg.is_production():
+            return create_error_response(
+                message="Failed to retrieve system information",
+                error_type="SYSTEM_INFO_FAILED",
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        system_data = {
+            "users": 0,
+            "agents": 0,
+            "goals": 0,
+            "actions": 0,
+            "uptime": "unknown",
+            "timestamp": datetime.now(UTC).isoformat(),
+        }
+        return create_api_response(
+            data=system_data, message="System information degraded due to backend error"
         )

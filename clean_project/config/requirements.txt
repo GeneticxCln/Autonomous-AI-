@@ -1,4 +1,4 @@
-# Core dependencies for production agent
+# Core dependencies for production agent (runtime only)
 requests>=2.31.0
 python-dotenv>=1.0.0
 pydantic>=2.0.0
@@ -9,47 +9,15 @@ sqlalchemy>=2.0.0
 alembic>=1.12.0
 aiofiles>=23.0.0
 
-# Caching and Message Queues
+# Caching and Queues (optional; code degrades gracefully if unavailable)
 redis>=5.0.0
 rq>=1.15.0
 cachetools>=5.3.0
 
-# Load Balancing and Proxy
-nginx>=1.25.0
-
 # Monitoring and Observability
 prometheus-client>=0.19.0
 structlog>=23.0.0
-
-# Kubernetes (optional for cloud deployment)
-kubernetes>=28.0.0
 psutil>=5.9.0
-
-# Distributed Tracing and Observability
-opentelemetry-api>=1.19.0
-opentelemetry-sdk>=1.19.0
-opentelemetry-exporter-jaeger-thrift>=1.19.0
-opentelemetry-instrumentation-fastapi>=0.40b0
-opentelemetry-instrumentation-redis>=0.40b0
-opentelemetry-instrumentation-requests>=0.40b0
-opentelemetry-instrumentation-sqlalchemy>=0.40b0
-opentelemetry-instrumentation-aiohttp-client>=0.40b0
-opentelemetry-instrumentation-httpx>=0.40b0
-
-# Service Mesh and Advanced Networking
-istio-client>=1.19.0
-
-# AI/LLM integrations
-openai>=1.0.0
-anthropic>=0.7.0
-
-# Semantic similarity and embeddings (optional for enhanced features)
-sentence-transformers>=2.2.0
-numpy>=1.24.0
-
-# Vector database for memory
-chromadb>=0.4.0
-beautifulsoup4>=4.12.0
 
 # Security and validation
 cryptography>=41.0.0
@@ -57,15 +25,25 @@ pydantic[email]>=2.0.0
 passlib>=1.7.4
 argon2-cffi>=21.3.0
 
-# Monitoring and logging
-structlog>=23.0.0
-prometheus-client>=0.19.0
-psutil>=5.9.0
+# Optional integrations (keep but not required by tests)
+openai>=1.0.0
+anthropic>=0.7.0
+sentence-transformers>=2.2.0
+numpy>=1.24.0
+chromadb>=0.4.0
+beautifulsoup4>=4.12.0
 
-# Development and testing
-pytest>=7.4.0
-pytest-asyncio>=0.21.0
-PyYAML>=6.0
-black>=23.0.0
-ruff>=0.1.0
-mypy>=1.6.0
+# Optional infra/tooling libs (comment out to slim image)
+# kubernetes>=28.0.0
+# opentelemetry-api>=1.19.0
+# opentelemetry-sdk>=1.19.0
+# opentelemetry-exporter-jaeger-thrift>=1.19.0
+# opentelemetry-instrumentation-fastapi>=0.40b0
+# opentelemetry-instrumentation-redis>=0.40b0
+# opentelemetry-instrumentation-requests>=0.40b0
+# opentelemetry-instrumentation-sqlalchemy>=0.40b0
+# opentelemetry-instrumentation-aiohttp-client>=0.40b0
+# opentelemetry-instrumentation-httpx>=0.40b0
+# istio-client>=1.19.0
+
+# Development and testing are managed via dev extras / CI, not here

@@ -13,6 +13,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import shutil
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -293,6 +294,15 @@ class RealCodeExecutorTool:
             }
 
     @staticmethod
+    def _docker_available() -> bool:
+        try:
+            if not getattr(settings, "USE_DOCKER_SANDBOX", False):
+                return False
+        except Exception:
+            return False
+        return shutil.which("docker") is not None
+
+    @staticmethod
     def _is_code_safe(code: str) -> tuple[bool, str | None]:
         """Lightweight AST-based guard to block dangerous constructs.
         This is NOT a full sandbox; it reduces obvious risks.
@@ -378,8 +388,40 @@ class RealCodeExecutorTool:
             temp_file = f.name
 
         try:
+            # Optional Docker sandbox
+            if self._docker_available():
+                return self._execute_python_docker(temp_file, timeout)
+
             # Execute with timeout and restricted environment
             start_time = time.time()
+
+            # Apply basic OS-level resource limits on POSIX systems
+            preexec = None
+            if os.name == "posix":
+                def _limit_resources():
+                    try:
+                        import resource
+                        # Limit CPU seconds roughly to timeout + 1 buffer
+                        cpu = max(1, int(timeout))
+                        resource.setrlimit(resource.RLIMIT_CPU, (cpu, cpu))
+                        # Limit open files
+                        resource.setrlimit(resource.RLIMIT_NOFILE, (32, 32))
+                        # Limit address space (memory)
+                        mem = os.getenv("MEMORY_LIMIT", getattr(settings, "MEMORY_LIMIT", "512m"))
+                        def _parse_mem(s: str) -> int:
+                            s = str(s).strip().lower()
+                            if s.endswith("g"):
+                                return int(float(s[:-1]) * 1024 * 1024 * 1024)
+                            if s.endswith("m"):
+                                return int(float(s[:-1]) * 1024 * 1024)
+                            if s.endswith("k"):
+                                return int(float(s[:-1]) * 1024)
+                            return int(s)
+                        mem_bytes = max(64 * 1024 * 1024, _parse_mem(mem))
+                        resource.setrlimit(resource.RLIMIT_AS, (mem_bytes, mem_bytes))
+                    except Exception:
+                        pass
+                preexec = _limit_resources
 
             # Use isolated mode (-I) to ignore environment variables and user site dirs
             result = subprocess.run(
@@ -393,6 +435,7 @@ class RealCodeExecutorTool:
                     "HOME": "/tmp",  # Restrict home directory
                 },
                 cwd="/tmp",  # Restrict working directory
+                preexec_fn=preexec,
             )
 
             execution_time = time.time() - start_time
@@ -418,6 +461,109 @@ class RealCodeExecutorTool:
                 os.unlink(temp_file)
             except Exception:
                 pass
+
+    def _execute_python_docker(self, temp_file: str, timeout: int) -> tuple[ActionStatus, Any]:
+        """Execute Python code inside a Docker sandbox if available."""
+        try:
+            image = getattr(settings, "DOCKER_IMAGE", "python:3.11-slim")
+            mem = getattr(settings, "MEMORY_LIMIT", "512m")
+            mount_dir = os.path.dirname(temp_file)
+            base_name = os.path.basename(temp_file)
+
+            cmd = [
+                "docker",
+                "run",
+                "--rm",
+                "--network", "none",
+                "--cpus", "1",
+                "--memory", str(mem),
+                "--pids-limit", "64",
+                "--read-only",
+                "-v", f"{mount_dir}:/sandbox:ro",
+                "-w", "/sandbox",
+                "--user", "65534:65534",
+                image,
+                "python", "-I", base_name,
+            ]
+
+            start_time = time.time()
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+            )
+            execution_time = time.time() - start_time
+
+            return ActionStatus.SUCCESS, {
+                "output": result.stdout,
+                "error": result.stderr,
+                "return_code": result.returncode,
+                "execution_time": execution_time,
+                "language": "python",
+                "timeout_used": timeout,
+                "sandbox": "docker",
+            }
+        except subprocess.TimeoutExpired:
+            return ActionStatus.FAILURE, {
+                "error": f"Code execution timed out after {timeout} seconds",
+                "timeout": True,
+                "sandbox": "docker",
+            }
+        except Exception as e:
+            # Fall back to local sandbox if docker fails
+            logger.warning("Docker sandbox failed: %s", e)
+            return self._execute_python_open_local(temp_file, timeout)
+
+    def _execute_python_open_local(self, temp_file: str, timeout: int) -> tuple[ActionStatus, Any]:
+        """Run existing temp file locally with isolation flags (helper for docker fallback)."""
+        start_time = time.time()
+        preexec = None
+        if os.name == "posix":
+            def _limit_resources():
+                try:
+                    import resource
+                    cpu = max(1, int(timeout))
+                    resource.setrlimit(resource.RLIMIT_CPU, (cpu, cpu))
+                    resource.setrlimit(resource.RLIMIT_NOFILE, (32, 32))
+                    mem = os.getenv("MEMORY_LIMIT", getattr(settings, "MEMORY_LIMIT", "512m"))
+                    def _parse_mem(s: str) -> int:
+                        s = str(s).strip().lower()
+                        if s.endswith("g"):
+                            return int(float(s[:-1]) * 1024 * 1024 * 1024)
+                        if s.endswith("m"):
+                            return int(float(s[:-1]) * 1024 * 1024)
+                        if s.endswith("k"):
+                            return int(float(s[:-1]) * 1024)
+                        return int(s)
+                    mem_bytes = max(64 * 1024 * 1024, _parse_mem(mem))
+                    resource.setrlimit(resource.RLIMIT_AS, (mem_bytes, mem_bytes))
+                except Exception:
+                    pass
+            preexec = _limit_resources
+
+        result = subprocess.run(
+            [sys.executable, "-I", temp_file],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            env={
+                **os.environ,
+                "PYTHONPATH": "",
+                "HOME": "/tmp",
+            },
+            cwd="/tmp",
+            preexec_fn=preexec,
+        )
+        execution_time = time.time() - start_time
+        return ActionStatus.SUCCESS, {
+            "output": result.stdout,
+            "error": result.stderr,
+            "return_code": result.returncode,
+            "execution_time": execution_time,
+            "language": "python",
+            "timeout_used": timeout,
+        }
 
     def _execute_bash(self, code: str, timeout: int) -> tuple[ActionStatus, Any]:
         """Execute bash code with security restrictions."""
