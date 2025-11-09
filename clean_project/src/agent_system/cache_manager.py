@@ -5,15 +5,13 @@ Supports session caching, data caching, and distributed caching
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import pickle
 import time
-from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Union
 from dataclasses import dataclass
-import hashlib
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, Optional, Union
 
 try:
     import redis.asyncio as redis  # type: ignore
@@ -23,6 +21,7 @@ except Exception:  # ModuleNotFoundError or other import issues
     if TYPE_CHECKING:  # for type checkers only
         from redis.asyncio import Redis as Redis  # pragma: no cover
     else:
+
         class Redis:  # minimal placeholder for runtime annotations
             pass
 

@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 from .database_models import AgentJobModel, AgentModel, db_manager
 from .job_definitions import JobPriority, JobStatus, JobType
@@ -28,7 +28,7 @@ class AgentJobStore:
         JobStatus.FAILED: "error",
     }
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.db = db_manager
 
     def create_job(
@@ -76,7 +76,9 @@ class AgentJobStore:
             session.refresh(job)
             return self._to_dict(job)
 
-    def mark_job_succeeded(self, job_id: str, result: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+    def mark_job_succeeded(
+        self, job_id: str, result: Optional[Dict[str, Any]] = None
+    ) -> Optional[Dict[str, Any]]:
         """Mark job as completed successfully."""
         with self.db.get_session() as session:
             job = session.query(AgentJobModel).filter(AgentJobModel.id == job_id).first()
@@ -146,11 +148,16 @@ class AgentJobStore:
     def get_queue_depth(self) -> int:
         """Get the current depth of the job queue (number of queued jobs)."""
         with self.db.get_session() as session:
-            return session.query(AgentJobModel).filter(
-                AgentJobModel.status == JobStatus.QUEUED.value
-            ).count()
+            return cast(
+                int,
+                (
+                    session.query(AgentJobModel)
+                    .filter(AgentJobModel.status == JobStatus.QUEUED.value)
+                    .count()
+                ),
+            )
 
-    def _update_agent_status(self, session, agent_id: Optional[str], job_status: JobStatus) -> None:
+    def _update_agent_status(self, session: Any, agent_id: Optional[str], job_status: JobStatus) -> None:
         if not agent_id:
             return
         status_value = self._AGENT_STATUS_MAP.get(job_status)
@@ -164,7 +171,7 @@ class AgentJobStore:
             agent.last_execution = _now()
         session.add(agent)
 
-    def _update_agent_last_run(self, session, agent_id: Optional[str]) -> None:
+    def _update_agent_last_run(self, session: Any, agent_id: Optional[str]) -> None:
         if not agent_id:
             return
         agent = session.query(AgentModel).filter(AgentModel.id == agent_id).first()
@@ -177,14 +184,11 @@ class AgentJobStore:
     @staticmethod
     def _normalize_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         if hasattr(payload, "model_dump"):
-            return payload.model_dump()
+            return cast(Dict[str, Any], payload.model_dump())
         return dict(payload)
 
     @staticmethod
-    def _to_dict(job: AgentJobModel | None) -> Optional[Dict[str, Any]]:
-        if not job:
-            return None
-
+    def _to_dict(job: AgentJobModel) -> Dict[str, Any]:
         def _ts(value: Optional[datetime]) -> Optional[str]:
             return value.isoformat() if value else None
 
@@ -209,4 +213,4 @@ class AgentJobStore:
 
 
 # Global job store instance
-job_store = AgentJobStore()
+job_store: AgentJobStore = AgentJobStore()

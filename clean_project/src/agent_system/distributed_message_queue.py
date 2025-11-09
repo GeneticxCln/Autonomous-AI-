@@ -12,9 +12,10 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from enum import IntEnum
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 from .cache_manager import cache_manager
+from .cache_manager import Redis as RedisClient
 from .config_simple import settings
 
 logger = logging.getLogger(__name__)
@@ -58,7 +59,9 @@ class MessageEnvelope:
         """Deserialize envelope from storage."""
         priority_value = data.get("priority", MessagePriority.NORMAL.name)
         priority = (
-            priority_value if isinstance(priority_value, MessagePriority) else MessagePriority[priority_value]
+            priority_value
+            if isinstance(priority_value, MessagePriority)
+            else MessagePriority[priority_value]
         )
         return cls(
             message_id=data["message_id"],
@@ -92,21 +95,24 @@ class DistributedMessageQueue:
     - Graceful degradation when Redis is unavailable
     """
 
+    # Priority queue entries are (priority_value, monotonic_counter, envelope)
+    PriorityItem = Tuple[int, int, MessageEnvelope]
+
     def __init__(
         self,
         config: Optional[MessageQueueConfig] = None,
         *,
         force_fallback: bool = False,
-    ):
+    ) -> None:
         self.config = config or MessageQueueConfig()
         self.force_fallback = force_fallback
-        self._is_initialized = False
-        self._using_fallback = force_fallback
-        self._fallback_queues: Dict[str, asyncio.PriorityQueue] = {}
+        self._is_initialized: bool = False
+        self._using_fallback: bool = force_fallback
+        self._fallback_queues: Dict[str, asyncio.PriorityQueue[DistributedMessageQueue.PriorityItem]] = {}
         self._fallback_pending: Dict[str, Dict[str, MessageEnvelope]] = {}
-        self._fallback_lock = asyncio.Lock()
-        self._message_counter = 0
-        self._redis = None
+        self._fallback_lock: asyncio.Lock = asyncio.Lock()
+        self._message_counter: int = 0
+        self._redis: Optional[RedisClient] = None
 
     async def initialize(self) -> bool:
         """Initialize queue backend."""
@@ -131,7 +137,9 @@ class DistributedMessageQueue:
 
         self._using_fallback = True
         self._is_initialized = True
-        logger.warning("Redis unavailable, distributed message queue falling back to in-memory backend")
+        logger.warning(
+            "Redis unavailable, distributed message queue falling back to in-memory backend"
+        )
         return True
 
     def _queue_key(self, queue: str, priority: MessagePriority) -> str:
@@ -282,7 +290,7 @@ class DistributedMessageQueue:
                     maxsize=self.config.max_fallback_queue_size
                 )
 
-            priority_queue = self._fallback_queues[queue]
+            priority_queue: asyncio.PriorityQueue[DistributedMessageQueue.PriorityItem] = self._fallback_queues[queue]
             if priority_queue.full():
                 # Drop lowest priority entry to make space
                 try:
@@ -298,10 +306,10 @@ class DistributedMessageQueue:
         async with self._fallback_lock:
             if queue not in self._fallback_queues:
                 self._fallback_queues[queue] = asyncio.PriorityQueue()
-            priority_queue = self._fallback_queues[queue]
+            priority_queue: asyncio.PriorityQueue[DistributedMessageQueue.PriorityItem] = self._fallback_queues[queue]
 
         try:
-            item = await asyncio.wait_for(priority_queue.get(), timeout=timeout)
+            item: DistributedMessageQueue.PriorityItem = await asyncio.wait_for(priority_queue.get(), timeout=timeout)
         except asyncio.TimeoutError:
             return None
 
@@ -317,10 +325,10 @@ class DistributedMessageQueue:
             if not pending:
                 return 0
 
-            queued = self._fallback_queues.setdefault(queue, asyncio.PriorityQueue())
+            queued: asyncio.PriorityQueue[DistributedMessageQueue.PriorityItem] = self._fallback_queues.setdefault(queue, asyncio.PriorityQueue())
             requeued = 0
             for message_id, envelope in list(pending.items()):
-                entry = (int(envelope.priority), self._message_counter, envelope)
+                entry: DistributedMessageQueue.PriorityItem = (int(envelope.priority), self._message_counter, envelope)
                 self._message_counter += 1
                 await queued.put(entry)
                 requeued += 1
@@ -334,7 +342,9 @@ class DistributedMessageQueue:
             "visibility_deadline": time.time() + self.config.visibility_timeout,
             "retries": envelope.retries,
         }
-        await self._redis.hset(self._pending_key(queue), envelope.message_id, json.dumps(entry, default=str))
+        await self._redis.hset(
+            self._pending_key(queue), envelope.message_id, json.dumps(entry, default=str)
+        )
         await self._redis.expire(self._pending_key(queue), self.config.retention_seconds)
 
     @staticmethod

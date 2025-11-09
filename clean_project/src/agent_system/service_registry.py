@@ -64,7 +64,9 @@ class ServiceInstance:
             metadata=data.get("metadata", {}),
             registered_at=data.get("registered_at", time.time()),
             last_heartbeat=data.get("last_heartbeat", time.time()),
-            ttl_seconds=int(data.get("ttl_seconds", getattr(settings, "DISTRIBUTED_SERVICE_TTL", 45))),
+            ttl_seconds=int(
+                data.get("ttl_seconds", getattr(settings, "DISTRIBUTED_SERVICE_TTL", 45))
+            ),
         )
 
     def is_expired(self, now: Optional[float] = None) -> bool:
@@ -75,7 +77,9 @@ class ServiceInstance:
 class ServiceRegistry:
     """Service discovery manager with Redis backend and in-memory fallback."""
 
-    def __init__(self, config: Optional[ServiceRegistryConfig] = None, *, force_fallback: bool = False):
+    def __init__(
+        self, config: Optional[ServiceRegistryConfig] = None, *, force_fallback: bool = False
+    ):
         self.config = config or ServiceRegistryConfig()
         self.force_fallback = force_fallback
         self._is_initialized = False
@@ -146,7 +150,9 @@ class ServiceRegistry:
             return instance
 
         key = self._service_key(service_name, instance.instance_id)
-        await self._redis.set(key, json.dumps(instance.to_dict(), default=str), ex=instance.ttl_seconds)
+        await self._redis.set(
+            key, json.dumps(instance.to_dict(), default=str), ex=instance.ttl_seconds
+        )
         await self._redis.sadd(self._index_key(service_name), instance.instance_id)
         return instance
 
@@ -171,7 +177,11 @@ class ServiceRegistry:
 
         data = json.loads(self._decode(raw))
         data["last_heartbeat"] = time.time()
-        await self._redis.set(key, json.dumps(data, default=str), ex=data.get("ttl_seconds", self.config.default_ttl_seconds))
+        await self._redis.set(
+            key,
+            json.dumps(data, default=str),
+            ex=data.get("ttl_seconds", self.config.default_ttl_seconds),
+        )
         return True
 
     async def deregister(self, service_name: str, instance_id: str) -> bool:

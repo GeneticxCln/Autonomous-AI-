@@ -107,14 +107,39 @@ class DatabasePersistence:
             return None
 
     def save_memory(self, memories: List[Dict[str, Any]]) -> None:
-        """Save memories to database."""
+        """Save memories to database.
+
+        This method deduplicates memory_ids within the provided batch to avoid
+        UNIQUE constraint violations when multiple entries reference the same
+        logical memory in a single call.
+        """
         try:
             with self.db.get_session() as session:
+                # Track newly created models in-session to avoid duplicate inserts
+                created: Dict[str, MemoryModel] = {}
+
                 for memory_data in memories:
-                    # Check if memory exists
+                    mem_id = memory_data.get("id", "")
+                    if not mem_id:
+                        # Skip invalid entries without an ID
+                        continue
+
+                    # If we already added this memory in the current batch, update it
+                    if mem_id in created:
+                        model = created[mem_id]
+                        model.goal_id = memory_data.get("goal_id")
+                        model.action_data = memory_data.get("action", {})
+                        model.observation_data = memory_data.get("observation", {})
+                        model.context_data = memory_data.get("context", {})
+                        model.success_score = memory_data.get("success_score", 0.0)
+                        model.memory_type = memory_data.get("type", "working")
+                        model.accessed_at = datetime.now(UTC)
+                        continue
+
+                    # Otherwise, see if it exists in the database already
                     existing = (
                         session.query(MemoryModel)
-                        .filter(MemoryModel.memory_id == memory_data.get("id", ""))
+                        .filter(MemoryModel.memory_id == mem_id)
                         .first()
                     )
 
@@ -128,9 +153,9 @@ class DatabasePersistence:
                         existing.memory_type = memory_data.get("type", "working")
                         existing.accessed_at = datetime.now(UTC)
                     else:
-                        # Create new
+                        # Create new and record in local map
                         model = MemoryModel(
-                            memory_id=memory_data.get("id", ""),
+                            memory_id=mem_id,
                             goal_id=memory_data.get("goal_id"),
                             action_data=memory_data.get("action", {}),
                             observation_data=memory_data.get("observation", {}),
@@ -139,6 +164,7 @@ class DatabasePersistence:
                             memory_type=memory_data.get("type", "working"),
                         )
                         session.add(model)
+                        created[mem_id] = model
 
                 session.commit()
                 logger.debug(f"Memories saved to database: {len(memories)} items")

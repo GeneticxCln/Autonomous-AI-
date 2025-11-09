@@ -12,7 +12,7 @@ import logging
 import time
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional
 
 from .cache_manager import cache_manager
 
@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 
 class CacheLevel(str, Enum):
     """Cache levels in the multi-level cache."""
+
     L1 = "l1"  # In-memory (fastest, smallest)
     L2 = "l2"  # Redis (fast, medium size)
     L3 = "l3"  # Database (slower, largest)
@@ -28,6 +29,7 @@ class CacheLevel(str, Enum):
 
 class EvictionPolicy(str, Enum):
     """Cache eviction policies."""
+
     LRU = "lru"  # Least Recently Used
     LFU = "lfu"  # Least Frequently Used
     FIFO = "fifo"  # First In First Out
@@ -37,6 +39,7 @@ class EvictionPolicy(str, Enum):
 @dataclass
 class CacheEntry:
     """A cache entry with metadata."""
+
     key: str
     value: Any
     level: CacheLevel
@@ -136,7 +139,9 @@ class MultiLevelCache:
         elif level == CacheLevel.L2:
             await self._set_l2(key, value, ttl=ttl or self.l2_ttl)
 
-    async def _set_l1(self, key: str, value: Any, ttl: Optional[float] = None, tags: Optional[List[str]] = None):
+    async def _set_l1(
+        self, key: str, value: Any, ttl: Optional[float] = None, tags: Optional[List[str]] = None
+    ):
         """Set value in L1 cache."""
         async with self._lock:
             # Evict if needed
@@ -169,28 +174,19 @@ class MultiLevelCache:
 
         if self.eviction_policy == EvictionPolicy.LRU:
             # Remove least recently used
-            sorted_entries = sorted(
-                self.l1_cache.items(),
-                key=lambda x: x[1].accessed_at
-            )
+            sorted_entries = sorted(self.l1_cache.items(), key=lambda x: x[1].accessed_at)
             key_to_remove = sorted_entries[0][0]
             del self.l1_cache[key_to_remove]
 
         elif self.eviction_policy == EvictionPolicy.LFU:
             # Remove least frequently used
-            sorted_entries = sorted(
-                self.l1_cache.items(),
-                key=lambda x: x[1].access_count
-            )
+            sorted_entries = sorted(self.l1_cache.items(), key=lambda x: x[1].access_count)
             key_to_remove = sorted_entries[0][0]
             del self.l1_cache[key_to_remove]
 
         elif self.eviction_policy == EvictionPolicy.FIFO:
             # Remove oldest
-            sorted_entries = sorted(
-                self.l1_cache.items(),
-                key=lambda x: x[1].created_at
-            )
+            sorted_entries = sorted(self.l1_cache.items(), key=lambda x: x[1].created_at)
             key_to_remove = sorted_entries[0][0]
             del self.l1_cache[key_to_remove]
 
@@ -199,17 +195,15 @@ class MultiLevelCache:
         async with self._lock:
             if pattern:
                 # Invalidate by key pattern
-                keys_to_remove = [
-                    key for key in self.l1_cache.keys()
-                    if pattern in key
-                ]
+                keys_to_remove = [key for key in self.l1_cache.keys() if pattern in key]
                 for key in keys_to_remove:
                     del self.l1_cache[key]
 
             if tags:
                 # Invalidate by tags
                 keys_to_remove = [
-                    key for key, entry in self.l1_cache.items()
+                    key
+                    for key, entry in self.l1_cache.items()
                     if any(tag in entry.tags for tag in tags)
                 ]
                 for key in keys_to_remove:
@@ -233,7 +227,10 @@ class MultiLevelCache:
     async def _warmup_task(self, func: Callable[[], Any]):
         """Execute a warmup function and cache results."""
         try:
-            result = await func() if asyncio.iscoroutinefunction(func) else func()
+            if asyncio.iscoroutinefunction(func):
+                await func()
+            else:
+                func()
             # Cache the result (implementation depends on function)
             logger.debug(f"Cache warmup completed for {func.__name__}")
         except Exception as e:
@@ -258,4 +255,3 @@ class MultiLevelCache:
 
 # Global multi-level cache instance
 multi_level_cache = MultiLevelCache()
-

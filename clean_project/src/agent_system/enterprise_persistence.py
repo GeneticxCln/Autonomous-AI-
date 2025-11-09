@@ -18,13 +18,13 @@ logger = logging.getLogger(__name__)
 class EnterprisePersistence:
     """Ensures all agent state is stored in the database."""
 
-    def __init__(self, use_database: bool = True, database_url: str | None = None):
-        self.use_database = use_database
-        self.database_url = database_url
-        self._database_available = False
-        self._initialized = False
+    def __init__(self, use_database: bool = True, database_url: str | None = None) -> None:
+        self.use_database: bool = use_database
+        self.database_url: str | None = database_url
+        self._database_available: bool = False
+        self._initialized: bool = False
 
-    def configure(self, *, database_url: str | None = None):
+    def configure(self, *, database_url: str | None = None) -> None:
         """Update persistence configuration and force re-initialization."""
         if database_url:
             self.database_url = database_url

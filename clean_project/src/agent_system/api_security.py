@@ -7,12 +7,14 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import time
 from collections import defaultdict
-import os
+from typing import Any, DefaultDict, List, Optional, cast
 
 try:
     from .production_config import get_config
+
     _cfg = get_config()
     RATE_LIMIT_REQUESTS = int(_cfg.rate_limit_requests)
     RATE_LIMIT_WINDOW = int(_cfg.rate_limit_window)
@@ -22,7 +24,6 @@ except Exception:
     RATE_LIMIT_REQUESTS = 100
     RATE_LIMIT_WINDOW = 60
     _CORS_ORIGINS = ["*"]
-from typing import Any, Optional
 
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -30,7 +31,7 @@ from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from .auth_models import UserModel, SecurityContext, AuthorizationError
+from .auth_models import AuthorizationError, SecurityContext, UserModel
 from .auth_service import AuthenticationError, auth_service
 
 logger = logging.getLogger(__name__)
@@ -39,14 +40,14 @@ logger = logging.getLogger(__name__)
 security = HTTPBearer()
 
 # Rate limiting storage (in production, use Redis)
-rate_limit_store = defaultdict(list)
-_custom_rate_limit_store = defaultdict(list)
-_custom_rl_redis = None
-_custom_rl_enabled = False
-_custom_rl_inited = False
+rate_limit_store: DefaultDict[str, List[float]] = defaultdict(list)
+_custom_rate_limit_store: DefaultDict[str, List[float]] = defaultdict(list)
+_custom_rl_redis: Any | None = None
+_custom_rl_enabled: bool = False
+_custom_rl_inited: bool = False
 
 
-def _init_custom_rl():
+def _init_custom_rl() -> None:
     """Initialize Redis client for custom rate limits if REDIS_URL/URI is set."""
     global _custom_rl_inited, _custom_rl_enabled, _custom_rl_redis
     if _custom_rl_inited:
@@ -56,7 +57,7 @@ def _init_custom_rl():
     if not redis_url:
         return
     try:
-        import redis  # type: ignore
+        import redis
 
         _custom_rl_redis = redis.Redis.from_url(redis_url, decode_responses=True)
         _custom_rl_redis.ping()
@@ -74,7 +75,7 @@ def check_custom_rate_limit(namespace: str, key: str, limit: int, window_seconds
         bucket = int(now // window_seconds)
         redis_key = f"rl:{namespace}:{key}:{bucket}"
         try:
-            count = _custom_rl_redis.incr(redis_key)
+            count = cast(int, _custom_rl_redis.incr(redis_key))
             if count == 1:
                 _custom_rl_redis.expire(redis_key, window_seconds)
             return count > limit
@@ -92,26 +93,28 @@ def check_custom_rate_limit(namespace: str, key: str, limit: int, window_seconds
     return False
 
 
-class RateLimitMiddleware(BaseHTTPMiddleware):
+class RateLimitMiddleware(BaseHTTPMiddleware):  # type: ignore[misc]
     """Rate limiting middleware with optional Redis backend."""
 
-    def __init__(self, app):
+    def __init__(self, app: Any) -> None:
         super().__init__(app)
-        self._redis = None
-        self._redis_enabled = False
+        self._redis: Any | None = None
+        self._redis_enabled: bool = False
         redis_url = os.getenv("REDIS_URL") or os.getenv("REDIS_URI")
         if redis_url:
             try:
-                import redis  # type: ignore
+                import redis
 
                 self._redis = redis.Redis.from_url(redis_url, decode_responses=True)
                 self._redis.ping()
                 self._redis_enabled = True
                 logger.info("RateLimitMiddleware: using Redis backend")
             except Exception as e:
-                logger.warning(f"RateLimitMiddleware: Redis unavailable, falling back to in-memory: {e}")
+                logger.warning(
+                    f"RateLimitMiddleware: Redis unavailable, falling back to in-memory: {e}"
+                )
 
-    async def dispatch(self, request: Request, call_next):
+    async def dispatch(self, request: Request, call_next: Any) -> Any:
         client_ip = request.client.host if request.client else "unknown"
         current_time = time.time()
 
@@ -157,10 +160,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         return response
 
 
-class SecurityMiddleware(BaseHTTPMiddleware):
+class SecurityMiddleware(BaseHTTPMiddleware):  # type: ignore[misc]
     """Security middleware for additional protections."""
 
-    async def dispatch(self, request: Request, call_next):
+    async def dispatch(self, request: Request, call_next: Any) -> Any:
         start_time = time.time()
 
         # Add security headers
@@ -173,6 +176,7 @@ class SecurityMiddleware(BaseHTTPMiddleware):
         # Content Security Policy
         try:
             from .production_config import get_config
+
             cfg = get_config()
             if cfg.is_production():
                 csp = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; frame-ancestors 'none'; object-src 'none'"
@@ -225,12 +229,12 @@ async def get_current_security_context(
         )
 
 
-def require_permission(resource: str, action: str):
+def require_permission(resource: str, action: str) -> Any:
     """Dependency to require specific permission."""
 
     async def permission_checker(
         security_context: SecurityContext = Depends(get_current_security_context),
-    ):
+    ) -> SecurityContext:
         if not security_context.has_permission(resource, action):
             logger.warning(
                 f"Permission denied: {security_context.user.username} "
@@ -245,12 +249,12 @@ def require_permission(resource: str, action: str):
     return permission_checker
 
 
-def require_admin():
+def require_admin() -> Any:
     """Dependency to require admin privileges."""
 
     async def admin_checker(
         security_context: SecurityContext = Depends(get_current_security_context),
-    ):
+    ) -> SecurityContext:
         if not security_context.is_admin:
             logger.warning(f"Admin access denied: {security_context.user.username}")
             raise HTTPException(
@@ -264,13 +268,13 @@ def require_admin():
 class APISecurityConfig:
     """API security configuration."""
 
-    def __init__(self):
-        self.cors_origins = _CORS_ORIGINS
-        self.rate_limit_enabled = True
-        self.security_headers_enabled = True
-        self.audit_logging_enabled = True
+    def __init__(self) -> None:
+        self.cors_origins: List[str] = _CORS_ORIGINS
+        self.rate_limit_enabled: bool = True
+        self.security_headers_enabled: bool = True
+        self.audit_logging_enabled: bool = True
 
-    def get_cors_middleware(self):
+    def get_cors_middleware(self) -> Any:
         """Get configured CORS middleware."""
         allow_creds = not (self.cors_origins == ["*"] or "*" in self.cors_origins)
         return CORSMiddleware(
@@ -291,7 +295,7 @@ def create_security_error_response(
     )
 
 
-def log_api_access(request: Request, user: Optional[UserModel] = None, status_code: int = 200):
+def log_api_access(request: Request, user: Optional[UserModel] = None, status_code: int = 200) -> None:
     """Log API access for security auditing."""
     log_data = {
         "timestamp": time.time(),

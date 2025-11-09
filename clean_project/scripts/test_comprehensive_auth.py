@@ -3,7 +3,6 @@ Comprehensive Test Suite for Enterprise Authentication
 Covers edge cases, security scenarios, and performance testing
 """
 
-import hashlib
 import sys
 import time
 from pathlib import Path
@@ -319,7 +318,7 @@ class TestAuthenticationSystem:
         assert admin_context.is_admin is True
 
         # Test non-admin user
-        user_context = auth_service.create_user(
+        auth_service.create_user(
             username="test_regular",
             email="regular@example.com",
             password="testpass123",
@@ -340,7 +339,7 @@ class TestAuthenticationSystem:
             pytest.fail(f"require_admin should not raise exception for admin: {e}")
 
         # Create non-admin user
-        user_context = auth_service.create_user(
+        auth_service.create_user(
             username="test_nonadmin",
             email="nonadmin@example.com",
             password="testpass123",
@@ -373,7 +372,7 @@ class TestAuthenticationSystem:
         """Test password hashing and verification."""
         # Test that password hashing is working
         test_password = "test_password_123"
-        hashed = hashlib.sha256(test_password.encode()).hexdigest()
+        # Removed unused local variable: hashed password preview was not used in assertions
 
         # Create user with this password
         user = auth_service.create_user(
@@ -408,7 +407,7 @@ class TestAuthenticationSystem:
     def test_inactive_user_login(self):
         """Test login with inactive user."""
         # Create user
-        user = auth_service.create_user(
+        auth_service.create_user(
             username="test_inactive",
             email="inactive@example.com",
             password="testpass123",
@@ -428,7 +427,7 @@ class TestAuthenticationSystem:
     def test_user_with_different_email(self):
         """Test authentication with email instead of username."""
         # Create user
-        user = auth_service.create_user(
+        auth_service.create_user(
             username="test_email_auth",
             email="auth@example.com",
             password="testpass123",
@@ -479,7 +478,7 @@ class TestAuthenticationSystem:
     def test_role_permission_assignment(self):
         """Test that roles correctly assign permissions."""
         # Create user with specific role
-        user = auth_service.create_user(
+        auth_service.create_user(
             username="test_role_perms",
             email="roleperms@example.com",
             password=TEST_PASS,
@@ -499,7 +498,7 @@ class TestAuthenticationSystem:
         """Test logout functionality."""
         # Login and create session
         security_context = auth_service.authenticate_user(ADMIN_USER, ADMIN_PASS)
-        tokens = auth_service.create_user_session(security_context.user.id)
+        auth_service.create_user_session(security_context.user.id)
 
         # Logout
         auth_service.logout(security_context.user.id, security_context.session_id)

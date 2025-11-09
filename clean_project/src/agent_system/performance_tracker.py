@@ -5,14 +5,14 @@ Monitors and tracks agent performance metrics and optimization opportunities
 
 from __future__ import annotations
 
-import time
+import json
 import logging
 import statistics
-from typing import Dict, Any, List, Optional, Union
+import time
+from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from collections import defaultdict, deque
-import json
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class PerformanceMetric:
     """Individual performance metric."""
+
     name: str
     value: float
     timestamp: datetime
@@ -31,6 +32,7 @@ class PerformanceMetric:
 @dataclass
 class PerformanceSnapshot:
     """Snapshot of performance at a point in time."""
+
     timestamp: datetime
     metrics: Dict[str, float] = field(default_factory=dict)
     system_info: Dict[str, Any] = field(default_factory=dict)
@@ -61,11 +63,12 @@ class PerformanceTracker:
     def track_response_time(self, operation: str, duration: float, success: bool = True):
         """Track response time for an operation."""
         metric_name = f"response_time_{operation}"
-        self._record_metric(metric_name, duration, {
-            "operation": operation,
-            "success": success,
-            "timestamp": time.time()
-        }, "milliseconds")
+        self._record_metric(
+            metric_name,
+            duration,
+            {"operation": operation, "success": success, "timestamp": time.time()},
+            "milliseconds",
+        )
 
         # Update current metrics
         if metric_name not in self.current_metrics:
@@ -94,11 +97,16 @@ class PerformanceTracker:
         # Calculate success rate
         if self.performance_data[total_key] > 0:
             success_rate = self.performance_data[success_key] / self.performance_data[total_key]
-            self._record_metric(metric_name, success_rate, {
-                "operation": operation,
-                "successes": self.performance_data[success_key],
-                "total": self.performance_data[total_key]
-            }, "percentage")
+            self._record_metric(
+                metric_name,
+                success_rate,
+                {
+                    "operation": operation,
+                    "successes": self.performance_data[success_key],
+                    "total": self.performance_data[total_key],
+                },
+                "percentage",
+            )
 
     def track_resource_usage(self, cpu_percent: float, memory_mb: float, disk_usage: float):
         """Track system resource usage."""
@@ -106,18 +114,24 @@ class PerformanceTracker:
         self._record_metric("memory_usage", memory_mb, {}, "megabytes")
         self._record_metric("disk_usage", disk_usage, {}, "percentage")
 
-    def track_task_completion(self, task_type: str, duration: float, quality_score: Optional[float] = None):
+    def track_task_completion(
+        self, task_type: str, duration: float, quality_score: Optional[float] = None
+    ):
         """Track task completion metrics."""
-        self._record_metric(f"task_duration_{task_type}", duration, {
-            "task_type": task_type,
-            "timestamp": time.time()
-        }, "seconds")
+        self._record_metric(
+            f"task_duration_{task_type}",
+            duration,
+            {"task_type": task_type, "timestamp": time.time()},
+            "seconds",
+        )
 
         if quality_score is not None:
-            self._record_metric(f"task_quality_{task_type}", quality_score, {
-                "task_type": task_type,
-                "timestamp": time.time()
-            }, "score")
+            self._record_metric(
+                f"task_quality_{task_type}",
+                quality_score,
+                {"task_type": task_type, "timestamp": time.time()},
+                "score",
+            )
 
     def track_user_satisfaction(self, rating: float, context: Dict[str, Any] = None):
         """Track user satisfaction ratings."""
@@ -132,7 +146,7 @@ class PerformanceTracker:
             "uptime_seconds": uptime,
             "uptime_hours": uptime / 3600,
             "timestamp": now.isoformat(),
-            "metrics": {}
+            "metrics": {},
         }
 
         # Calculate summary statistics for key metrics
@@ -145,7 +159,7 @@ class PerformanceTracker:
                     "median": statistics.median(metric_values),
                     "min": min(metric_values),
                     "max": max(metric_values),
-                    "latest": metric_values[-1] if metric_values else None
+                    "latest": metric_values[-1] if metric_values else None,
                 }
 
         # Add performance data
@@ -173,8 +187,8 @@ class PerformanceTracker:
         recent_metric_values = [m.value for m in recent_values]
         if len(recent_metric_values) >= 2:
             # Simple linear trend
-            first_half = recent_metric_values[:len(recent_metric_values)//2]
-            second_half = recent_metric_values[len(recent_metric_values)//2:]
+            first_half = recent_metric_values[: len(recent_metric_values) // 2]
+            second_half = recent_metric_values[len(recent_metric_values) // 2 :]
 
             first_avg = statistics.mean(first_half) if first_half else 0
             second_avg = statistics.mean(second_half) if second_half else 0
@@ -184,7 +198,9 @@ class PerformanceTracker:
             else:
                 trend_percent = 0
 
-            trend_direction = "improving" if trend_percent < 0 else "degrading" if trend_percent > 0 else "stable"
+            trend_direction = (
+                "improving" if trend_percent < 0 else "degrading" if trend_percent > 0 else "stable"
+            )
         else:
             trend_percent = 0
             trend_direction = "insufficient_data"
@@ -198,7 +214,7 @@ class PerformanceTracker:
             "current_value": recent_metric_values[-1] if recent_metric_values else None,
             "average": statistics.mean(recent_metric_values),
             "min": min(recent_metric_values),
-            "max": max(recent_metric_values)
+            "max": max(recent_metric_values),
         }
 
     def get_performance_health_score(self) -> Dict[str, Any]:
@@ -209,10 +225,13 @@ class PerformanceTracker:
         # Check response times
         response_metrics = [k for k in self.current_metrics.keys() if "response_time" in k]
         if response_metrics:
-            avg_response_time = statistics.mean([
-                self._get_latest_value(metric) for metric in response_metrics
-                if self._get_latest_value(metric) is not None
-            ])
+            avg_response_time = statistics.mean(
+                [
+                    self._get_latest_value(metric)
+                    for metric in response_metrics
+                    if self._get_latest_value(metric) is not None
+                ]
+            )
             if avg_response_time > 2.0:  # > 2 seconds
                 health_score -= 20
                 health_factors["response_time"] = "poor"
@@ -225,10 +244,13 @@ class PerformanceTracker:
         # Check success rates
         success_metrics = [k for k in self.current_metrics.keys() if "success_rate" in k]
         if success_metrics:
-            avg_success_rate = statistics.mean([
-                self._get_latest_value(metric) for metric in success_metrics
-                if self._get_latest_value(metric) is not None
-            ])
+            avg_success_rate = statistics.mean(
+                [
+                    self._get_latest_value(metric)
+                    for metric in success_metrics
+                    if self._get_latest_value(metric) is not None
+                ]
+            )
             if avg_success_rate < 0.8:  # < 80%
                 health_score -= 25
                 health_factors["success_rate"] = "poor"
@@ -265,16 +287,18 @@ class PerformanceTracker:
             "health_score": max(0, health_score),
             "status": status,
             "factors": health_factors,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
         }
 
-    def take_snapshot(self, system_info: Dict[str, Any] = None, agent_status: Dict[str, Any] = None):
+    def take_snapshot(
+        self, system_info: Dict[str, Any] = None, agent_status: Dict[str, Any] = None
+    ):
         """Take a performance snapshot."""
         snapshot = PerformanceSnapshot(
             timestamp=datetime.now(),
             metrics=self.current_metrics.copy(),
             system_info=system_info or {},
-            agent_status=agent_status or {}
+            agent_status=agent_status or {},
         )
         self.snapshots.append(snapshot)
 
@@ -285,11 +309,7 @@ class PerformanceTracker:
     def _record_metric(self, name: str, value: float, context: Dict[str, Any], unit: str = "count"):
         """Record a performance metric."""
         metric = PerformanceMetric(
-            name=name,
-            value=value,
-            timestamp=datetime.now(),
-            context=context,
-            unit=unit
+            name=name, value=value, timestamp=datetime.now(), context=context, unit=unit
         )
         self.metrics_history[name].append(metric)
 
@@ -313,7 +333,7 @@ class PerformanceTracker:
                         "value": m.value,
                         "timestamp": m.timestamp.isoformat(),
                         "context": m.context,
-                        "unit": m.unit
+                        "unit": m.unit,
                     }
                     for m in metrics
                 ]
@@ -325,13 +345,13 @@ class PerformanceTracker:
                     "timestamp": s.timestamp.isoformat(),
                     "metrics": s.metrics,
                     "system_info": s.system_info,
-                    "agent_status": s.agent_status
+                    "agent_status": s.agent_status,
                 }
                 for s in self.snapshots
-            ]
+            ],
         }
 
-        with open(filename, 'w') as f:
+        with open(filename, "w") as f:
             json.dump(export_data, f, indent=2, default=str)
 
         logger.info(f"Performance data exported to {filename}")
@@ -346,37 +366,43 @@ class PerformanceTracker:
             if "response_time" in metric_name:
                 trend = self.get_trend_analysis(metric_name, hours=24)
                 if trend.get("trend_direction") == "degrading":
-                    recommendations.append({
-                        "type": "response_time",
-                        "priority": "high",
-                        "metric": metric_name,
-                        "issue": f"Response time is degrading ({trend.get('trend_percent', 0):.1f}% increase)",
-                        "recommendation": "Consider optimizing the operation or increasing resources"
-                    })
+                    recommendations.append(
+                        {
+                            "type": "response_time",
+                            "priority": "high",
+                            "metric": metric_name,
+                            "issue": f"Response time is degrading ({trend.get('trend_percent', 0):.1f}% increase)",
+                            "recommendation": "Consider optimizing the operation or increasing resources",
+                        }
+                    )
 
         # Success rate recommendations
         for metric_name in self.metrics_history.keys():
             if "success_rate" in metric_name:
                 latest_value = self._get_latest_value(metric_name)
                 if latest_value is not None and latest_value < 0.8:
-                    recommendations.append({
-                        "type": "success_rate",
-                        "priority": "high",
-                        "metric": metric_name,
-                        "issue": f"Low success rate ({latest_value:.1%})",
-                        "recommendation": "Review error handling and validation logic"
-                    })
+                    recommendations.append(
+                        {
+                            "type": "success_rate",
+                            "priority": "high",
+                            "metric": metric_name,
+                            "issue": f"Low success rate ({latest_value:.1%})",
+                            "recommendation": "Review error handling and validation logic",
+                        }
+                    )
 
         # Resource usage recommendations
         cpu_values = [m.value for m in self.metrics_history.get("cpu_usage", [])]
         if cpu_values and statistics.mean(cpu_values[-10:]) > 80:
-            recommendations.append({
-                "type": "resource_usage",
-                "priority": "medium",
-                "metric": "cpu_usage",
-                "issue": "High CPU usage detected",
-                "recommendation": "Consider scaling resources or optimizing CPU-intensive operations"
-            })
+            recommendations.append(
+                {
+                    "type": "resource_usage",
+                    "priority": "medium",
+                    "metric": "cpu_usage",
+                    "issue": "High CPU usage detected",
+                    "recommendation": "Consider scaling resources or optimizing CPU-intensive operations",
+                }
+            )
 
         return recommendations
 

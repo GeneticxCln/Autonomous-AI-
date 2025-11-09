@@ -4,20 +4,17 @@ Tests worker coordination, message queue reliability, service discovery, and mul
 """
 
 import asyncio
-import pytest
-import time
 from typing import List
+
+import pytest
 
 from agent_system.distributed_message_queue import (
     DistributedMessageQueue,
     MessagePriority,
-    MessageEnvelope,
 )
-from agent_system.service_registry import ServiceRegistry, ServiceInstance
-from agent_system.worker import AgentWorker
-from agent_system.job_definitions import JobType, JobPriority, JobQueueMessage
-from agent_system.job_manager import job_store
 from agent_system.distributed_state_manager import DistributedStateManager
+from agent_system.job_definitions import JobPriority, JobQueueMessage, JobType
+from agent_system.service_registry import ServiceRegistry
 
 
 @pytest.mark.asyncio
@@ -34,7 +31,7 @@ async def test_multi_worker_job_distribution():
             job_type=JobType.AGENT_EXECUTION,
             priority=JobPriority.NORMAL,
         )
-        await queue.publish("agent.jobs", message.dict(), priority=MessagePriority.NORMAL)
+        await queue.publish("agent.jobs", message.model_dump(), priority=MessagePriority.NORMAL)
         job_ids.append(f"job-{i}")
 
     # Simulate multiple workers consuming
@@ -152,7 +149,7 @@ async def test_service_expiration_with_ttl():
     await registry.initialize()
 
     # Register service with short TTL
-    instance = await registry.register_service(
+    _instance = await registry.register_service(
         "test-service",
         host="localhost",
         port=8000,
@@ -402,4 +399,3 @@ async def test_service_registry_load_balancing():
     # This would be useful for region-based routing
     all_instances = await registry.discover("api-service")
     assert all(inst.metadata.get("region") == "us-east" for inst in all_instances)
-

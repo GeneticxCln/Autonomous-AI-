@@ -4,15 +4,15 @@ Performance Benchmarking Suite
 Comprehensive performance testing for enterprise deployment
 """
 import asyncio
-import sys
-import os
-import time
 import json
+import os
 import statistics
+import sys
+import time
 from datetime import datetime
-from typing import Dict, Any, List
+from typing import Any, Dict
+
 import aiohttp
-import requests
 
 # Add the source directory to Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))

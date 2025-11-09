@@ -12,14 +12,12 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from .cache_manager import cache_manager
-from .config_simple import settings
-
 logger = logging.getLogger(__name__)
 
 
 class Region(str, Enum):
     """Supported regions."""
+
     US_EAST_1 = "us-east-1"
     US_WEST_2 = "us-west-2"
     EU_WEST_1 = "eu-west-1"
@@ -29,6 +27,7 @@ class Region(str, Enum):
 @dataclass
 class RegionConfig:
     """Configuration for a region."""
+
     region: Region
     endpoint: str
     database_url: str
@@ -117,6 +116,7 @@ class MultiRegionManager:
             try:
                 # Simple latency measurement (ping endpoint)
                 import time
+
                 start = time.perf_counter()
                 # In production, this would make an actual HTTP request
                 await asyncio.sleep(0.01)  # Simulated
@@ -125,7 +125,7 @@ class MultiRegionManager:
                 config.latency_ms = latency
             except Exception as e:
                 logger.debug(f"Failed to measure latency to {region}: {e}")
-                self._latency_cache[region] = float('inf')
+                self._latency_cache[region] = float("inf")
 
     async def _health_check_loop(self):
         """Periodically check health of all regions."""
@@ -168,7 +168,7 @@ class MultiRegionManager:
             return self.current_region
 
         # Sort by latency
-        healthy_regions.sort(key=lambda x: self._latency_cache.get(x[0], float('inf')))
+        healthy_regions.sort(key=lambda x: self._latency_cache.get(x[0], float("inf")))
         return healthy_regions[0][0]
 
     def get_region_config(self, region: Region) -> Optional[RegionConfig]:
@@ -179,7 +179,9 @@ class MultiRegionManager:
         """Check if a region is healthy."""
         return self._region_health.get(region, False)
 
-    async def replicate_data(self, data: Dict[str, Any], target_regions: Optional[List[Region]] = None):
+    async def replicate_data(
+        self, data: Dict[str, Any], target_regions: Optional[List[Region]] = None
+    ):
         """Replicate data to other regions."""
         if target_regions is None:
             target_regions = [r for r in self.regions.keys() if r != self.current_region]
@@ -211,10 +213,9 @@ class MultiRegionManager:
                     "priority": config.priority,
                 }
                 for region, config in self.regions.items()
-            }
+            },
         }
 
 
 # Global multi-region manager instance
 multi_region_manager = MultiRegionManager()
-

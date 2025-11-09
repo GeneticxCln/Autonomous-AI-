@@ -4,7 +4,7 @@ import logging
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List
 
-from .models import Action, Goal, Plan
+from .models import Action, Goal, Plan, Context
 
 logger = logging.getLogger(__name__)
 
@@ -229,7 +229,10 @@ class HierarchicalPlanner(PlanningStrategy):
             code_snippet = goal.constraints.get("code") if goal.constraints else None
             if not code_snippet and context:
                 code_snippet = context.get("code_snippet")
-            parameters["code"] = code_snippet or f"# TODO: implement {goal.description}"
+            parameters["code"] = (
+                code_snippet
+                or f"# placeholder for '{goal.description}'\nprint('Executing placeholder task')"
+            )
         else:
             if "parameters" in template:
                 parameters.update(template["parameters"])

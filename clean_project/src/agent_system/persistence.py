@@ -16,7 +16,9 @@ def save_action_selector(selector: Any, filename: str = "action_selector.json") 
     _backend.save_action_selector(selector, filename)
 
 
-def load_action_selector(selector: Any = None, filename: str = "action_selector.json") -> Dict[str, Any]:
+def load_action_selector(
+    selector: Any = None, filename: str = "action_selector.json"
+) -> Dict[str, Any]:
     return _backend.load_action_selector(selector, filename)
 
 

@@ -16,8 +16,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse, Response
+
 try:
-    from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
+    from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
+
     _PROM = True
 except Exception:
     _PROM = False
@@ -28,26 +30,32 @@ else:
     monitoring_system = None
     initialize_monitoring = None
 
+from typing import Optional, AsyncIterator, Callable, Awaitable
+
 from .api_endpoints import api_router
 from .api_schemas import (
+    AgentCapabilityDescriptor,
+    AgentCreate,
+    AgentExecute,
+    AgentExecutionResponse,
+    AgentResponse,
     APIError,
     APIResponse,
     APITokenCreate,
     APITokenResponse,
-    AgentCreate,
-    AgentExecutionResponse,
-    AgentResponse,
-    AgentExecute,
     BulkOperationRequest,
     BulkOperationResponse,
+    CapabilityRecord,
+    CapabilityRegisterRequest,
     ErrorDetail,
     GoalCreate,
     GoalResponse,
     LoginRequest,
     LoginResponse,
-    PaginationInfo,
     PaginatedResponse,
+    PaginationInfo,
     RateLimitInfo,
+    RoleLevel,
     SecurityEventResponse,
     SecurityEventType,
     SecuritySeverity,
@@ -56,17 +64,12 @@ from .api_schemas import (
     TokenData,
     TokenRefreshRequest,
     UserCreate,
-    UserUpdate,
     UserInfo,
     UserResponse,
     UserStatus,
-    RoleLevel,
+    UserUpdate,
     WebhookEvent,
-    AgentCapabilityDescriptor,
-    CapabilityRegisterRequest,
-    CapabilityRecord,
 )
-from .production_config import get_config
 from .api_security import (
     RateLimitMiddleware,
     SecurityMiddleware,
@@ -77,8 +80,8 @@ from .api_security import (
 from .auth_models import db_manager as auth_db_manager
 from .auth_service import auth_service
 from .database_models import db_manager
-from .infrastructure_manager import agent_startup_integration, agent_shutdown_integration
-from typing import Optional
+from .infrastructure_manager import agent_shutdown_integration, agent_startup_integration
+from .production_config import get_config
 
 # Configure logging
 logging.basicConfig(
@@ -88,7 +91,7 @@ logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Application lifespan events."""
     # Startup
     logger.info("🚀 Starting Agent Enterprise API Server")
@@ -121,7 +124,11 @@ async def lifespan(app: FastAPI):
 
                 jaeger_host = os.getenv("JAEGER_HOST", "localhost")
                 jaeger_port = int(os.getenv("JAEGER_PORT", "14268"))
-                if initialize_tracing(jaeger_host=jaeger_host, jaeger_port=jaeger_port, service_name="agent-enterprise-api"):
+                if initialize_tracing(
+                    jaeger_host=jaeger_host,
+                    jaeger_port=jaeger_port,
+                    service_name="agent-enterprise-api",
+                ):
                     try:
                         tracing_manager.instrument_sqlalchemy(db_manager.engine)
                     except Exception:
@@ -223,9 +230,7 @@ def create_app() -> FastAPI:
     # Add trusted host middleware for production
     cfg = get_config()
     if cfg.is_production():
-        app.add_middleware(
-            TrustedHostMiddleware, allowed_hosts=cfg.get_allowed_hosts()
-        )
+        app.add_middleware(TrustedHostMiddleware, allowed_hosts=cfg.get_allowed_hosts())
         logger.info("✅ Trusted host middleware enabled")
 
     # Include API router
@@ -251,7 +256,9 @@ def create_app() -> FastAPI:
                 return None
 
         @app.middleware("http")
-        async def metrics_middleware(request: Request, call_next):
+        async def metrics_middleware(
+            request: Request, call_next: Callable[[Request], Awaitable[Response]]
+        ) -> Response:
             start = time.perf_counter()
             response = None
             try:
@@ -272,15 +279,17 @@ def create_app() -> FastAPI:
                             status_code=status_code,
                             duration=duration,
                             request_size=_extract_content_length(request.headers),
-                            response_size=
+                            response_size=(
                                 _extract_content_length(response.headers)
                                 if response is not None
-                                else None,
+                                else None
+                            ),
                         )
                 except Exception:
                     logger.debug("Failed to record Prometheus metrics", exc_info=True)
 
         if cfg.enable_metrics:
+
             @app.get("/metrics")
             async def metrics() -> Response:
                 return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
@@ -435,11 +444,7 @@ def create_app() -> FastAPI:
             if cfg.is_production():
                 return JSONResponse(
                     status_code=503,
-                    content={
-                        "status": "unhealthy",
-                        "database": "disconnected",
-                        "error": str(e),
-                    },
+                    content={"status": "unhealthy", "database": "disconnected"},
                 )
             return {"status": "degraded", "database": "unknown", "error": str(e)}
 
@@ -448,14 +453,14 @@ def create_app() -> FastAPI:
     async def worker_health_check():
         """Worker health check endpoint for Kubernetes probes."""
         try:
+
             import psutil
-            import os
-            
+
             # Check if worker process is running
             process_count = len(psutil.pids())
             memory_info = psutil.virtual_memory()
             cpu_percent = psutil.cpu_percent(interval=1)
-            
+
             # Basic health indicators
             health_status = {
                 "status": "healthy",
@@ -463,9 +468,9 @@ def create_app() -> FastAPI:
                 "processes": process_count,
                 "memory_available_gb": round(memory_info.available / (1024**3), 2),
                 "cpu_usage_percent": cpu_percent,
-                "worker_active": True
+                "worker_active": True,
             }
-            
+
             # In production, return unhealthy status if resources are critically low
             if cfg.is_production():
                 if memory_info.percent > 95 or cpu_percent > 95:
@@ -474,21 +479,30 @@ def create_app() -> FastAPI:
                         content={
                             **health_status,
                             "status": "unhealthy",
-                            "reason": "Resource usage too high"
-                        }
+                            "reason": "Resource usage too high",
+                        },
                     )
-            
+
             return health_status
-            
+
         except Exception as e:
+            if cfg.is_production():
+                return JSONResponse(
+                    status_code=503,
+                    content={
+                        "status": "unhealthy",
+                        "timestamp": datetime.now(UTC).isoformat(),
+                        "worker_active": False,
+                    },
+                )
             return JSONResponse(
                 status_code=503,
                 content={
                     "status": "unhealthy",
                     "timestamp": datetime.now(UTC).isoformat(),
                     "worker_active": False,
-                    "error": str(e)
-                }
+                    "error": str(e),
+                },
             )
 
     @app.get("/health/worker/ready", tags=["System"])
@@ -498,32 +512,43 @@ def create_app() -> FastAPI:
             # Check database connectivity
             with auth_service.db.get_session() as session:
                 from sqlalchemy import text
+
                 session.execute(text("SELECT 1"))
-            
+
             # Check if monitoring system is available
             try:
                 from .advanced_monitoring import monitoring_system
+
                 if not monitoring_system.is_initialized:
                     raise Exception("Monitoring system not initialized")
             except Exception:
                 pass  # Not critical for readiness
-            
+
             return {
                 "status": "ready",
                 "timestamp": datetime.now(UTC).isoformat(),
                 "database": "connected",
-                "readiness": True
+                "readiness": True,
             }
-            
+
         except Exception as e:
+            if cfg.is_production():
+                return JSONResponse(
+                    status_code=503,
+                    content={
+                        "status": "not_ready",
+                        "timestamp": datetime.now(UTC).isoformat(),
+                        "readiness": False,
+                    },
+                )
             return JSONResponse(
                 status_code=503,
                 content={
                     "status": "not_ready",
                     "timestamp": datetime.now(UTC).isoformat(),
                     "readiness": False,
-                    "error": str(e)
-                }
+                    "error": str(e),
+                },
             )
 
     @app.get("/health/worker/live", tags=["System"])
@@ -535,17 +560,26 @@ def create_app() -> FastAPI:
                 "status": "alive",
                 "timestamp": datetime.now(UTC).isoformat(),
                 "liveness": True,
-                "pid": os.getpid()
+                "pid": os.getpid(),
             }
         except Exception as e:
+            if cfg.is_production():
+                return JSONResponse(
+                    status_code=503,
+                    content={
+                        "status": "dead",
+                        "timestamp": datetime.now(UTC).isoformat(),
+                        "liveness": False,
+                    },
+                )
             return JSONResponse(
                 status_code=503,
                 content={
                     "status": "dead",
                     "timestamp": datetime.now(UTC).isoformat(),
                     "liveness": False,
-                    "error": str(e)
-                }
+                    "error": str(e),
+                },
             )
 
     # API information endpoint
@@ -604,11 +638,29 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     logger.info(f"Starting server on {args.host}:{args.port}")
-    uvicorn.run(
-        "agent_system.fastapi_app:app",
-        host=args.host,
-        port=args.port,
-        reload=args.reload,
-        workers=args.workers if not args.reload else 1,
-        log_level="info",
-    )
+    target = None
+    if args.reload:
+        import importlib.util as _importlib_util
+
+        for _mod in ("agent_system.fastapi_app", "src.agent_system.fastapi_app"):
+            if _importlib_util.find_spec(_mod) is not None:
+                target = f"{_mod}:app"
+                break
+    if target:
+        uvicorn.run(
+            target,
+            host=args.host,
+            port=args.port,
+            reload=args.reload,
+            workers=args.workers if not args.reload else 1,
+            log_level="info",
+        )
+    else:
+        uvicorn.run(
+            app,
+            host=args.host,
+            port=args.port,
+            reload=False,
+            workers=args.workers,
+            log_level="info",
+        )

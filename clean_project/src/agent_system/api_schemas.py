@@ -55,7 +55,7 @@ class SecuritySeverity(str, Enum):
 
 
 # Base Response Models
-class APIResponse(BaseModel):
+class APIResponse(BaseModel):  # type: ignore[misc]
     """Base API response model."""
 
     success: bool = Field(..., description="Whether the request was successful")
@@ -64,7 +64,7 @@ class APIResponse(BaseModel):
     data: Optional[Any] = Field(None, description="Response data payload")
 
 
-class ErrorDetail(BaseModel):
+class ErrorDetail(BaseModel):  # type: ignore[misc]
     """Detailed error information."""
 
     code: str = Field(..., description="Error code")
@@ -73,7 +73,7 @@ class ErrorDetail(BaseModel):
     details: Optional[Dict[str, Any]] = Field(None, description="Additional error details")
 
 
-class APIError(BaseModel):
+class APIError(BaseModel):  # type: ignore[misc]
     """API error response model."""
 
     success: bool = Field(False, description="Always false for errors")
@@ -84,7 +84,7 @@ class APIError(BaseModel):
 
 
 # Authentication Schemas
-class LoginRequest(BaseModel):
+class LoginRequest(BaseModel):  # type: ignore[misc]
     """User login request."""
 
     username: str = Field(
@@ -100,14 +100,15 @@ class LoginRequest(BaseModel):
     )
     remember_me: bool = Field(False, description="Extended session duration")
 
-    @field_validator("username")
-    def validate_username(cls, v):
+    @field_validator("username")  # type: ignore[misc]
+    @classmethod
+    def validate_username(cls, v: str) -> str:
         if not v.strip():
             raise ValueError("Username cannot be empty")
         return v.strip()
 
 
-class TokenData(BaseModel):
+class TokenData(BaseModel):  # type: ignore[misc]
     """JWT token data."""
 
     access_token: str = Field(..., description="JWT access token")
@@ -116,7 +117,7 @@ class TokenData(BaseModel):
     expires_in: int = Field(..., description="Token expiration time in seconds")
 
 
-class UserInfo(BaseModel):
+class UserInfo(BaseModel):  # type: ignore[misc]
     """User information model."""
 
     id: str = Field(..., description="Unique user identifier")
@@ -131,7 +132,7 @@ class UserInfo(BaseModel):
     created_at: datetime = Field(..., description="Account creation timestamp")
 
 
-class LoginResponse(BaseModel):
+class LoginResponse(BaseModel):  # type: ignore[misc]
     """Login response model."""
 
     access_token: str = Field(..., description="JWT access token")
@@ -141,7 +142,7 @@ class LoginResponse(BaseModel):
     user: UserInfo = Field(..., description="User information")
 
 
-class TokenRefreshRequest(BaseModel):
+class TokenRefreshRequest(BaseModel):  # type: ignore[misc]
     """Token refresh request."""
 
     refresh_token: str = Field(
@@ -151,7 +152,7 @@ class TokenRefreshRequest(BaseModel):
 
 
 # User Management Schemas
-class UserCreate(BaseModel):
+class UserCreate(BaseModel):  # type: ignore[misc]
     """User creation request."""
 
     username: str = Field(
@@ -177,8 +178,9 @@ class UserCreate(BaseModel):
         description="User roles",
     )
 
-    @field_validator("password")
-    def validate_password(cls, v):
+    @field_validator("password")  # type: ignore[misc]
+    @classmethod
+    def validate_password(cls, v: str) -> str:
         if len(v) < 8:
             raise ValueError("Password must be at least 8 characters")
         if not any(c.isalpha() for c in v):
@@ -186,7 +188,7 @@ class UserCreate(BaseModel):
         return v
 
 
-class UserUpdate(BaseModel):
+class UserUpdate(BaseModel):  # type: ignore[misc]
     """User update request."""
 
     email: Optional[EmailStr] = Field(None, description="Email address")
@@ -197,7 +199,7 @@ class UserUpdate(BaseModel):
     role_names: Optional[List[str]] = Field(None, description="User roles")
 
 
-class UserResponse(BaseModel):
+class UserResponse(BaseModel):  # type: ignore[misc]
     """User response model."""
 
     id: str = Field(..., description="Unique user identifier")
@@ -215,7 +217,7 @@ class UserResponse(BaseModel):
 
 
 # Agent Management Schemas
-class AgentCreate(BaseModel):
+class AgentCreate(BaseModel):  # type: ignore[misc]
     """Agent creation request."""
 
     name: str = Field(
@@ -237,7 +239,7 @@ class AgentCreate(BaseModel):
     configuration: Optional[Dict[str, Any]] = Field(None, description="Agent configuration")
 
 
-class AgentResponse(BaseModel):
+class AgentResponse(BaseModel):  # type: ignore[misc]
     """Agent response model."""
 
     id: str = Field(..., description="Unique agent identifier")
@@ -257,7 +259,7 @@ class AgentResponse(BaseModel):
     last_execution: Optional[datetime] = Field(None, description="Last execution timestamp")
 
 
-class AgentExecute(BaseModel):
+class AgentExecute(BaseModel):  # type: ignore[misc]
     """Agent execution request."""
 
     action: str = Field(
@@ -267,7 +269,7 @@ class AgentExecute(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, description="Action parameters")
 
 
-class AgentExecutionResponse(BaseModel):
+class AgentExecutionResponse(BaseModel):  # type: ignore[misc]
     """Agent execution response."""
 
     agent_id: str = Field(..., description="Agent identifier")
@@ -277,7 +279,7 @@ class AgentExecutionResponse(BaseModel):
     started_at: datetime = Field(..., description="Execution start time")
 
 
-class AgentJobStatus(BaseModel):
+class AgentJobStatus(BaseModel):  # type: ignore[misc]
     """Background job information."""
 
     id: str = Field(..., description="Job identifier")
@@ -297,7 +299,7 @@ class AgentJobStatus(BaseModel):
 
 
 # Goal Management Schemas
-class GoalCreate(BaseModel):
+class GoalCreate(BaseModel):  # type: ignore[misc]
     """Goal creation request."""
 
     title: str = Field(
@@ -311,7 +313,7 @@ class GoalCreate(BaseModel):
     target_date: Optional[datetime] = Field(None, description="Target completion date")
 
 
-class GoalResponse(BaseModel):
+class GoalResponse(BaseModel):  # type: ignore[misc]
     """Goal response model."""
 
     id: str = Field(..., description="Unique goal identifier")
@@ -328,7 +330,7 @@ class GoalResponse(BaseModel):
 
 
 # API Token Schemas
-class APITokenCreate(BaseModel):
+class APITokenCreate(BaseModel):  # type: ignore[misc]
     """API token creation request."""
 
     name: str = Field(
@@ -344,7 +346,7 @@ class APITokenCreate(BaseModel):
     expires_days: Optional[int] = Field(30, ge=1, le=365, description="Expiration days")
 
 
-class APITokenResponse(BaseModel):
+class APITokenResponse(BaseModel):  # type: ignore[misc]
     """API token response model."""
 
     id: str = Field(..., description="Token identifier")
@@ -359,7 +361,7 @@ class APITokenResponse(BaseModel):
 
 
 # Security Event Schemas
-class SecurityEventResponse(BaseModel):
+class SecurityEventResponse(BaseModel):  # type: ignore[misc]
     """Security event response model."""
 
     id: str = Field(..., description="Event identifier")
@@ -374,7 +376,7 @@ class SecurityEventResponse(BaseModel):
 
 
 # System Information Schemas
-class SystemHealth(BaseModel):
+class SystemHealth(BaseModel):  # type: ignore[misc]
     """System health information."""
 
     status: str = Field(..., description="System status")
@@ -383,7 +385,7 @@ class SystemHealth(BaseModel):
     version: str = Field(..., description="System version")
 
 
-class SystemInfo(BaseModel):
+class SystemInfo(BaseModel):  # type: ignore[misc]
     """System information."""
 
     users: int = Field(..., description="Total user count")
@@ -396,7 +398,7 @@ class SystemInfo(BaseModel):
 
 
 # Pagination Schema
-class PaginationInfo(BaseModel):
+class PaginationInfo(BaseModel):  # type: ignore[misc]
     """Pagination information."""
 
     page: int = Field(..., description="Current page number")
@@ -405,7 +407,7 @@ class PaginationInfo(BaseModel):
     pages: int = Field(..., description="Total pages count")
 
 
-class PaginatedResponse(BaseModel):
+class PaginatedResponse(BaseModel):  # type: ignore[misc]
     """Paginated response wrapper."""
 
     items: List[Any] = Field(..., description="Response items")
@@ -413,7 +415,7 @@ class PaginatedResponse(BaseModel):
 
 
 # Webhook Schemas
-class WebhookEvent(BaseModel):
+class WebhookEvent(BaseModel):  # type: ignore[misc]
     """Webhook event model."""
 
     id: str = Field(..., description="Event identifier")
@@ -423,7 +425,7 @@ class WebhookEvent(BaseModel):
 
 
 # Rate Limiting Schemas
-class RateLimitInfo(BaseModel):
+class RateLimitInfo(BaseModel):  # type: ignore[misc]
     """Rate limiting information."""
 
     limit: int = Field(..., description="Rate limit")
@@ -433,7 +435,7 @@ class RateLimitInfo(BaseModel):
 
 
 # Bulk Operations Schemas
-class BulkOperationRequest(BaseModel):
+class BulkOperationRequest(BaseModel):  # type: ignore[misc]
     """Bulk operation request."""
 
     operation: str = Field(..., description="Operation type")
@@ -441,7 +443,7 @@ class BulkOperationRequest(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, description="Operation parameters")
 
 
-class BulkOperationResponse(BaseModel):
+class BulkOperationResponse(BaseModel):  # type: ignore[misc]
     """Bulk operation response."""
 
     operation: str = Field(..., description="Operation type")
@@ -452,7 +454,7 @@ class BulkOperationResponse(BaseModel):
 
 
 # Agent Capability Schemas (ADR-002)
-class AgentCapabilityDescriptor(BaseModel):
+class AgentCapabilityDescriptor(BaseModel):  # type: ignore[misc]
     name: str = Field(..., description="Capability name")
     description: Optional[str] = Field("", description="Capability description")
     input_types: List[str] = Field(default_factory=list)
@@ -462,7 +464,7 @@ class AgentCapabilityDescriptor(BaseModel):
     quality_requirements: List[str] = Field(default_factory=list)
 
 
-class CapabilityRegisterRequest(BaseModel):
+class CapabilityRegisterRequest(BaseModel):  # type: ignore[misc]
     instance_id: str = Field(..., description="Unique runtime instance identifier")
     agent_name: str = Field(..., description="Human-friendly agent/worker name")
     role: str = Field(..., description="planner|executor|checker|coordinator|...")
@@ -473,7 +475,7 @@ class CapabilityRegisterRequest(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
-class CapabilityRecord(BaseModel):
+class CapabilityRecord(BaseModel):  # type: ignore[misc]
     id: str
     instance_id: str
     agent_name: str

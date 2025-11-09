@@ -9,19 +9,17 @@ import asyncio
 import json
 import logging
 import os
-import subprocess
-import sys
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
-from urllib.parse import urlparse
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
 
 class PluginStatus(str, Enum):
     """Plugin status."""
+
     INSTALLED = "installed"
     AVAILABLE = "available"
     UPDATING = "updating"
@@ -31,6 +29,7 @@ class PluginStatus(str, Enum):
 @dataclass
 class PluginMetadata:
     """Metadata for a plugin."""
+
     name: str
     version: str
     description: str
@@ -86,7 +85,11 @@ class PluginMarketplace:
             ]
 
             if query:
-                plugins = [p for p in plugins if query.lower() in p.name.lower() or query.lower() in p.description.lower()]
+                plugins = [
+                    p
+                    for p in plugins
+                    if query.lower() in p.name.lower() or query.lower() in p.description.lower()
+                ]
 
             return plugins
 
@@ -108,7 +111,9 @@ class PluginMarketplace:
                     logger.info(f"Plugin {name}:{version} already installed")
                     return True
                 else:
-                    logger.warning(f"Plugin {name} already installed with version {self.installed_plugins[name]}")
+                    logger.warning(
+                        f"Plugin {name} already installed with version {self.installed_plugins[name]}"
+                    )
 
             # Get plugin metadata
             if source:
@@ -137,15 +142,19 @@ class PluginMarketplace:
 
             # Save metadata
             metadata_file = plugin_path / "metadata.json"
-            with open(metadata_file, 'w') as f:
-                json.dump({
-                    "name": metadata.name,
-                    "version": metadata.version,
-                    "description": metadata.description,
-                    "author": metadata.author,
-                    "dependencies": metadata.dependencies,
-                    "entry_point": metadata.entry_point,
-                }, f, indent=2)
+            with open(metadata_file, "w") as f:
+                json.dump(
+                    {
+                        "name": metadata.name,
+                        "version": metadata.version,
+                        "description": metadata.description,
+                        "author": metadata.author,
+                        "dependencies": metadata.dependencies,
+                        "entry_point": metadata.entry_point,
+                    },
+                    f,
+                    indent=2,
+                )
 
             # In production, this would download and install the actual plugin
             # For now, just mark as installed
@@ -155,6 +164,7 @@ class PluginMarketplace:
                 self.installed_plugins[name] = version
                 metadata.status = PluginStatus.INSTALLED
                 import time
+
                 metadata.installed_at = time.time()
 
             logger.info(f"Plugin {name}:{version} installed successfully")
@@ -174,13 +184,14 @@ class PluginMarketplace:
                 return False
 
             version = self.installed_plugins[name]
-            metadata = self.plugins.get(name)
+            _metadata = self.plugins.get(name)
 
         try:
             # Remove plugin directory
             plugin_path = self.plugin_dir / name / version
             if plugin_path.exists():
                 import shutil
+
                 shutil.rmtree(plugin_path)
 
             async with self._lock:
@@ -281,7 +292,7 @@ class PluginMarketplace:
         for dep in metadata.dependencies:
             # Check if dependency is installed
             try:
-                __import__(dep.split('>=')[0].split('==')[0])
+                __import__(dep.split(">=")[0].split("==")[0])
                 satisfied[dep] = True
             except ImportError:
                 satisfied[dep] = False
@@ -291,4 +302,3 @@ class PluginMarketplace:
 
 # Global plugin marketplace instance
 plugin_marketplace = PluginMarketplace()
-

@@ -7,17 +7,17 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import pickle
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, List, Optional, Callable
+from typing import Any, Callable, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
 
 class ModelStatus(str, Enum):
     """Model status."""
+
     LOADING = "loading"
     READY = "ready"
     ERROR = "error"
@@ -27,6 +27,7 @@ class ModelStatus(str, Enum):
 @dataclass
 class ModelMetadata:
     """Metadata for a model."""
+
     name: str
     version: str
     path: str
@@ -89,6 +90,7 @@ class ModelServer:
                 self.models[name][version] = model
                 metadata.status = ModelStatus.READY
                 import time
+
                 metadata.loaded_at = time.time()
 
             logger.info(f"Model {name}:{version} loaded successfully")
@@ -105,7 +107,7 @@ class ModelServer:
         """Default model loader (pickle)."""
         # In production, this would support various formats
         # (pickle, ONNX, TensorFlow SavedModel, PyTorch, etc.)
-        with open(path, 'rb') as f:
+        with open(path, "rb") as f:
             return pickle.load(f)
 
     async def unload_model(self, name: str, version: str):
@@ -149,13 +151,14 @@ class ModelServer:
 
         # Run inference
         import time
+
         start_time = time.perf_counter()
 
         try:
             # Support both sync and async models
-            if asyncio.iscoroutinefunction(getattr(model, 'predict', None)):
+            if asyncio.iscoroutinefunction(getattr(model, "predict", None)):
                 result = await model.predict(input_data)
-            elif hasattr(model, 'predict'):
+            elif hasattr(model, "predict"):
                 result = model.predict(input_data)
             else:
                 # Fallback: call model directly
@@ -251,4 +254,3 @@ class ModelServer:
 
 # Global model server instance
 model_server = ModelServer()
-

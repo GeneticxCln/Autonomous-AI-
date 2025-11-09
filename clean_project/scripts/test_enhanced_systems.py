@@ -63,7 +63,7 @@ def test_performance_optimizer():
         print(f"✅ Optimization Suggestions: {len(suggestions)} generated")
 
         # Test comprehensive stats
-        comprehensive_stats = performance_optimizer.get_comprehensive_stats()
+        performance_optimizer.get_comprehensive_stats()
         print("✅ Comprehensive Stats: Available")
 
         return True
@@ -195,7 +195,7 @@ def test_integration():
             print(f"✅ Status Retrieved: {len(status)} sections")
 
             # Health check
-            health = agent.run_health_check()
+            agent.run_health_check()
             print("✅ Health Check: Complete")
 
             # Test export

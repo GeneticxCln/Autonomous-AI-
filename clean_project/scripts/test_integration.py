@@ -103,7 +103,7 @@ def test_complete_authentication_workflow():
                 session.delete(existing_user)
                 session.commit()
 
-        new_user = auth_service.create_user(
+        auth_service.create_user(
             username="integration_test",
             email="integration@example.com",
             password="test123",
@@ -113,7 +113,7 @@ def test_complete_authentication_workflow():
         print("✅ New user created")
 
         # Test new user authentication
-        new_user_context = auth_service.authenticate_user("integration_test", "test123")
+        auth_service.authenticate_user("integration_test", "test123")
         print("✅ New user can authenticate")
     except Exception as e:
         print(f"❌ User management failed: {e}")

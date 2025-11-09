@@ -9,11 +9,11 @@ import csv
 import json
 import logging
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
 import time
-import shutil
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -380,7 +380,10 @@ class RealCodeExecutorTool:
         # Basic security check - block dangerous imports and calls using AST
         ok, reason = self._is_code_safe(code)
         if not ok:
-            return ActionStatus.FAILURE, {"error": str(reason or "Unsafe code"), "security_violation": True}
+            return ActionStatus.FAILURE, {
+                "error": str(reason or "Unsafe code"),
+                "security_violation": True,
+            }
 
         # Create temporary file for execution
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
@@ -398,9 +401,11 @@ class RealCodeExecutorTool:
             # Apply basic OS-level resource limits on POSIX systems
             preexec = None
             if os.name == "posix":
+
                 def _limit_resources():
                     try:
                         import resource
+
                         # Limit CPU seconds roughly to timeout + 1 buffer
                         cpu = max(1, int(timeout))
                         resource.setrlimit(resource.RLIMIT_CPU, (cpu, cpu))
@@ -408,6 +413,7 @@ class RealCodeExecutorTool:
                         resource.setrlimit(resource.RLIMIT_NOFILE, (32, 32))
                         # Limit address space (memory)
                         mem = os.getenv("MEMORY_LIMIT", getattr(settings, "MEMORY_LIMIT", "512m"))
+
                         def _parse_mem(s: str) -> int:
                             s = str(s).strip().lower()
                             if s.endswith("g"):
@@ -417,10 +423,12 @@ class RealCodeExecutorTool:
                             if s.endswith("k"):
                                 return int(float(s[:-1]) * 1024)
                             return int(s)
+
                         mem_bytes = max(64 * 1024 * 1024, _parse_mem(mem))
                         resource.setrlimit(resource.RLIMIT_AS, (mem_bytes, mem_bytes))
                     except Exception:
                         pass
+
                 preexec = _limit_resources
 
             # Use isolated mode (-I) to ignore environment variables and user site dirs
@@ -474,16 +482,25 @@ class RealCodeExecutorTool:
                 "docker",
                 "run",
                 "--rm",
-                "--network", "none",
-                "--cpus", "1",
-                "--memory", str(mem),
-                "--pids-limit", "64",
+                "--network",
+                "none",
+                "--cpus",
+                "1",
+                "--memory",
+                str(mem),
+                "--pids-limit",
+                "64",
                 "--read-only",
-                "-v", f"{mount_dir}:/sandbox:ro",
-                "-w", "/sandbox",
-                "--user", "65534:65534",
+                "-v",
+                f"{mount_dir}:/sandbox:ro",
+                "-w",
+                "/sandbox",
+                "--user",
+                "65534:65534",
                 image,
-                "python", "-I", base_name,
+                "python",
+                "-I",
+                base_name,
             ]
 
             start_time = time.time()
@@ -520,13 +537,16 @@ class RealCodeExecutorTool:
         start_time = time.time()
         preexec = None
         if os.name == "posix":
+
             def _limit_resources():
                 try:
                     import resource
+
                     cpu = max(1, int(timeout))
                     resource.setrlimit(resource.RLIMIT_CPU, (cpu, cpu))
                     resource.setrlimit(resource.RLIMIT_NOFILE, (32, 32))
                     mem = os.getenv("MEMORY_LIMIT", getattr(settings, "MEMORY_LIMIT", "512m"))
+
                     def _parse_mem(s: str) -> int:
                         s = str(s).strip().lower()
                         if s.endswith("g"):
@@ -536,10 +556,12 @@ class RealCodeExecutorTool:
                         if s.endswith("k"):
                             return int(float(s[:-1]) * 1024)
                         return int(s)
+
                     mem_bytes = max(64 * 1024 * 1024, _parse_mem(mem))
                     resource.setrlimit(resource.RLIMIT_AS, (mem_bytes, mem_bytes))
                 except Exception:
                     pass
+
             preexec = _limit_resources
 
         result = subprocess.run(

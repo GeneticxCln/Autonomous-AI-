@@ -4,32 +4,24 @@ Enterprise Infrastructure Test Suite
 Comprehensive testing for Redis caching, task queues, and monitoring
 """
 import asyncio
-import sys
 import os
+import sys
 import time
 from datetime import datetime
-from typing import Dict, Any, List
 
 # Add the source directory to Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
+from agent_system.cache_manager import cache_manager
 from agent_system.infrastructure_manager import (
-    infrastructure_manager,
-    initialize_infrastructure,
-    get_infrastructure_health,
-    get_performance_stats,
     cache_response,
     get_cached_response,
-    enqueue_task,
-    schedule_task,
-    health_check,
+    get_infrastructure_health,
+    get_performance_stats,
+    infrastructure_manager,
 )
-from agent_system.cache_manager import cache_manager
 from agent_system.task_queue import (
     task_queue_manager,
-    send_notification_task,
-    process_ai_analysis_task,
-    cleanup_task,
 )
 
 
@@ -320,7 +312,7 @@ class InfrastructureTester:
             queue_times = []
             for i in range(10):
                 op_start = time.time()
-                job = task_queue_manager.enqueue_job(quick_task, timeout=5)
+                task_queue_manager.enqueue_job(quick_task, timeout=5)
                 queue_times.append(time.time() - op_start)
 
             avg_queue_time = sum(queue_times) / len(queue_times)
@@ -364,7 +356,7 @@ class InfrastructureTester:
 
             # These should gracefully fail
             result = await cache_manager.set("test", "key", "value")
-            if result != False:
+            if result is not False:
                 self.log_test("Error Handling", "FAIL", "Should fail when Redis disconnected")
                 return False
 
@@ -456,7 +448,6 @@ class InfrastructureTester:
         self.print_summary()
 
         # Return overall success
-        passed = len([r for r in self.test_results if r["status"] == "PASS"])
         failed = len([r for r in self.test_results if r["status"] == "FAIL"])
         return failed == 0
 

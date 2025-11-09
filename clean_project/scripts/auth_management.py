@@ -17,9 +17,11 @@ from typing import List, Tuple
 from agent_system.auth_models import (
     PasswordResetModel,
     UserModel,
-    db_manager as auth_db,
     generate_secure_token,
     hash_token,
+)
+from agent_system.auth_models import (
+    db_manager as auth_db,
 )
 
 

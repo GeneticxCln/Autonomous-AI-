@@ -7,13 +7,12 @@ import json
 import logging
 from pathlib import Path
 
+from agent_system.agent import AutonomousAgent
+from agent_system.config_simple import get_api_key, settings
+
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
-
-# Import our enhanced agent
-from agent_system.agent import AutonomousAgent
-from agent_system.config_simple import get_api_key, settings
 
 
 def demonstrate_enhanced_agent():

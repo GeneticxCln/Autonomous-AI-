@@ -1,3 +1,4 @@
+## DEPRECATED: Use clean_project/Makefile for all tasks. This root Makefile is legacy.
 PY=python3
 PKG=agent_system
 

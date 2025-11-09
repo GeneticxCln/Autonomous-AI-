@@ -5,12 +5,12 @@ Enterprise-grade user management and security system
 
 from __future__ import annotations
 
+import os
 import secrets
 import uuid
 from datetime import UTC, datetime
 from enum import Enum
 from typing import Dict, List
-import os
 
 from passlib.context import CryptContext
 from sqlalchemy import (
@@ -47,7 +47,9 @@ class DatabaseManager:
         self.engine = None
         self.SessionLocal = None
         # Allow environment overrides for pooling to support horizontal scaling
-        self.pool_size = pool_size if pool_size is not None else int(os.getenv("DB_POOL_SIZE", "10"))
+        self.pool_size = (
+            pool_size if pool_size is not None else int(os.getenv("DB_POOL_SIZE", "10"))
+        )
         self.max_overflow = (
             max_overflow if max_overflow is not None else int(os.getenv("DB_MAX_OVERFLOW", "20"))
         )

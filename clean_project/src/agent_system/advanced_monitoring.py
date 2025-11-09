@@ -5,34 +5,31 @@ Enterprise-grade observability and business intelligence
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
-import asyncio
-from typing import Dict, Any, List, Optional, Callable
-from datetime import datetime, timedelta
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import Enum
-import json
+from functools import wraps
+from types import TracebackType
+from typing import Any, Dict, List, Optional, Callable, ParamSpec, TypeVar, Type
+
 import psutil
-
 from prometheus_client import (
-    Counter,
-    Histogram,
-    Gauge,
-    Summary,
     CollectorRegistry,
-    generate_latest,
-    CONTENT_TYPE_LATEST,
-    multiprocess,
-    ProcessCollector,
+    Counter,
+    Gauge,
+    Histogram,
     PlatformCollector,
+    ProcessCollector,
+    Summary,
+    generate_latest,
 )
-from prometheus_client.core import REGISTRY, CollectorRegistry
+from prometheus_client.core import REGISTRY
 
-from .config_simple import settings
 from .cache_manager import cache_manager
 from .job_manager import job_store
-
 
 logger = logging.getLogger(__name__)
 
@@ -69,24 +66,24 @@ class AdvancedMonitoringSystem:
     - Business KPI tracking
     """
 
-    def __init__(self, registry: Optional[CollectorRegistry] = None):
-        self.registry = registry or CollectorRegistry()
-        self._owns_registry = registry is None
+    def __init__(self, registry: Optional[CollectorRegistry] = None) -> None:
+        self.registry: CollectorRegistry = registry or CollectorRegistry()
+        self._owns_registry: bool = registry is None
         self.metrics: Dict[str, Any] = {}
         self.business_metrics: Dict[str, BusinessMetric] = {}
         self.alert_rules: List[Dict[str, Any]] = []
         self.sla_thresholds: Dict[str, float] = {}
-        self.is_initialized = False
-        self.start_time = datetime.now()
-        self.cache_state = {"hit": 0, "miss": 0}
-        self._last_network_counters = None
+        self.is_initialized: bool = False
+        self.start_time: datetime = datetime.now()
+        self.cache_state: Dict[str, int] = {"hit": 0, "miss": 0}
+        self._last_network_counters: Optional[Any] = None
 
         # Initialize metric collectors
         self._init_prometheus_collectors()
         self._init_system_collectors()
         self._init_business_collectors()
 
-    def _init_prometheus_collectors(self):
+    def _init_prometheus_collectors(self) -> None:
         """Initialize Prometheus metric collectors."""
         if not self._owns_registry:
             logger.debug("Using shared Prometheus registry; base collectors already registered")
@@ -100,7 +97,7 @@ class AdvancedMonitoringSystem:
         except Exception as e:
             logger.error(f"❌ Prometheus collectors initialization failed: {e}")
 
-    def _init_system_collectors(self):
+    def _init_system_collectors(self) -> None:
         """Initialize system resource collectors."""
         # CPU Usage
         self.metrics["cpu_usage_percent"] = Gauge(
@@ -170,7 +167,7 @@ class AdvancedMonitoringSystem:
             registry=self.registry,
         )
 
-    def _init_business_collectors(self):
+    def _init_business_collectors(self) -> None:
         """Initialize business-specific metric collectors."""
         # Request Metrics
         self.metrics["agent_requests_total"] = Counter(
@@ -322,7 +319,9 @@ class AdvancedMonitoringSystem:
         )
 
         self.metrics["active_incidents"] = Gauge(
-            "agent_active_incidents_total", "Number of active health incidents", registry=self.registry
+            "agent_active_incidents_total",
+            "Number of active health incidents",
+            registry=self.registry,
         )
 
         # AI Performance Metrics
@@ -374,7 +373,7 @@ class AdvancedMonitoringSystem:
         duration: float,
         request_size: Optional[int] = None,
         response_size: Optional[int] = None,
-    ):
+    ) -> None:
         """Record HTTP request metrics."""
         try:
             # Record request
@@ -408,7 +407,7 @@ class AdvancedMonitoringSystem:
         operation: str,  # get, set, delete
         status: str,  # hit, miss, error
         duration: Optional[float] = None,
-    ):
+    ) -> None:
         """Record cache operation metrics."""
         try:
             # Record operation count
@@ -428,7 +427,7 @@ class AdvancedMonitoringSystem:
         except Exception as e:
             logger.error(f"Error recording cache metrics: {e}")
 
-    def _update_cache_hit_ratio(self):
+    def _update_cache_hit_ratio(self) -> None:
         """Update cache hit ratio gauge."""
         try:
             total = self.cache_state["hit"] + self.cache_state["miss"]
@@ -444,7 +443,7 @@ class AdvancedMonitoringSystem:
         status: str,  # queued, started, finished, failed
         priority: str,  # low, normal, high, critical
         duration: Optional[float] = None,
-    ):
+    ) -> None:
         """Record queue job metrics."""
         try:
             # Record job count
@@ -464,7 +463,7 @@ class AdvancedMonitoringSystem:
         status: str,  # completed, failed, cancelled
         priority: Optional[str] = None,
         duration: Optional[float] = None,
-    ):
+    ) -> None:
         """Record goal metrics."""
         try:
             # Record goal count
@@ -481,7 +480,7 @@ class AdvancedMonitoringSystem:
 
     def record_action(
         self, tool: str, status: str, duration: Optional[float] = None  # success, failure
-    ):
+    ) -> None:
         """Record action metrics."""
         try:
             # Record action count
@@ -494,21 +493,21 @@ class AdvancedMonitoringSystem:
         except Exception as e:
             logger.error(f"Error recording action metrics: {e}")
 
-    def update_active_sessions(self, count: int):
+    def update_active_sessions(self, count: int) -> None:
         """Update active session count."""
         try:
             self.metrics["active_sessions"].set(count)
         except Exception as e:
             logger.error(f"Error updating active sessions: {e}")
 
-    def record_session_duration(self, duration: float):
+    def record_session_duration(self, duration: float) -> None:
         """Record session duration."""
         try:
             self.metrics["session_duration_seconds"].observe(duration)
         except Exception as e:
             logger.error(f"Error recording session duration: {e}")
 
-    def record_error(self, error_type: str, severity: str):  # error, warning, critical
+    def record_error(self, error_type: str, severity: str) -> None:  # error, warning, critical
         """Record error occurrence."""
         try:
             self.metrics["errors_total"].labels(type=error_type, severity=severity).inc()
@@ -521,7 +520,7 @@ class AdvancedMonitoringSystem:
         table: str,
         status: str,  # success, error
         duration: Optional[float] = None,
-    ):
+    ) -> None:
         """Record database operation metrics."""
         try:
             # Record operation count
@@ -538,7 +537,7 @@ class AdvancedMonitoringSystem:
         except Exception as e:
             logger.error(f"Error recording database metrics: {e}")
 
-    def update_system_metrics(self):
+    def update_system_metrics(self) -> None:
         """Update system resource metrics."""
         try:
             # CPU Usage
@@ -597,7 +596,7 @@ class AdvancedMonitoringSystem:
         except Exception as e:
             logger.error(f"Error updating system metrics: {e}")
 
-    def update_health_metrics(self):
+    def update_health_metrics(self) -> None:
         """Update health-related gauges from the health monitor."""
         try:
             from .system_health_dashboard import system_health_monitor
@@ -619,7 +618,7 @@ class AdvancedMonitoringSystem:
         except Exception as e:
             logger.error(f"Error updating health metrics: {e}")
 
-    def update_ai_performance_metrics(self):
+    def update_ai_performance_metrics(self) -> None:
         """Update AI performance gauges using the performance monitor."""
         try:
             from .ai_performance_monitor import ai_performance_monitor
@@ -629,7 +628,9 @@ class AdvancedMonitoringSystem:
 
         try:
             performance = ai_performance_monitor.get_current_performance()
-            metrics = performance.get("current_metrics", {}) if isinstance(performance, dict) else {}
+            metrics = (
+                performance.get("current_metrics", {}) if isinstance(performance, dict) else {}
+            )
 
             accuracy = metrics.get("decision_accuracy")
             if accuracy is not None:
@@ -649,7 +650,7 @@ class AdvancedMonitoringSystem:
         except Exception as e:
             logger.error(f"Error updating AI performance metrics: {e}")
 
-    def update_queue_metrics(self):
+    def update_queue_metrics(self) -> None:
         """Update queue depth metrics."""
         try:
             queue_depth = job_store.get_queue_depth()
@@ -657,7 +658,7 @@ class AdvancedMonitoringSystem:
         except Exception as e:
             logger.error(f"Error updating queue metrics: {e}")
 
-    def record_alert_event(self, severity: str, source: str):
+    def record_alert_event(self, severity: str, source: str) -> None:
         """Record alert events for Prometheus tracking."""
         try:
             self.metrics["alert_events_total"].labels(severity=severity, source=source).inc()
@@ -672,7 +673,7 @@ class AdvancedMonitoringSystem:
         value: float,
         labels: Optional[Dict[str, str]] = None,
         metadata: Optional[Dict[str, Any]] = None,
-    ):
+    ) -> None:
         """Add a custom business metric."""
         try:
             self.business_metrics[name] = BusinessMetric(
@@ -709,8 +710,8 @@ class AdvancedMonitoringSystem:
     async def get_business_metrics(self) -> Dict[str, Any]:
         """Get all business metrics."""
         try:
-            # Load from cache
-            cached_metrics = {}
+            # Load from cache (placeholder for future implementation)
+            _cached_metrics = {}
             # Note: Pattern matching would need to be implemented in cache_manager
             # for key in await cache_manager.get("metrics", "business:*"):
             #     pass
@@ -731,7 +732,7 @@ class AdvancedMonitoringSystem:
             logger.error(f"Error getting business metrics: {e}")
             return {}
 
-    def add_sla_threshold(self, metric_name: str, threshold: float, operator: str = "gt"):
+    def add_sla_threshold(self, metric_name: str, threshold: float, operator: str = "gt") -> None:
         """Add SLA threshold for monitoring."""
         self.sla_thresholds[metric_name] = {
             "threshold": threshold,
@@ -822,14 +823,14 @@ class AdvancedMonitoringSystem:
 monitoring_system = AdvancedMonitoringSystem(REGISTRY)
 
 
-def _register_performance_alert_callback():
+def _register_performance_alert_callback() -> None:
     try:
         from .ai_performance_monitor import ai_performance_monitor
     except Exception as e:
         logger.debug(f"AI performance monitor import failed for alert callbacks: {e}")
         return
 
-    def _handle_alert(alert):
+    def _handle_alert(alert: Any) -> None:
         severity = getattr(alert, "severity", "unknown")
         severity_value = getattr(severity, "value", str(severity))
         source = getattr(alert, "metric_name", "unknown")
@@ -842,13 +843,17 @@ _register_performance_alert_callback()
 
 
 # Decorator for automatic metrics collection
+P = ParamSpec("P")
+R = TypeVar("R")
+
 def monitor_performance(
-    metric_name: str = None, track_errors: bool = True, track_duration: bool = True
-):
+    metric_name: Optional[str] = None, track_errors: bool = True, track_duration: bool = True
+) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """Decorator to automatically collect performance metrics."""
 
-    def decorator(func):
-        def wrapper(*args, **kwargs):
+    def decorator(func: Callable[P, R]) -> Callable[P, R]:
+        @wraps(func)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
             start_time = time.time()
             error_occurred = False
 
@@ -876,7 +881,7 @@ def monitor_performance(
 
 
 # Initialize monitoring system
-async def initialize_monitoring():
+async def initialize_monitoring() -> bool:
     """Initialize the global monitoring system."""
     try:
         if monitoring_system.is_initialized:
@@ -897,7 +902,7 @@ async def initialize_monitoring():
         return False
 
 
-async def _periodic_metrics_update():
+async def _periodic_metrics_update() -> None:
     """Periodically update system metrics."""
     while True:
         try:
@@ -915,17 +920,22 @@ async def _periodic_metrics_update():
 class RequestMonitor:
     """Context manager for monitoring individual requests."""
 
-    def __init__(self, method: str, endpoint: str):
-        self.method = method
-        self.endpoint = endpoint
-        self.start_time = None
+    def __init__(self, method: str, endpoint: str) -> None:
+        self.method: str = method
+        self.endpoint: str = endpoint
+        self.start_time: Optional[float] = None
 
-    def __enter__(self):
+    def __enter__(self) -> "RequestMonitor":
         self.start_time = time.time()
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        duration = time.time() - self.start_time
+    def __exit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType],
+    ) -> None:
+        duration = time.time() - (self.start_time or time.time())
         status_code = 200
 
         if exc_type is not None:
@@ -937,27 +947,27 @@ class RequestMonitor:
 
 
 # Convenience functions
-def record_request(method: str, endpoint: str, status_code: int, duration: float):
+def record_request(method: str, endpoint: str, status_code: int, duration: float) -> None:
     """Record a request."""
     monitoring_system.record_request(method, endpoint, status_code, duration)
 
 
-def record_cache_hit(operation: str = "get"):
+def record_cache_hit(operation: str = "get") -> None:
     """Record cache hit."""
     monitoring_system.record_cache_operation(operation, "hit")
 
 
-def record_cache_miss(operation: str = "get"):
+def record_cache_miss(operation: str = "get") -> None:
     """Record cache miss."""
     monitoring_system.record_cache_operation(operation, "miss")
 
 
-def record_queue_job(status: str, priority: str, duration: Optional[float] = None):
+def record_queue_job(status: str, priority: str, duration: Optional[float] = None) -> None:
     """Record queue job."""
     monitoring_system.record_queue_job(status, priority, duration)
 
 
-def record_goal(status: str, priority: Optional[str] = None, duration: Optional[float] = None):
+def record_goal(status: str, priority: Optional[str] = None, duration: Optional[float] = None) -> None:
     """Record goal."""
     monitoring_system.record_goal(status, priority, duration)
 

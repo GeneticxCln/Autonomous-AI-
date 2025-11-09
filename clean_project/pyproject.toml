@@ -40,9 +40,9 @@ dev = [
 ]
 
 [project.scripts]
-agent-chat = "src.agent_system.chat_cli:main"
-agent-term = "src.agent_system.terminal_cli:main"
-agent-run = "src.agent_system.__main__:main"
+agent-chat = "agent_system.chat_cli:main"
+agent-term = "agent_system.terminal_cli:main"
+agent-run = "agent_system.__main__:main"
 
 [tool.black]
 line-length = 100
@@ -75,12 +75,68 @@ show_missing = true
 skip_covered = true
 
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.11"
 warn_unused_ignores = true
 warn_redundant_casts = true
 warn_unused_configs = true
 ignore_missing_imports = true
+plugins = ["pydantic.mypy"]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [[tool.mypy.overrides]]
-module = "src.agent_system.*"
+module = "pydantic"
+ignore_missing_imports = false
+
+[[tool.mypy.overrides]]
+module = "pydantic.*"
+ignore_missing_imports = false
+
+[[tool.mypy.overrides]]
+module = "agent_system.api_security"
 strict = true
+
+[[tool.mypy.overrides]]
+module = "agent_system.job_manager"
+strict = true
+
+[[tool.mypy.overrides]]
+module = "agent_system.production_config"
+strict = true
+
+[[tool.mypy.overrides]]
+module = "agent_system.config_simple"
+strict = true
+
+[[tool.mypy.overrides]]
+module = "agent_system.unified_config"
+strict = true
+
+[[tool.mypy.overrides]]
+module = "agent_system.distributed_message_queue"
+strict = true
+
+[[tool.mypy.overrides]]
+module = "agent_system.advanced_monitoring"
+strict = true
+
+[[tool.mypy.overrides]]
+module = "agent_system.enterprise_persistence"
+strict = true
+
+[[tool.mypy.overrides]]
+module = "agent_system.persistence"
+strict = true
+
+[[tool.mypy.overrides]]
+module = "agent_system.enhanced_persistence"
+strict = true
+
+# Temporarily relax only 'misc' errors (e.g., subclassing Any, untyped decorator) while migrating schemas
+# mypy override for agent_system.api_schemas moved to file-level directive
+
+# mypy override for agent_system.job_definitions moved to file-level directive

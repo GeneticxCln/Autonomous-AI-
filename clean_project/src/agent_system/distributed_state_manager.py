@@ -144,7 +144,9 @@ class DistributedStateManager:
         if raw:
             existing = StateRecord.from_dict(json.loads(self._decode(raw)))
             record.version = existing.version + 1
-        await self._redis.set(redis_key, json.dumps(record.to_dict(), default=str), ex=ttl or self.config.default_ttl)
+        await self._redis.set(
+            redis_key, json.dumps(record.to_dict(), default=str), ex=ttl or self.config.default_ttl
+        )
         return record
 
     async def update_state(

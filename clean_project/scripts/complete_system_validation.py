@@ -10,7 +10,7 @@ import logging
 import os
 import sys
 from datetime import datetime
-from typing import Dict, Any, List
+from typing import Any, Dict
 
 # Add the source directory to Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
@@ -54,12 +54,12 @@ class CompleteSystemValidator:
 
         try:
             from agent_system.agent_roles import (
-                agent_role_manager, AgentRole, AgentDomain, BusinessValue
+                agent_role_manager,
             )
 
             # Test agent role definitions
             sales_agent = agent_role_manager.get_role("sales_assistant")
-            customer_success_agent = agent_role_manager.get_role("customer_success_agent")
+            _ = agent_role_manager.get_role("customer_success_agent")
 
             # Validate business value propositions
             if sales_agent and sales_agent.business_value:
@@ -135,11 +135,11 @@ class CompleteSystemValidator:
                     f"✅ Core capabilities: {len(implemented_capabilities)}/{len(capabilities)}",
                     f"✅ Agent class: {type(agent).__name__}",
                     f"✅ Implemented: {', '.join(implemented_capabilities) if implemented_capabilities else 'Core agent architecture'}",
-                    f"✅ Tools system: File operations, code execution, web access",
-                    f"✅ Persistence: Database-backed state management"
+                    "✅ Tools system: File operations, code execution, web access",
+                    "✅ Persistence: Database-backed state management"
                 ]
             }
-            logger.info(f"✅ Step 2: AGENT CAPABILITIES - IMPLEMENTED")
+            logger.info("✅ Step 2: AGENT CAPABILITIES - IMPLEMENTED")
 
         except Exception as e:
             self.implementation_status["step2"] = {"status": "ERROR", "score": 0, "error": str(e)}
@@ -150,9 +150,7 @@ class CompleteSystemValidator:
         logger.info("🎯 Step 3: Validating Problem-Solution Engine...")
 
         try:
-            from agent_system.problem_solver import (
-                problem_solver, IndustryDomain, ProblemSeverity
-            )
+            from agent_system.problem_solver import problem_solver
 
             # Test industry problem identification
             business_context = {
@@ -191,9 +189,7 @@ class CompleteSystemValidator:
         logger.info("📝 Step 4: Validating Prompt Engineering System...")
 
         try:
-            from agent_system.prompt_engineering import (
-                prompt_manager, PromptTemplate, PromptType
-            )
+            from agent_system.prompt_engineering import prompt_manager
 
             # Test prompt templates
             templates = list(prompt_manager.templates.values())
@@ -256,7 +252,7 @@ class CompleteSystemValidator:
                     f"✅ FastAPI app: {type(app).__name__}",
                     f"✅ API router: {type(api_router).__name__}",
                     f"✅ Sample routes: {routes[:5] if routes else 'None'}",
-                    f"✅ Interactive features: Chat CLI, API endpoints, web interface"
+                    "✅ Interactive features: Chat CLI, API endpoints, web interface"
                 ]
             }
             logger.info(f"✅ Step 5: INTERACTION DESIGN - {interface_score:.0f}% IMPLEMENTED")
@@ -270,9 +266,7 @@ class CompleteSystemValidator:
         logger.info("🤝 Step 6: Validating Multi-Agent Collaboration...")
 
         try:
-            from agent_system.multi_agent_system import (
-                orchestrator, AgentRole, AgentRegistry
-            )
+            from agent_system.multi_agent_system import AgentRegistry, AgentRole
 
             # Test agent registry
             agent_registry = AgentRegistry()
@@ -294,8 +288,8 @@ class CompleteSystemValidator:
                     f"✅ Multi-agent system: {len(agents)} agents registered",
                     f"✅ Agent roles: {', '.join([role.value for role in set(roles)])}",
                     f"✅ Specialized agents: Coordinator({len(coordinator_agents)}), Planner({len(planner_agents)}), Executor({len(executor_agents)}), Checker({len(checker_agents)})",
-                    f"✅ Orchestration: MultiAgentOrchestrator class",
-                    f"✅ Communication: MessageBus and inter-agent messaging"
+                    "✅ Orchestration: MultiAgentOrchestrator class",
+                    "✅ Communication: MessageBus and inter-agent messaging"
                 ]
             }
             logger.info(f"✅ Step 6: MULTI-AGENT COLLABORATION - {collaboration_score:.0f}% IMPLEMENTED")
@@ -313,7 +307,7 @@ class CompleteSystemValidator:
             from agent_system.enhanced_persistence import get_storage_info
 
             # Check persistence system
-            storage_info = get_storage_info()
+            _ = get_storage_info()
             knowledge_systems = [
                 "enhanced_persistence", "enterprise_persistence", "database_persistence",
                 "vector_storage", "semantic_search"
@@ -327,7 +321,7 @@ class CompleteSystemValidator:
                     spec = importlib.util.find_spec(f"agent_system.{system}")
                     if spec:
                         implemented_systems.append(system)
-                except:
+                except Exception:
                     pass
 
             knowledge_score = (len(implemented_systems) / len(knowledge_systems)) * 100
@@ -338,14 +332,14 @@ class CompleteSystemValidator:
                 "evidence": [
                     f"✅ Knowledge systems: {len(implemented_systems)}/{len(knowledge_systems)}",
                     f"✅ Implemented: {', '.join(implemented_systems[:3])}",
-                    f"✅ Persistence: Enhanced persistence with multiple backends",
-                    f"✅ Learning: Agent learning and adaptation capabilities",
-                    f"✅ Memory: Context management and experience tracking"
+                    "✅ Persistence: Enhanced persistence with multiple backends",
+                    "✅ Learning: Agent learning and adaptation capabilities",
+                    "✅ Memory: Context management and experience tracking"
                 ]
             }
-            logger.info(f"✅ Step 7: KNOWLEDGE MANAGEMENT - IMPLEMENTED")
+            logger.info("✅ Step 7: KNOWLEDGE MANAGEMENT - IMPLEMENTED")
 
-        except Exception as e:
+        except Exception:
             self.implementation_status["step7"] = {
                 "status": "GOOD",
                 "score": 70,
@@ -363,7 +357,7 @@ class CompleteSystemValidator:
 
         try:
             from agent_system.advanced_monitoring import monitoring_system
-            from agent_system.performance_tracker import PerformanceTracker, performance_tracker
+            from agent_system.performance_tracker import performance_tracker
 
             # Test monitoring system
             metrics_info = monitoring_system.get_metrics_info()
@@ -386,12 +380,12 @@ class CompleteSystemValidator:
                     f"✅ Performance tracker: {len(perf_summary.get('metrics', {}))} tracked metrics",
                     f"✅ Health analysis: {health_analysis.get('status', 'unknown')} status",
                     f"✅ Optimization recommendations: {len(recommendations)} generated",
-                    f"✅ Prometheus integration: Custom business metrics"
+                    "✅ Prometheus integration: Custom business metrics"
                 ]
             }
             logger.info(f"✅ Step 8: MONITORING & EVALUATION - {monitoring_score:.0f}% IMPLEMENTED")
 
-        except Exception as e:
+        except Exception:
             self.implementation_status["step8"] = {
                 "status": "GOOD",
                 "score": 80,
@@ -435,7 +429,7 @@ class CompleteSystemValidator:
             try:
                 status = infrastructure_manager.get_status()
                 infrastructure_status = "operational" if status.get("initialized") else "configured"
-            except:
+            except Exception:
                 infrastructure_status = "basic"
 
             self.implementation_status["step9"] = {
@@ -443,11 +437,11 @@ class CompleteSystemValidator:
                 "score": infrastructure_score,
                 "evidence": [
                     f"✅ Enterprise infrastructure: {len(existing_files)}/{len(infrastructure_files)} components",
-                    f"✅ Docker Compose: Multi-service orchestration",
-                    f"✅ Kubernetes: Production deployment manifests",
-                    f"✅ Monitoring: Prometheus + Grafana stack",
-                    f"✅ Service Mesh: Istio integration",
-                    f"✅ CI/CD: GitHub Actions pipeline",
+                    "✅ Docker Compose: Multi-service orchestration",
+                    "✅ Kubernetes: Production deployment manifests",
+                    "✅ Monitoring: Prometheus + Grafana stack",
+                    "✅ Service Mesh: Istio integration",
+                    "✅ CI/CD: GitHub Actions pipeline",
                     f"✅ Infrastructure Manager: {infrastructure_status}"
                 ]
             }
@@ -505,7 +499,7 @@ class CompleteSystemValidator:
         logger.info(f"Excellent Implementations: {excellent_steps}")
 
         logger.info("\n📊 Step-by-Step Results:")
-        step_names = [
+        _step_names = [
             "1. Agent Role Definition",
             "2. Agent Capabilities",
             "3. Core Problem-Solution",

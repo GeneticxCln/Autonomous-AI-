@@ -7,16 +7,15 @@ import json
 import logging
 from pathlib import Path
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
-logger = logging.getLogger(__name__)
-
-# Import the INTELLIGENT agent
 from agent_system.agent import AutonomousAgent
 from agent_system.intelligent_action_selector import IntelligentActionSelector
 from agent_system.intelligent_observation_analyzer import intelligent_analyzer
 from agent_system.models import Action, ActionStatus, Goal, GoalStatus, Observation
 from agent_system.reasoning_engine import reasoning_engine
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logger = logging.getLogger(__name__)
 
 
 def test_reasoning_engine():
@@ -242,7 +241,7 @@ def demonstrate_learning_capability():
     for i, goal_desc in enumerate(training_goals):
         print(f"Training round {i+1}: {goal_desc}")
 
-        goal = agent.add_goal(goal_desc, priority=0.7)
+        agent.add_goal(goal_desc, priority=0.7)
         agent.run(max_cycles=2)
 
         # Check if patterns are being learned
@@ -253,7 +252,7 @@ def demonstrate_learning_capability():
 
     # Test with a new but similar goal
     print("\nTesting with new similar goal...")
-    test_goal = agent.add_goal("Investigate latest AI research and trends", priority=0.8)
+    agent.add_goal("Investigate latest AI research and trends", priority=0.8)
     agent.run(max_cycles=2)
 
     # Check learning outcomes

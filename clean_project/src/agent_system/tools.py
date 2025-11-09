@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import atexit
+import inspect
 import json
 import logging
 import time
 from abc import ABC, abstractmethod
-import atexit
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
-import inspect
 from typing import Any, Awaitable, Dict, Tuple
 
 from .models import Action, ActionStatus, Observation
@@ -814,15 +814,15 @@ class ToolRegistry:
             },
         )
 
-    async def _invoke_tool(self, tool: Tool, parameters: Dict[str, Any]) -> Tuple[ActionStatus, Any]:
+    async def _invoke_tool(
+        self, tool: Tool, parameters: Dict[str, Any]
+    ) -> Tuple[ActionStatus, Any]:
         """Invoke the tool, running sync implementations in a worker thread."""
         if inspect.iscoroutinefunction(tool.execute):
             result = await tool.execute(**parameters)
         else:
             loop = asyncio.get_running_loop()
-            result = await loop.run_in_executor(
-                self._executor, lambda: tool.execute(**parameters)
-            )
+            result = await loop.run_in_executor(self._executor, lambda: tool.execute(**parameters))
 
         if inspect.isawaitable(result):
             result = await result
@@ -840,6 +840,10 @@ class ToolRegistry:
     def get_available_tools(self) -> list[str]:
         """Get list of available tool names."""
         return list(self.tools.keys())
+
+    def get_tool(self, name: str) -> Tool | None:
+        """Retrieve a tool by name if registered, else None."""
+        return self.tools.get(name)
 
     def get_tool_stats(self) -> Dict[str, Dict[str, Any]]:
         """Get statistics for all tools."""

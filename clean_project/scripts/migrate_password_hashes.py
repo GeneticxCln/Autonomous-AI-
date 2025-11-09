@@ -21,7 +21,7 @@ def migrate_to_argon2(limit: Optional[int] = None) -> int:
 
     Returns the number of accounts updated.
     """
-    argon2_ctx = CryptContext(schemes=["argon2"], deprecated="auto")
+    _ = CryptContext(schemes=["argon2"], deprecated="auto")
     updated = 0
     auth_db.initialize()
     with auth_db.get_session() as session:

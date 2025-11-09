@@ -119,8 +119,9 @@ class MemoryOptimizer:
 
     def _cleanup_agent_memories(self, cutoff_time: float):
         """Clean up old memories from agent."""
-        # Implementation would depend on agent structure
-        pass
+        # Not implemented yet; safe no-op to avoid misleading behavior
+        logger.debug("MemoryOptimizer._cleanup_agent_memories is not implemented; skipping.")
+        return
 
     def get_memory_stats(self) -> Dict[str, Any]:
         """Get current memory statistics."""
@@ -145,10 +146,9 @@ class IOOptimizer:
 
     def optimize_file_operations(self):
         """Optimize file operation patterns."""
-        # Implement file operation batching
-        # Reduce redundant file reads
-        # Cache frequently accessed files
-        pass
+        # Not implemented yet; safe no-op to avoid misleading behavior
+        logger.debug("IOOptimizer.optimize_file_operations is not implemented; skipping.")
+        return
 
     def cleanup_file_cache(self):
         """Clean up file cache."""

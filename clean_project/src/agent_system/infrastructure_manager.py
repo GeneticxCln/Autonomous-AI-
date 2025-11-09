@@ -7,17 +7,16 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Dict, Any, Optional
 from datetime import datetime
+from typing import Any, Dict, Optional
 
-from .cache_manager import cache_manager, CacheConfig
-from .task_queue import task_queue_manager, TaskConfig, TaskQueueManager
+from .cache_manager import CacheConfig, cache_manager
 from .config_simple import settings
-from .distributed_message_queue import distributed_message_queue, MessagePriority
+from .distributed_message_queue import MessagePriority, distributed_message_queue
 from .distributed_state_manager import distributed_state_manager
-from .service_registry import service_registry, ServiceInstance
 from .job_definitions import AGENT_JOB_QUEUE
-
+from .service_registry import ServiceInstance, service_registry
+from .task_queue import TaskConfig, task_queue_manager
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +33,12 @@ class InfrastructureManager:
     def __init__(self):
         self.is_initialized = False
         self.startup_time = None
-        self.health_status = {"cache": False, "queue": False, "distributed": False, "overall": False}
+        self.health_status = {
+            "cache": False,
+            "queue": False,
+            "distributed": False,
+            "overall": False,
+        }
         self.service_instance: Optional[ServiceInstance] = None
         self._service_heartbeat_task: Optional[asyncio.Task] = None
         self._queue_rescue_task: Optional[asyncio.Task] = None
@@ -144,7 +148,9 @@ class InfrastructureManager:
 
             metadata = dict(service_metadata or {})
             metadata.setdefault("node_id", getattr(settings, "DISTRIBUTED_NODE_ID", "local-node"))
-            metadata.setdefault("cluster", getattr(settings, "DISTRIBUTED_CLUSTER_NAME", "agent-cluster"))
+            metadata.setdefault(
+                "cluster", getattr(settings, "DISTRIBUTED_CLUSTER_NAME", "agent-cluster")
+            )
 
             host = service_host or getattr(settings, "API_HOST", "127.0.0.1")
             port = service_port or getattr(settings, "API_PORT", 8000)
@@ -300,15 +306,14 @@ class InfrastructureManager:
                 "initialized": self.is_initialized,
                 "health_status": self.health_status,
                 "startup_time": self.startup_time.isoformat() if self.startup_time else None,
-                "service_instance": self.service_instance.instance_id if self.service_instance else None,
+                "service_instance": (
+                    self.service_instance.instance_id if self.service_instance else None
+                ),
                 "distributed_enabled": self._distributed_enabled,
             }
         except Exception as e:
             logger.error(f"Error getting infrastructure status: {e}")
-            return {
-                "initialized": False,
-                "error": str(e)
-            }
+            return {"initialized": False, "error": str(e)}
 
     async def get_health_status(self) -> Dict[str, Any]:
         """Get comprehensive infrastructure health status."""

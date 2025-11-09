@@ -4,17 +4,14 @@ Enterprise Features Validation Suite
 Comprehensive validation of all enterprise-grade features
 """
 
-import os
-import sys
 import json
-import time
-import sqlite3
-import subprocess
-import requests
 import logging
+import os
+import sqlite3
+import sys
 from datetime import datetime
-from typing import Dict, Any, List, Optional
 from pathlib import Path
+from typing import Any, Dict
 
 # Add the source directory to Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
@@ -82,8 +79,8 @@ class EnterpriseValidator:
             # Test Alembic functionality
             try:
                 # Try to import and use Alembic
-                from alembic.config import Config
                 from alembic import command
+                from alembic.config import Config
 
                 # Create a minimal config
                 config = Config(str(alembic_ini))
@@ -609,7 +606,7 @@ def main():
 
     try:
         results = validator.validate_all_features()
-        results_file = validator.save_results()
+        validator.save_results()
 
         # Print final status
         if results["summary"]["overall_status"] == "pass":

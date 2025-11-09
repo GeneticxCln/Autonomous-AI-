@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from pathlib import Path
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -10,7 +10,6 @@ pytest.importorskip("sqlalchemy")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from agent_system.database_models import db_manager
-from agent_system.enterprise_persistence import enterprise_persistence
 from agent_system.enhanced_persistence import (
     load_action_selector,
     load_learning_system,
@@ -19,6 +18,7 @@ from agent_system.enhanced_persistence import (
     save_learning_system,
     save_memory_system,
 )
+from agent_system.enterprise_persistence import enterprise_persistence
 from agent_system.intelligent_action_selector import IntelligentActionSelector
 from agent_system.learning import LearningSystem
 from agent_system.memory import MemorySystem

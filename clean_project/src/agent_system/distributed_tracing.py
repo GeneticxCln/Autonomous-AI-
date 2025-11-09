@@ -5,12 +5,13 @@ Enterprise-grade distributed tracing for microservices observability
 
 from __future__ import annotations
 
+import asyncio
+import functools
 import logging
 import time
-from typing import Any, Dict, Optional
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, nullcontext
 from datetime import datetime, timezone
-import functools
+from typing import Any, Dict, Optional
 
 # OpenTelemetry imports
 from opentelemetry import trace
@@ -19,16 +20,15 @@ from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.instrumentation.redis import RedisInstrumentor
 from opentelemetry.instrumentation.requests import RequestsInstrumentor
 from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
+from opentelemetry.metrics import get_meter_provider, set_meter_provider
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import ConsoleMetricExporter, PeriodicExportingMetricReader
+from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider, sampling
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
-from opentelemetry.sdk.resources import Resource
 from opentelemetry.semconv.resource import ResourceAttributes
-from opentelemetry.sdk.metrics import MeterProvider
-from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader, ConsoleMetricExporter
-from opentelemetry.metrics import set_meter_provider, get_meter_provider
 
 from .config_simple import settings
-
 
 logger = logging.getLogger(__name__)
 
@@ -383,7 +383,7 @@ class DistributedTracingManager:
             "service_version": self.service_version,
             "environment": self.environment,
             "is_initialized": self.is_initialized,
-            "jaeger_endpoint": f"http://localhost:14268" if self.is_initialized else None,
+            "jaeger_endpoint": "http://localhost:14268" if self.is_initialized else None,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
@@ -420,5 +420,4 @@ def trace_async(operation_name: str, attributes: Optional[Dict[str, Any]] = None
     return tracing_manager.trace_async_context(operation_name, attributes)
 
 
-# Import asyncio for coroutine detection
-import asyncio
+# (asyncio is imported at module top)

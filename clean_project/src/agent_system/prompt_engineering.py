@@ -8,18 +8,18 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import Dict, Any, List, Optional, Tuple, Union
-from enum import Enum
+import statistics
 from dataclasses import dataclass, field
 from datetime import datetime
-import hashlib
-import statistics
+from enum import Enum
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
 
 class PromptType(Enum):
     """Types of prompts in the system."""
+
     SYSTEM = "system"
     USER = "user"
     ASSISTANT = "assistant"
@@ -32,6 +32,7 @@ class PromptType(Enum):
 
 class OptimizationMetric(Enum):
     """Metrics for prompt optimization."""
+
     COMPLETENESS = "completeness"
     ACCURACY = "accuracy"
     RELEVANCE = "relevance"
@@ -44,6 +45,7 @@ class OptimizationMetric(Enum):
 @dataclass
 class PromptExample:
     """Example for few-shot learning."""
+
     input_text: str
     expected_output: str
     explanation: Optional[str] = None
@@ -55,6 +57,7 @@ class PromptExample:
 @dataclass
 class PromptTemplate:
     """Prompt template with variables and structure."""
+
     template_id: str
     name: str
     prompt_type: PromptType
@@ -73,6 +76,7 @@ class PromptTemplate:
 @dataclass
 class PromptPerformance:
     """Performance tracking for prompts."""
+
     template_id: str
     total_uses: int = 0
     successful_uses: int = 0
@@ -96,16 +100,16 @@ class PromptOptimizer:
             "context": self._optimize_for_context,
             "examples": self._optimize_with_examples,
             "constraints": self._optimize_with_constraints,
-            "structure": self._optimize_structure
+            "structure": self._optimize_structure,
         }
 
     def _optimize_for_clarity(self, template: str) -> str:
         """Optimize template for clarity and readability."""
         # Remove redundant words
         clarity_replacements = {
-            r'\b(very|really|actually|basically|simply|just|quite)\b': '',
-            r'\b(thing|stuff|aspect|element)\b': 'component',
-            r'\b(way|method|approach)\b': 'strategy'
+            r"\b(very|really|actually|basically|simply|just|quite)\b": "",
+            r"\b(thing|stuff|aspect|element)\b": "component",
+            r"\b(way|method|approach)\b": "strategy",
         }
 
         optimized = template
@@ -113,7 +117,7 @@ class PromptOptimizer:
             optimized = re.sub(pattern, replacement, optimized, flags=re.IGNORECASE)
 
         # Improve sentence structure
-        optimized = re.sub(r'\s+', ' ', optimized).strip()
+        optimized = re.sub(r"\s+", " ", optimized).strip()
         return optimized
 
     def _optimize_for_specificity(self, template: str) -> str:
@@ -124,18 +128,15 @@ class PromptOptimizer:
             "explain": "Give a comprehensive explanation with step-by-step reasoning",
             "summarize": "Create a concise summary highlighting key points and actionable insights",
             "compare": "Provide detailed comparison with pros, cons, and specific differentiators",
-            "recommend": "Offer specific recommendations with implementation details and expected outcomes"
+            "recommend": "Offer specific recommendations with implementation details and expected outcomes",
         }
 
         optimized = template
         for action, addition in specificity_additions.items():
-            pattern = rf'\b{action}\b'
+            pattern = rf"\b{action}\b"
             if re.search(pattern, optimized, re.IGNORECASE):
                 optimized = re.sub(
-                    pattern,
-                    f"{action} ({addition})",
-                    optimized,
-                    flags=re.IGNORECASE
+                    pattern, f"{action} ({addition})", optimized, flags=re.IGNORECASE
                 )
 
         return optimized
@@ -245,16 +246,15 @@ class PromptEngineeringManager:
                     "Base recommendations on available data",
                     "Consider multiple stakeholder perspectives",
                     "Provide implementation timeline",
-                    "Include risk assessment"
+                    "Include risk assessment",
                 ],
                 context_requirements=[
                     "Industry context",
                     "Company size and structure",
                     "Current business challenges",
-                    "Available resources"
-                ]
+                    "Available resources",
+                ],
             ),
-
             PromptTemplate(
                 template_id="customer_success_v1",
                 name="Customer Success Manager",
@@ -289,10 +289,9 @@ Ensure customers achieve their desired outcomes while maximizing customer lifeti
                     "Focus on customer outcomes",
                     "Use data to support recommendations",
                     "Consider customer resource constraints",
-                    "Align with customer business goals"
-                ]
+                    "Align with customer business goals",
+                ],
             ),
-
             PromptTemplate(
                 template_id="sales_assistant_v1",
                 name="Sales Process Optimizer",
@@ -326,10 +325,9 @@ Ensure customers achieve their desired outcomes while maximizing customer lifeti
                     "Focus on qualified prospects",
                     "Provide measurable outcomes",
                     "Consider sales team capacity",
-                    "Include follow-up strategies"
-                ]
+                    "Include follow-up strategies",
+                ],
             ),
-
             PromptTemplate(
                 template_id="data_analyst_v1",
                 name="Business Intelligence Analyst",
@@ -358,14 +356,20 @@ Ensure customers achieve their desired outcomes while maximizing customer lifeti
 - Clear interpretation of statistical significance
 - Practical business implications
 - Confidence intervals and uncertainty quantification""",
-                variables=["data_type", "analysis_goal", "time_period", "business_context", "stakeholder_type"],
+                variables=[
+                    "data_type",
+                    "analysis_goal",
+                    "time_period",
+                    "business_context",
+                    "stakeholder_type",
+                ],
                 constraints=[
                     "Validate data quality",
                     "Use appropriate statistical methods",
                     "Interpret results in business context",
-                    "Include confidence measures"
-                ]
-            )
+                    "Include confidence measures",
+                ],
+            ),
         ]
 
         for template in default_templates:
@@ -384,10 +388,7 @@ Ensure customers achieve their desired outcomes while maximizing customer lifeti
         return self.templates.get(template_id)
 
     def generate_prompt(
-        self,
-        template_id: str,
-        variables: Dict[str, Any],
-        context: Optional[Dict[str, Any]] = None
+        self, template_id: str, variables: Dict[str, Any], context: Optional[Dict[str, Any]] = None
     ) -> str:
         """Generate a complete prompt from template with variables."""
         template = self.get_template(template_id)
@@ -444,9 +445,7 @@ Ensure customers achieve their desired outcomes while maximizing customer lifeti
         return "\n".join(lines)
 
     def optimize_template(
-        self,
-        template_id: str,
-        optimization_strategies: List[str]
+        self, template_id: str, optimization_strategies: List[str]
     ) -> PromptTemplate:
         """Optimize a template using specified strategies."""
         template = self.get_template(template_id)
@@ -459,19 +458,25 @@ Ensure customers achieve their desired outcomes while maximizing customer lifeti
         # Apply optimization strategies
         for strategy in optimization_strategies:
             if strategy in self.optimizer.optimization_strategies:
-                optimized_template = self.optimizer.optimization_strategies[strategy](optimized_template)
+                optimized_template = self.optimizer.optimization_strategies[strategy](
+                    optimized_template
+                )
 
         # Update template with optimized version
         if optimized_template != original_template:
             template.template = optimized_template
             template.last_optimized = datetime.now()
-            template.optimization_history.append({
-                "timestamp": datetime.now().isoformat(),
-                "strategies_applied": optimization_strategies,
-                "original_length": len(original_template),
-                "optimized_length": len(optimized_template)
-            })
-            logger.info(f"Optimized template {template_id} using {', '.join(optimization_strategies)}")
+            template.optimization_history.append(
+                {
+                    "timestamp": datetime.now().isoformat(),
+                    "strategies_applied": optimization_strategies,
+                    "original_length": len(original_template),
+                    "optimized_length": len(optimized_template),
+                }
+            )
+            logger.info(
+                f"Optimized template {template_id} using {', '.join(optimization_strategies)}"
+            )
 
         return template
 
@@ -480,7 +485,7 @@ Ensure customers achieve their desired outcomes while maximizing customer lifeti
         template_id: str,
         input_text: str,
         expected_output: str,
-        explanation: Optional[str] = None
+        explanation: Optional[str] = None,
     ) -> bool:
         """Add a few-shot example to a template."""
         template = self.get_template(template_id)
@@ -488,9 +493,7 @@ Ensure customers achieve their desired outcomes while maximizing customer lifeti
             return False
 
         example = PromptExample(
-            input_text=input_text,
-            expected_output=expected_output,
-            explanation=explanation
+            input_text=input_text, expected_output=expected_output, explanation=explanation
         )
 
         template.examples.append(example)
@@ -504,7 +507,7 @@ Ensure customers achieve their desired outcomes while maximizing customer lifeti
         response_time: float,
         quality_score: Optional[float] = None,
         user_satisfaction: Optional[float] = None,
-        error_type: Optional[str] = None
+        error_type: Optional[str] = None,
     ):
         """Record performance metrics for a prompt."""
         if template_id not in self.performance_data:
@@ -552,25 +555,26 @@ Ensure customers achieve their desired outcomes while maximizing customer lifeti
             "successful_uses": perf.successful_uses,
             "success_rate": success_rate,
             "average_response_time": perf.average_response_time,
-            "last_used": perf.last_used.isoformat() if perf.last_used else None
+            "last_used": perf.last_used.isoformat() if perf.last_used else None,
         }
 
         if perf.quality_scores:
             result["quality_scores"] = {
                 "average": statistics.mean(perf.quality_scores),
                 "median": statistics.median(perf.quality_scores),
-                "latest": perf.quality_scores[-1]
+                "latest": perf.quality_scores[-1],
             }
 
         if perf.user_satisfaction:
             result["user_satisfaction"] = {
                 "average": statistics.mean(perf.user_satisfaction),
                 "median": statistics.median(perf.user_satisfaction),
-                "latest": perf.user_satisfaction[-1]
+                "latest": perf.user_satisfaction[-1],
             }
 
         if perf.error_types:
             from collections import Counter
+
             error_counts = Counter(perf.error_types)
             result["common_errors"] = dict(error_counts.most_common(5))
 
@@ -590,10 +594,7 @@ Ensure customers achieve their desired outcomes while maximizing customer lifeti
         return [template for score, template in recommendations]
 
     def _calculate_template_relevance_score(
-        self,
-        template: PromptTemplate,
-        use_case: str,
-        context: Dict[str, Any]
+        self, template: PromptTemplate, use_case: str, context: Dict[str, Any]
     ) -> float:
         """Calculate relevance score for template recommendations."""
         score = 0.0
@@ -624,11 +625,7 @@ Ensure customers achieve their desired outcomes while maximizing customer lifeti
         return min(score, 1.0)  # Cap at 1.0
 
     def create_specialized_template(
-        self,
-        name: str,
-        base_template_id: str,
-        customizations: Dict[str, Any],
-        use_case: str
+        self, name: str, base_template_id: str, customizations: Dict[str, Any], use_case: str
     ) -> str:
         """Create a specialized template based on an existing one."""
         base_template = self.get_template(base_template_id)
@@ -636,7 +633,9 @@ Ensure customers achieve their desired outcomes while maximizing customer lifeti
             raise ValueError(f"Base template {base_template_id} not found")
 
         # Generate unique ID
-        template_id = f"{use_case.lower().replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        template_id = (
+            f"{use_case.lower().replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        )
 
         # Create specialized template
         specialized_template = PromptTemplate(
@@ -646,13 +645,15 @@ Ensure customers achieve their desired outcomes while maximizing customer lifeti
             template=base_template.template,
             variables=base_template.variables.copy(),
             constraints=base_template.constraints.copy(),
-            context_requirements=base_template.context_requirements.copy()
+            context_requirements=base_template.context_requirements.copy(),
         )
 
         # Apply customizations
         if "template_modifications" in customizations:
             for old_text, new_text in customizations["template_modifications"].items():
-                specialized_template.template = specialized_template.template.replace(old_text, new_text)
+                specialized_template.template = specialized_template.template.replace(
+                    old_text, new_text
+                )
 
         if "additional_constraints" in customizations:
             specialized_template.constraints.extend(customizations["additional_constraints"])
@@ -682,7 +683,7 @@ def create_business_prompt(agent_role: str, business_context: Dict[str, Any]) ->
         "sales_assistant": "sales_assistant_v1",
         "customer_success": "customer_success_v1",
         "business_intelligence": "data_analyst_v1",
-        "business_analyst": "business_analysis_v1"
+        "business_analyst": "business_analysis_v1",
     }
 
     template_id = role_to_template.get(agent_role, "business_analysis_v1")
@@ -692,7 +693,7 @@ def create_business_prompt(agent_role: str, business_context: Dict[str, Any]) ->
         "industry": business_context.get("industry", "general"),
         "company_size": business_context.get("company_size", "medium"),
         "business_model": business_context.get("business_model", "B2B"),
-        "current_challenges": business_context.get("challenges", "efficiency and growth")
+        "current_challenges": business_context.get("challenges", "efficiency and growth"),
     }
 
     return manager.generate_prompt(template_id, variables, business_context)

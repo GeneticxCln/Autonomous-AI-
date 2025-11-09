@@ -5,29 +5,29 @@ mTLS, WAF, Rate Limiting, Input Validation, and Security Monitoring
 
 from __future__ import annotations
 
-import logging
-import time
+import asyncio
 import hashlib
 import hmac
-import secrets
-from typing import Dict, Any, List, Optional, Set, Tuple
-from datetime import datetime, timedelta
-from dataclasses import dataclass
-from enum import Enum
-import asyncio
 import json
+import logging
+import secrets
+import time
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from enum import Enum
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 # Security libraries
 try:
+    import base64
+
     from cryptography.fernet import Fernet
     from cryptography.hazmat.primitives import hashes
     from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-    import base64
 except ImportError:
     Fernet = None
 
 from .config_simple import settings
-
 
 logger = logging.getLogger(__name__)
 
@@ -254,7 +254,7 @@ class AdvancedSecurityManager:
             return True, []
 
         events = []
-        suspicious_content = []
+        _suspicious_content = []
 
         # Extract content to scan
         content_parts = []

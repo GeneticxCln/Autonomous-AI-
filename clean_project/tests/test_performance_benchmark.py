@@ -3,22 +3,22 @@ Performance benchmarking suite for the agent system.
 Tests throughput, latency, concurrency, and resource usage.
 """
 
-import asyncio
-import pytest
-import time
 import statistics
-from typing import Dict, List, Any
+import time
 from dataclasses import dataclass
+from typing import Dict, List
+
+import pytest
 
 from agent_system.agent import AutonomousAgent
 from agent_system.distributed_message_queue import DistributedMessageQueue, MessagePriority
 from agent_system.tools import ToolRegistry
-from agent_system.goal_manager import GoalManager
 
 
 @dataclass
 class BenchmarkResult:
     """Result of a performance benchmark."""
+
     name: str
     operations: int
     total_time: float
@@ -174,12 +174,16 @@ class PerformanceBenchmark:
             exec_start = time.perf_counter()
             try:
                 await registry.execute_action_async(
-                    type("Action", (), {
-                        "id": f"action-{i}",
-                        "name": "test_action",
-                        "tool_name": tool_name,
-                        "parameters": {"query": f"test query {i}"},
-                    })()
+                    type(
+                        "Action",
+                        (),
+                        {
+                            "id": f"action-{i}",
+                            "name": "test_action",
+                            "tool_name": tool_name,
+                            "parameters": {"query": f"test query {i}"},
+                        },
+                    )()
                 )
             except Exception:
                 pass  # Ignore errors for benchmarking
@@ -304,4 +308,3 @@ async def test_benchmark_tool_execution():
     )
     PerformanceBenchmark.print_results([result])
     assert result.operations > 0
-

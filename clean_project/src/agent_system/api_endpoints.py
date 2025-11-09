@@ -8,24 +8,26 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import UTC, datetime
+from typing import Any, Optional, AsyncIterator, Callable, ParamSpec, TypeVar, cast
 
 from fastapi import APIRouter, Depends, Query, Request, status
 from fastapi.responses import JSONResponse, StreamingResponse
-from typing import Optional
 from sqlalchemy import text
 
 # Import auth models to register them with SQLAlchemy
 from . import auth_models  # noqa: F401
+from .advanced_monitoring import monitoring_system
 
 # Import comprehensive API schemas for OpenAPI documentation
 from .api_schemas import (
-    # Agent Management
+    # Capabilities
     AgentCreate,
     APIError,
     # Base responses
     APIResponse,
     # API Tokens
     APITokenCreate,
+    CapabilityRegisterRequest,
     GoalCreate,
     LoginRequest,
     LoginResponse,
@@ -34,16 +36,13 @@ from .api_schemas import (
     # User Management
     UserCreate,
     UserInfo,
-    # Capabilities
-    AgentCapabilityDescriptor,
-    CapabilityRegisterRequest,
 )
 from .api_security import (
+    check_custom_rate_limit,
     create_api_response,
     create_error_response,
     get_current_security_context,
     require_permission,
-    check_custom_rate_limit,
 )
 from .auth_models import (
     AccountLockedError,
@@ -56,11 +55,15 @@ from .auth_models import (
 )
 from .auth_service import auth_service
 from .config_simple import settings
-from .advanced_monitoring import monitoring_system
-from .database_models import ActionModel, AgentModel, GoalModel
-from .database_models import AgentCapabilityModel
+from .database_models import ActionModel, AgentCapabilityModel, AgentModel, GoalModel
 from .distributed_message_queue import MessagePriority, distributed_message_queue
-from .job_definitions import AGENT_JOB_QUEUE, AgentExecutionPayload, JobPriority, JobQueueMessage, JobType
+from .job_definitions import (
+    AGENT_JOB_QUEUE,
+    AgentExecutionPayload,
+    JobPriority,
+    JobQueueMessage,
+    JobType,
+)
 from .job_manager import job_store
 from .production_config import get_config
 
@@ -83,6 +86,32 @@ api_router = APIRouter(
 # API envelope alias for backward compatibility
 APIEnvelope = APIResponse
 
+# Typed decorator wrappers to satisfy mypy for FastAPI route decorators
+P = ParamSpec("P")
+R = TypeVar("R")
+
+def _typed_route(
+    decorator_factory: Callable[..., Callable[[Callable[P, R]], Callable[..., Any]]]
+) -> Callable[..., Callable[[Callable[P, R]], Callable[P, R]]]:
+    def wrapper(*args: Any, **kwargs: Any) -> Callable[[Callable[P, R]], Callable[P, R]]:
+        def inner(func: Callable[P, R]) -> Callable[P, R]:
+            # FastAPI returns the function after registering the route; cast restores the original type
+            return cast(Callable[P, R], decorator_factory(*args, **kwargs)(func))
+        return inner
+    return wrapper
+
+class TypedRouter:
+    def __init__(self, router: APIRouter) -> None:
+        self._router = router
+        self.get = _typed_route(router.get)
+        self.post = _typed_route(router.post)
+        self.put = _typed_route(router.put)
+        self.delete = _typed_route(router.delete)
+        self.patch = _typed_route(router.patch)
+
+# Use typed wrappers for route decorators to avoid decorator-level ignores
+typed_router = TypedRouter(api_router)
+
 JOB_PRIORITY_TO_MESSAGE = {
     JobPriority.CRITICAL: MessagePriority.CRITICAL,
     JobPriority.HIGH: MessagePriority.HIGH,
@@ -91,7 +120,9 @@ JOB_PRIORITY_TO_MESSAGE = {
 }
 
 
-async def _enqueue_job(job_id: str, *, job_type: JobType, priority: JobPriority = JobPriority.NORMAL):
+async def _enqueue_job(
+    job_id: str, *, job_type: JobType, priority: JobPriority = JobPriority.NORMAL
+) -> None:
     """Publish a job message to the distributed queue."""
     await distributed_message_queue.initialize()
     message = JobQueueMessage(job_id=job_id, job_type=job_type, priority=priority)
@@ -104,7 +135,7 @@ async def _enqueue_job(job_id: str, *, job_type: JobType, priority: JobPriority 
 
 
 # Authentication Endpoints
-@api_router.post(
+@typed_router.post(
     "/auth/login",
     response_model=APIResponse,
     summary="User Authentication",
@@ -195,7 +226,7 @@ async def _enqueue_job(job_id: str, *, job_type: JobType, priority: JobPriority 
         },
     },
 )
-async def login(request: Request, login_data: LoginRequest):
+async def login(request: Request, login_data: LoginRequest) -> JSONResponse:
     """
     Authenticate user and return JWT tokens with comprehensive user information.
 
@@ -298,7 +329,7 @@ async def login(request: Request, login_data: LoginRequest):
         )
 
 
-@api_router.post(
+@typed_router.post(
     "/auth/refresh",
     response_model=APIResponse,
     summary="Refresh Access Token",
@@ -338,7 +369,7 @@ async def login(request: Request, login_data: LoginRequest):
         401: {"model": APIError, "description": "Invalid, expired, or revoked refresh token"},
     },
 )
-async def refresh_token(request: Request, refresh_data: TokenRefreshRequest):
+async def refresh_token(request: Request, refresh_data: TokenRefreshRequest) -> JSONResponse:
     """
     Refresh access token using a valid refresh token.
 
@@ -370,7 +401,7 @@ async def refresh_token(request: Request, refresh_data: TokenRefreshRequest):
                 "success": True,
                 "message": "Token refreshed successfully",
                 "timestamp": datetime.now(UTC).timestamp(),
-                "data": token_data.dict(),
+                "data": token_data.model_dump(),
             },
         )
 
@@ -390,10 +421,10 @@ async def refresh_token(request: Request, refresh_data: TokenRefreshRequest):
         )
 
 
-@api_router.post("/auth/logout", response_model=APIEnvelope)
+@typed_router.post("/auth/logout", response_model=APIEnvelope)
 async def logout(
     request: Request, security_context: SecurityContext = Depends(get_current_security_context)
-):
+) -> JSONResponse:
     """Logout user and invalidate session."""
     try:
         auth_service.logout(security_context.user.id, security_context.session_id)
@@ -407,10 +438,10 @@ async def logout(
         return create_error_response(message="Logout failed", error_type="LOGOUT_FAILED")
 
 
-@api_router.get("/auth/me", response_model=APIEnvelope)
+@typed_router.get("/auth/me", response_model=APIEnvelope)
 async def get_current_user_info(
     security_context: SecurityContext = Depends(get_current_security_context),
-):
+) -> JSONResponse:
     """Get current user information."""
     try:
         user_data = {
@@ -442,11 +473,11 @@ async def get_current_user_info(
 
 
 # User Management Endpoints
-@api_router.post("/users", response_model=APIResponse)
+@typed_router.post("/users", response_model=APIResponse)
 async def create_user(
     user_data: UserCreate,
     security_context: SecurityContext = Depends(require_permission("users", "write")),
-):
+) -> JSONResponse:
     """Create new user account (requires users.write permission)."""
     try:
         user = auth_service.create_user(
@@ -485,12 +516,12 @@ async def create_user(
         )
 
 
-@api_router.get("/users", response_model=APIEnvelope)
+@typed_router.get("/users", response_model=APIEnvelope)
 async def list_users(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
     security_context: SecurityContext = Depends(require_permission("users", "read")),
-):
+) -> JSONResponse:
     """List users (requires users.read permission)."""
     try:
         with auth_service.db.get_session() as session:
@@ -520,11 +551,11 @@ async def list_users(
 
 
 # API Token Management
-@api_router.post("/api-tokens", response_model=APIResponse)
+@typed_router.post("/api-tokens", response_model=APIResponse)
 async def create_api_token(
     token_data: APITokenCreate,
     security_context: SecurityContext = Depends(get_current_security_context),
-):
+) -> JSONResponse:
     """Create API token for current user."""
     try:
         api_token = auth_service.create_api_token(
@@ -549,10 +580,10 @@ async def create_api_token(
         )
 
 
-@api_router.get("/api-tokens", response_model=APIEnvelope)
+@typed_router.get("/api-tokens", response_model=APIEnvelope)
 async def list_api_tokens(
     security_context: SecurityContext = Depends(get_current_security_context),
-):
+) -> JSONResponse:
     """List user's API tokens."""
     try:
         with auth_service.db.get_session() as session:
@@ -586,11 +617,11 @@ async def list_api_tokens(
 
 
 # Agent Operation Endpoints
-@api_router.post("/agents", response_model=APIResponse)
+@typed_router.post("/agents", response_model=APIResponse)
 async def create_agent(
     agent_data: AgentCreate,
     security_context: SecurityContext = Depends(require_permission("agent", "write")),
-):
+) -> JSONResponse:
     """Create new agent (requires agent.write permission)."""
     try:
         agent = AgentModel(
@@ -632,12 +663,12 @@ async def create_agent(
         )
 
 
-@api_router.get("/agents", response_model=APIEnvelope)
+@typed_router.get("/agents", response_model=APIEnvelope)
 async def list_agents(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
     security_context: SecurityContext = Depends(require_permission("agent", "read")),
-):
+) -> JSONResponse:
     """List agents (requires agent.read permission)."""
     try:
         with auth_service.db.get_session() as session:
@@ -666,10 +697,10 @@ async def list_agents(
         )
 
 
-@api_router.get("/agents/{agent_id}", response_model=APIEnvelope)
+@typed_router.get("/agents/{agent_id}", response_model=APIEnvelope)
 async def get_agent(
     agent_id: str, security_context: SecurityContext = Depends(require_permission("agent", "read"))
-):
+) -> JSONResponse:
     """Get specific agent details (requires agent.read permission)."""
     try:
         with auth_service.db.get_session() as session:
@@ -704,11 +735,11 @@ async def get_agent(
         )
 
 
-@api_router.post("/agents/{agent_id}/execute")
+@typed_router.post("/agents/{agent_id}/execute")
 async def execute_agent(
     agent_id: str,
     security_context: SecurityContext = Depends(require_permission("agent", "execute")),
-):
+) -> JSONResponse:
     """Execute agent operations (requires agent.execute permission)."""
     try:
         with auth_service.db.get_session() as session:
@@ -781,7 +812,7 @@ async def execute_agent(
                     "priority": job_record["priority"],
                 },
                 message="Agent execution queued",
-                status_code=status.HTTP_202_ACCEPTED,
+                status_code=status.HTTP_200_OK,
             )
 
     except Exception as e:
@@ -792,11 +823,11 @@ async def execute_agent(
 
 
 # Job Management Endpoints
-@api_router.get("/jobs/{job_id}", response_model=APIEnvelope)
+@typed_router.get("/jobs/{job_id}", response_model=APIEnvelope)
 async def get_job_status(
     job_id: str,
     security_context: SecurityContext = Depends(require_permission("agent", "read")),
-):
+) -> JSONResponse:
     """Retrieve background job status."""
     job = job_store.get_job(job_id)
     if not job:
@@ -809,26 +840,26 @@ async def get_job_status(
     return create_api_response(data=job, message="Job status retrieved")
 
 
-@api_router.get("/agents/{agent_id}/jobs", response_model=APIEnvelope)
+@typed_router.get("/agents/{agent_id}/jobs", response_model=APIEnvelope)
 async def list_agent_jobs(
     agent_id: str,
     limit: int = Query(20, ge=1, le=100),
     security_context: SecurityContext = Depends(require_permission("agent", "read")),
-):
+) -> JSONResponse:
     """List recent jobs for an agent."""
     jobs = job_store.list_jobs(agent_id=agent_id, limit=limit)
     return create_api_response(data=jobs, message="Agent jobs retrieved")
 
 
 # Job status streaming (SSE)
-@api_router.get("/jobs/{job_id}/stream")
+@typed_router.get("/jobs/{job_id}/stream")
 async def stream_job_status(
     job_id: str,
     security_context: SecurityContext = Depends(require_permission("agent", "read")),
-):
+) -> StreamingResponse:
     """Stream job status updates via Server-Sent Events."""
 
-    async def event_gen():
+    async def event_gen() -> AsyncIterator[str]:
         import asyncio
         import json
 
@@ -858,11 +889,11 @@ async def stream_job_status(
 
 
 # Capability discovery (ADR-002)
-@api_router.get("/agents/capabilities", response_model=APIEnvelope)
+@typed_router.get("/agents/capabilities", response_model=APIEnvelope)
 async def list_capabilities(
     role: Optional[str] = Query(None),
     security_context: SecurityContext = Depends(require_permission("agent", "read")),
-):
+) -> JSONResponse:
     try:
         with auth_service.db.get_session() as session:
             query = session.query(AgentCapabilityModel)
@@ -895,11 +926,11 @@ async def list_capabilities(
         )
 
 
-@api_router.post("/agents/capabilities/register", response_model=APIEnvelope)
+@typed_router.post("/agents/capabilities/register", response_model=APIEnvelope)
 async def register_capability(
     spec: CapabilityRegisterRequest,
     security_context: SecurityContext = Depends(require_permission("agent", "write")),
-):
+) -> JSONResponse:
     try:
         with auth_service.db.get_session() as session:
             existing = (
@@ -939,11 +970,11 @@ async def register_capability(
 
 
 # Goal Management Endpoints
-@api_router.post("/goals", response_model=APIResponse)
+@typed_router.post("/goals", response_model=APIResponse)
 async def create_goal(
     goal_data: GoalCreate,
     security_context: SecurityContext = Depends(require_permission("goals", "write")),
-):
+) -> JSONResponse:
     """Create new goal (requires goals.write permission)."""
     try:
         goal = GoalModel(
@@ -985,12 +1016,12 @@ async def create_goal(
         )
 
 
-@api_router.get("/goals", response_model=APIEnvelope)
+@typed_router.get("/goals", response_model=APIEnvelope)
 async def list_goals(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
     security_context: SecurityContext = Depends(require_permission("goals", "read")),
-):
+) -> JSONResponse:
     """List goals (requires goals.read permission)."""
     try:
         with auth_service.db.get_session() as session:
@@ -1020,8 +1051,8 @@ async def list_goals(
 
 
 # System Information Endpoints
-@api_router.get("/system/health")
-async def system_health():
+@typed_router.get("/system/health")
+async def system_health() -> JSONResponse:
     """System health check endpoint."""
     try:
         # Check database connection
@@ -1046,10 +1077,10 @@ async def system_health():
         )
 
 
-@api_router.get("/system/info")
+@typed_router.get("/system/info")
 async def system_info(
     security_context: SecurityContext = Depends(require_permission("system", "read"))
-):
+) -> JSONResponse:
     """Get system information (requires system.read permission)."""
     try:
         with auth_service.db.get_session() as session:
@@ -1093,12 +1124,12 @@ async def system_info(
         )
 
 
-@api_router.post(
+@typed_router.post(
     "/system/alerts/webhook",
     status_code=status.HTTP_202_ACCEPTED,
     include_in_schema=False,
 )
-async def alertmanager_webhook(request: Request):
+async def alertmanager_webhook(request: Request) -> JSONResponse:
     """Receive Alertmanager notifications and mirror them into local metrics/logs."""
     expected_token = getattr(settings, "ALERTMANAGER_WEBHOOK_TOKEN", None)
     provided_token = request.headers.get("X-Alertmanager-Token")
@@ -1129,4 +1160,7 @@ async def alertmanager_webhook(request: Request):
         processed += 1
 
     logger.info("Alertmanager webhook received %s alerts", processed)
-    return {"success": True, "alerts_processed": processed}
+    return JSONResponse(
+        status_code=status.HTTP_202_ACCEPTED,
+        content={"success": True, "alerts_processed": processed},
+    )

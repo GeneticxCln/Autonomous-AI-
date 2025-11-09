@@ -7,7 +7,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, Dict, Optional
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 
 
 class JobType(str, Enum):
@@ -36,7 +36,7 @@ class JobPriority(str, Enum):
     CRITICAL = "critical"
 
 
-class AgentExecutionPayload(BaseModel):
+class AgentExecutionPayload(BaseModel):  # type: ignore[misc]
     """Payload required to execute an agent asynchronously."""
 
     agent_id: str = Field(..., description="Agent identifier to execute")
@@ -52,16 +52,19 @@ class AgentExecutionPayload(BaseModel):
     tenant_id: Optional[str] = Field(
         default=None, description="Tenant or organization scoping this job"
     )
-    metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional context metadata")
+    metadata: Dict[str, Any] = Field(
+        default_factory=dict, description="Additional context metadata"
+    )
 
-    @validator("agent_id")
+    @field_validator("agent_id")  # type: ignore[misc]
+    @classmethod
     def _agent_id_not_blank(cls, value: str) -> str:
         if not value or not value.strip():
             raise ValueError("agent_id must be provided")
         return value
 
 
-class JobQueueMessage(BaseModel):
+class JobQueueMessage(BaseModel):  # type: ignore[misc]
     """Payload stored in the distributed queue."""
 
     job_id: str

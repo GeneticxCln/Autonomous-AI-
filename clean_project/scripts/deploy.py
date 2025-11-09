@@ -225,7 +225,7 @@ python3 -m agent_system.web_interface
 
 def main():
     """Main deployment function."""
-    logger = setup_logging()
+    setup_logging()
 
     print("🚀 Autonomous Agent System - Production Deployment")
     print("=" * 60)

@@ -1,5 +1,7 @@
 # 🤖 Autonomous AI Agent System
 
+> Note: The canonical, production-ready project lives in `clean_project/`. Root-level Dockerfile/Makefile/requirements are legacy. Use `clean_project/Makefile` and `clean_project/config/Dockerfile`.
+
 <div align="center">
 
 ![Agent System](https://img.shields.io/badge/AI-Agent%20System-blue)

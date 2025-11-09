@@ -6,19 +6,15 @@ Orchestrates multiple AI agents working together with specialized roles and comm
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import uuid
-from typing import Dict, Any, List, Optional, Union, Callable
-from enum import Enum
 from dataclasses import dataclass, field
 from datetime import datetime
-from concurrent.futures import ThreadPoolExecutor
-import queue
-import threading
+from enum import Enum
+from typing import Any, Callable, Dict, List, Optional
 
 from .config_simple import settings
-from .distributed_message_queue import distributed_message_queue, MessagePriority
+from .distributed_message_queue import MessagePriority, distributed_message_queue
 from .distributed_state_manager import distributed_state_manager
 from .infrastructure_manager import infrastructure_manager
 
@@ -27,18 +23,20 @@ logger = logging.getLogger(__name__)
 
 class AgentRole(Enum):
     """Specialized roles in multi-agent system."""
-    PLANNER = "planner"           # Breaks down complex tasks
-    EXECUTOR = "executor"         # Performs specific actions
-    CHECKER = "checker"          # Validates and quality checks
-    COORDINATOR = "coordinator"   # Manages overall workflow
-    RESEARCHER = "researcher"     # Gathers information
-    ANALYST = "analyst"          # Analyzes data and patterns
-    WRITER = "writer"            # Creates content and documentation
-    REVISER = "revisor"          # Reviews and improves outputs
+
+    PLANNER = "planner"  # Breaks down complex tasks
+    EXECUTOR = "executor"  # Performs specific actions
+    CHECKER = "checker"  # Validates and quality checks
+    COORDINATOR = "coordinator"  # Manages overall workflow
+    RESEARCHER = "researcher"  # Gathers information
+    ANALYST = "analyst"  # Analyzes data and patterns
+    WRITER = "writer"  # Creates content and documentation
+    REVISER = "revisor"  # Reviews and improves outputs
 
 
 class TaskStatus(Enum):
     """Task execution status."""
+
     PENDING = "pending"
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
@@ -49,6 +47,7 @@ class TaskStatus(Enum):
 
 class MessageType(Enum):
     """Types of messages in agent communication."""
+
     TASK_ASSIGNMENT = "task_assignment"
     TASK_COMPLETION = "task_completion"
     STATUS_UPDATE = "status_update"
@@ -61,6 +60,7 @@ class MessageType(Enum):
 @dataclass
 class AgentCapability:
     """Defines what an agent can do."""
+
     name: str
     description: str
     input_types: List[str] = field(default_factory=list)
@@ -73,6 +73,7 @@ class AgentCapability:
 @dataclass
 class AgentIdentity:
     """Unique agent identity and capabilities."""
+
     agent_id: str
     name: str
     role: AgentRole
@@ -86,6 +87,7 @@ class AgentIdentity:
 @dataclass
 class Task:
     """Task definition for agent execution."""
+
     task_id: str
     title: str
     description: str
@@ -107,6 +109,7 @@ class Task:
 @dataclass
 class AgentMessage:
     """Message for inter-agent communication."""
+
     message_id: str
     from_agent: str
     to_agent: Optional[str] = None
@@ -165,6 +168,7 @@ class AgentMessage:
 @dataclass
 class WorkflowStep:
     """Individual step in a complex workflow."""
+
     step_id: str
     step_name: str
     assigned_agent: str
@@ -190,12 +194,16 @@ class AgentRegistry:
                 name="Task Planner Alpha",
                 role=AgentRole.PLANNER,
                 capabilities=[
-                    AgentCapability("task_decomposition", "Break down complex tasks into manageable steps"),
+                    AgentCapability(
+                        "task_decomposition", "Break down complex tasks into manageable steps"
+                    ),
                     AgentCapability("workflow_design", "Create efficient task workflows"),
-                    AgentCapability("resource_planning", "Estimate resource requirements and timelines")
+                    AgentCapability(
+                        "resource_planning", "Estimate resource requirements and timelines"
+                    ),
                 ],
                 expertise_domains=["project_management", "task_analysis", "workflow_optimization"],
-                quality_standards=["clear_task_breakdown", "realistic_estimates", "logical_flow"]
+                quality_standards=["clear_task_breakdown", "realistic_estimates", "logical_flow"],
             ),
             AgentIdentity(
                 agent_id="executor_beta",
@@ -204,34 +212,44 @@ class AgentRegistry:
                 capabilities=[
                     AgentCapability("data_processing", "Process and analyze data efficiently"),
                     AgentCapability("content_generation", "Create high-quality content"),
-                    AgentCapability("automation", "Automate repetitive tasks")
+                    AgentCapability("automation", "Automate repetitive tasks"),
                 ],
                 expertise_domains=["content_creation", "data_analysis", "process_automation"],
-                quality_standards=["accuracy", "completeness", "timeliness"]
+                quality_standards=["accuracy", "completeness", "timeliness"],
             ),
             AgentIdentity(
                 agent_id="checker_gamma",
                 name="Quality Checker Gamma",
                 role=AgentRole.CHECKER,
                 capabilities=[
-                    AgentCapability("quality_assessment", "Evaluate output quality against standards"),
+                    AgentCapability(
+                        "quality_assessment", "Evaluate output quality against standards"
+                    ),
                     AgentCapability("error_detection", "Identify errors and inconsistencies"),
-                    AgentCapability("compliance_checking", "Ensure outputs meet requirements")
+                    AgentCapability("compliance_checking", "Ensure outputs meet requirements"),
                 ],
                 expertise_domains=["quality_assurance", "error_detection", "compliance"],
-                quality_standards=["accuracy", "completeness", "standards_compliance"]
+                quality_standards=["accuracy", "completeness", "standards_compliance"],
             ),
             AgentIdentity(
                 agent_id="researcher_delta",
                 name="Research Specialist Delta",
                 role=AgentRole.RESEARCHER,
                 capabilities=[
-                    AgentCapability("information_gathering", "Collect relevant information efficiently"),
-                    AgentCapability("source_verification", "Verify information accuracy and reliability"),
-                    AgentCapability("synthesis", "Combine information from multiple sources")
+                    AgentCapability(
+                        "information_gathering", "Collect relevant information efficiently"
+                    ),
+                    AgentCapability(
+                        "source_verification", "Verify information accuracy and reliability"
+                    ),
+                    AgentCapability("synthesis", "Combine information from multiple sources"),
                 ],
                 expertise_domains=["research", "information_gathering", "analysis"],
-                quality_standards=["source_reliability", "information_accuracy", "comprehensive_coverage"]
+                quality_standards=[
+                    "source_reliability",
+                    "information_accuracy",
+                    "comprehensive_coverage",
+                ],
             ),
             AgentIdentity(
                 agent_id="coordinator_epsilon",
@@ -240,11 +258,15 @@ class AgentRegistry:
                 capabilities=[
                     AgentCapability("task_coordination", "Coordinate multiple agents and tasks"),
                     AgentCapability("resource_allocation", "Optimize resource allocation"),
-                    AgentCapability("progress_monitoring", "Track and report on workflow progress")
+                    AgentCapability("progress_monitoring", "Track and report on workflow progress"),
                 ],
                 expertise_domains=["project_management", "resource_optimization", "coordination"],
-                quality_standards=["efficient_coordination", "optimal_resource_use", "clear_communication"]
-            )
+                quality_standards=[
+                    "efficient_coordination",
+                    "optimal_resource_use",
+                    "clear_communication",
+                ],
+            ),
         ]
 
         for agent in default_agents:
@@ -267,7 +289,9 @@ class AgentRegistry:
         agent_ids = self.role_to_agents.get(role, [])
         return [self.agents[aid] for aid in agent_ids if aid in self.agents]
 
-    def find_best_agent(self, capability_needed: str, context: Dict[str, Any]) -> Optional[AgentIdentity]:
+    def find_best_agent(
+        self, capability_needed: str, context: Dict[str, Any]
+    ) -> Optional[AgentIdentity]:
         """Find the best agent for a specific capability."""
         best_agent = None
         best_score = 0
@@ -280,13 +304,18 @@ class AgentRegistry:
 
         return best_agent if best_score > 0.3 else None
 
-    def _calculate_agent_score(self, agent: AgentIdentity, capability: str, context: Dict[str, Any]) -> float:
+    def _calculate_agent_score(
+        self, agent: AgentIdentity, capability: str, context: Dict[str, Any]
+    ) -> float:
         """Calculate how well an agent fits the context."""
         score = 0.0
 
         # Capability match
         for cap in agent.capabilities:
-            if capability.lower() in cap.name.lower() or capability.lower() in cap.description.lower():
+            if (
+                capability.lower() in cap.name.lower()
+                or capability.lower() in cap.description.lower()
+            ):
                 score += 0.4
 
         # Domain expertise match
@@ -431,12 +460,16 @@ class MessageBus:
                 origin = message.metadata.get("origin_node")
 
                 if origin == self.node_id:
-                    await distributed_message_queue.ack(self.cluster_queue_name, envelope.message_id)
+                    await distributed_message_queue.ack(
+                        self.cluster_queue_name, envelope.message_id
+                    )
                     continue
 
                 delivered = await self._deliver_message(message)
                 if delivered:
-                    await distributed_message_queue.ack(self.cluster_queue_name, envelope.message_id)
+                    await distributed_message_queue.ack(
+                        self.cluster_queue_name, envelope.message_id
+                    )
                 else:
                     # Requeue the message for another node to process
                     await distributed_message_queue.publish(
@@ -444,7 +477,9 @@ class MessageBus:
                         message.to_transport_dict(),
                         priority=self._priority_from_message(message),
                     )
-                    await distributed_message_queue.ack(self.cluster_queue_name, envelope.message_id)
+                    await distributed_message_queue.ack(
+                        self.cluster_queue_name, envelope.message_id
+                    )
         except asyncio.CancelledError:
             logger.debug("Distributed message consumer stopped")
 
@@ -495,7 +530,7 @@ class MultiAgentOrchestrator:
                 title=step_def["title"],
                 description=step_def["description"],
                 priority=step_def.get("priority", 5),
-                inputs=step_def.get("inputs", {})
+                inputs=step_def.get("inputs", {}),
             )
 
             # Find best agent for the step
@@ -515,7 +550,7 @@ class MultiAgentOrchestrator:
                     assigned_agent=best_agent.agent_id,
                     task=task,
                     order=i,
-                    parallel_group=step_def.get("parallel_group")
+                    parallel_group=step_def.get("parallel_group"),
                 )
                 steps.append(workflow_step)
 
@@ -581,8 +616,8 @@ class MultiAgentOrchestrator:
                     "task_title": step.task.title,
                     "task_description": step.task.description,
                     "task_inputs": step.task.inputs,
-                    "workflow_id": step.step_id
-                }
+                    "workflow_id": step.step_id,
+                },
             )
             await self.message_bus.send_message(message)
 
@@ -647,7 +682,7 @@ class MultiAgentOrchestrator:
             "result": f"Task '{task.title}' completed by {agent.name}",
             "agent_used": agent.name,
             "execution_time": "2.0 seconds",
-            "quality_score": 0.85
+            "quality_score": 0.85,
         }
         task.status = TaskStatus.COMPLETED
         task.completed_at = datetime.now()
@@ -659,7 +694,7 @@ class MultiAgentOrchestrator:
             to_agent="orchestrator",
             message_type=MessageType.TASK_COMPLETION,
             task_id=task.task_id,
-            content=task.outputs
+            content=task.outputs,
         )
         await self.message_bus.send_message(message)
 
@@ -685,10 +720,10 @@ class MultiAgentOrchestrator:
                     "name": step.step_name,
                     "agent": step.assigned_agent,
                     "status": step.task.status.value,
-                    "progress": step.task.status.value
+                    "progress": step.task.status.value,
                 }
                 for step in steps
-            ]
+            ],
         }
 
     async def _persist_cluster_snapshot(self):
@@ -777,7 +812,7 @@ async def create_business_workflow(business_task: str, context: Dict[str, Any]) 
                 "description": f"Research and analyze {business_task}",
                 "required_capability": "information_gathering",
                 "context": context,
-                "priority": 8
+                "priority": 8,
             },
             {
                 "title": "Solution Development",
@@ -785,7 +820,7 @@ async def create_business_workflow(business_task: str, context: Dict[str, Any]) 
                 "required_capability": "content_generation",
                 "context": context,
                 "priority": 7,
-                "parallel_group": 1
+                "parallel_group": 1,
             },
             {
                 "title": "Quality Review",
@@ -793,8 +828,8 @@ async def create_business_workflow(business_task: str, context: Dict[str, Any]) 
                 "required_capability": "quality_assessment",
                 "context": context,
                 "priority": 6,
-                "parallel_group": 1
-            }
+                "parallel_group": 1,
+            },
         ]
     }
 

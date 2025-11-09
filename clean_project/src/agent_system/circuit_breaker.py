@@ -6,18 +6,16 @@ Provides fault tolerance and resilience for external service calls
 from __future__ import annotations
 
 import asyncio
-import time
-import logging
-from enum import Enum
-from typing import Any, Callable, Optional, Dict, List
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta
 import functools
+import logging
+import time
+from dataclasses import dataclass, field
+from datetime import datetime
+from enum import Enum
+from typing import Any, Callable, Dict, List, Optional
+
 import aiohttp
 import requests
-
-from .config_simple import settings
-
 
 logger = logging.getLogger(__name__)
 

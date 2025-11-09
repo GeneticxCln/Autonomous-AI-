@@ -7,19 +7,19 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
+import datetime
 import logging
 import signal
 from typing import Optional
-import datetime
 
 from .cache_manager import cache_manager
 from .config_simple import settings
+from .database_models import AgentCapabilityModel, db_manager
 from .distributed_message_queue import distributed_message_queue
 from .job_definitions import AGENT_JOB_QUEUE, JobQueueMessage
 from .job_manager import job_store
 from .jobs import JOB_TYPE_TO_HANDLER
 from .service_registry import service_registry
-from .database_models import db_manager, AgentCapabilityModel
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +72,11 @@ class AgentWorker:
         # Register capabilities (basic executor profile)
         try:
             with db_manager.get_session() as session:
-                instance_id = self._service_instance.instance_id if self._service_instance else metadata["node_id"]
+                instance_id = (
+                    self._service_instance.instance_id
+                    if self._service_instance
+                    else metadata["node_id"]
+                )
                 existing = (
                     session.query(AgentCapabilityModel)
                     .filter(AgentCapabilityModel.instance_id == instance_id)

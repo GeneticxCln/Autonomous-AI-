@@ -5,9 +5,9 @@ Replaces JSON file-based persistence with proper database schema
 
 from __future__ import annotations
 
+import os
 import uuid
 from datetime import UTC, datetime
-import os
 from typing import Dict
 
 from sqlalchemy import (
@@ -452,7 +452,9 @@ class DatabaseManager:
         self.database_url = database_url
         self.engine = None
         self.SessionLocal = None
-        self.pool_size = pool_size if pool_size is not None else int(os.getenv("DB_POOL_SIZE", "10"))
+        self.pool_size = (
+            pool_size if pool_size is not None else int(os.getenv("DB_POOL_SIZE", "10"))
+        )
         self.max_overflow = (
             max_overflow if max_overflow is not None else int(os.getenv("DB_MAX_OVERFLOW", "20"))
         )
@@ -494,9 +496,7 @@ class DatabaseManager:
             # Create all tables
             Base.metadata.create_all(bind=self.engine)
 
-            print(
-                f"✅ Database initialized successfully: {self._mask_db_url(self.database_url)}"
-            )
+            print(f"✅ Database initialized successfully: {self._mask_db_url(self.database_url)}")
 
         except Exception as e:
             print(f"❌ Database initialization failed: {e}")

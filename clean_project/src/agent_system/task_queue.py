@@ -7,24 +7,21 @@ from __future__ import annotations
 
 import logging
 import os
-import json
-from datetime import datetime, timedelta
-from typing import Any, Callable, Dict, List, Optional
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Callable, Dict, Optional
 
 try:
     import rq  # type: ignore
     from rq import Queue  # type: ignore
-    from rq.decorators import job  # type: ignore
     from rq.job import Job  # type: ignore
     from rq.registry import (  # type: ignore
         DeferredJobRegistry,
-        FinishedJobRegistry,
-        StartedJobRegistry,
         FailedJobRegistry,
+        FinishedJobRegistry,
         ScheduledJobRegistry,
+        StartedJobRegistry,
     )
     from rq_scheduler import Scheduler  # type: ignore
 except Exception:  # ModuleNotFoundError or runtime import error
@@ -32,15 +29,16 @@ except Exception:  # ModuleNotFoundError or runtime import error
     if TYPE_CHECKING:
         from rq import Queue as Queue  # pragma: no cover
         from rq.job import Job as Job  # pragma: no cover
-        from rq_scheduler import Scheduler as Scheduler  # pragma: no cover
         from rq.registry import (  # pragma: no cover
             DeferredJobRegistry,
-            FinishedJobRegistry,
-            StartedJobRegistry,
             FailedJobRegistry,
+            FinishedJobRegistry,
             ScheduledJobRegistry,
+            StartedJobRegistry,
         )
+        from rq_scheduler import Scheduler as Scheduler  # pragma: no cover
     else:
+
         class Queue:  # minimal placeholders
             pass
 
@@ -67,8 +65,8 @@ except Exception:  # ModuleNotFoundError or runtime import error
         class ScheduledJobRegistry:
             pass
 
-from .cache_manager import cache_manager
 
+from .cache_manager import cache_manager
 
 logger = logging.getLogger(__name__)
 

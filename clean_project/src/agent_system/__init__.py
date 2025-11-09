@@ -11,7 +11,8 @@ from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
 
 if TYPE_CHECKING:  # pragma: no cover - import-time hints only
     from .agent import AutonomousAgent as AutonomousAgent
-    from .auth_models import SecurityContext as SecurityContext, db_manager as db_manager
+    from .auth_models import SecurityContext as SecurityContext
+    from .auth_models import db_manager as db_manager
     from .auth_service import auth_service as auth_service
     from .fastapi_app import app as app
 
@@ -64,9 +65,15 @@ def _configure_logging(log_level: str) -> None:
     logger = logging.getLogger(__name__)
     logger.info(f"🚀 Agent Enterprise System v{__version__} initialized")
     logger.info(f"📊 Database: {config.DATABASE_URL}")
-    logger.info(
-        f"🔐 JWT Secret: {'*' * (len(config.JWT_SECRET_KEY) - 4) + config.JWT_SECRET_KEY[-4:] if len(config.JWT_SECRET_KEY) > 4 else '***'}"
-    )
+    if str(config.ENVIRONMENT).lower() == "production":
+        logger.info("🔐 JWT Secret: [REDACTED]")
+    else:
+        masked = (
+            "***"
+            if not config.JWT_SECRET_KEY
+            else ("*" * max(0, len(config.JWT_SECRET_KEY) - 4) + config.JWT_SECRET_KEY[-4:])
+        )
+        logger.info(f"🔐 JWT Secret: {masked}")
     logger.info(f"🌍 Environment: {config.ENVIRONMENT}")
     logger.info(f"🔗 API Server: {config.API_HOST}:{config.API_PORT}")
 
@@ -101,6 +108,7 @@ def __getattr__(name: str):
         globals()[name] = value
         return value
     raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
+
 
 DEFAULT_GOALS: Tuple[Tuple[str, float], ...] = (
     ("Research machine learning trends", 0.8),

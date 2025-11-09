@@ -6,17 +6,16 @@ Identifies and solves specific industry problems with measurable business value
 from __future__ import annotations
 
 import logging
-import json
-from typing import Dict, Any, List, Optional, Tuple
+from dataclasses import dataclass
 from enum import Enum
-from dataclasses import dataclass, field
-from datetime import datetime
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
 
 class IndustryDomain(Enum):
     """Core industry domains for problem identification."""
+
     SAAS_SOFTWARE = "saas_software"
     ECOMMERCE = "ecommerce"
     HEALTHCARE = "healthcare"
@@ -35,23 +34,26 @@ class IndustryDomain(Enum):
 
 class ProblemSeverity(Enum):
     """Problem severity levels."""
+
     CRITICAL = "critical"  # Immediate business impact
-    HIGH = "high"         # Significant operational impact
-    MEDIUM = "medium"     # Noticeable efficiency impact
-    LOW = "low"           # Minor optimization opportunity
+    HIGH = "high"  # Significant operational impact
+    MEDIUM = "medium"  # Noticeable efficiency impact
+    LOW = "low"  # Minor optimization opportunity
 
 
 class SolutionImpact(Enum):
     """Solution impact levels."""
+
     TRANSFORMATIVE = "transformative"  # Complete business transformation
-    SUBSTANTIAL = "substantial"         # Major process improvement
-    SIGNIFICANT = "significant"         # Notable efficiency gains
-    MODERATE = "moderate"              # Incremental improvements
+    SUBSTANTIAL = "substantial"  # Major process improvement
+    SIGNIFICANT = "significant"  # Notable efficiency gains
+    MODERATE = "moderate"  # Incremental improvements
 
 
 @dataclass
 class BusinessMetrics:
     """Quantified business impact metrics."""
+
     current_cost: Optional[float] = None
     current_time: Optional[float] = None
     current_error_rate: Optional[float] = None
@@ -76,6 +78,7 @@ class BusinessMetrics:
 @dataclass
 class ProblemSolution:
     """Complete problem-solution pair."""
+
     problem_id: str
     industry: IndustryDomain
     problem_name: str
@@ -119,17 +122,25 @@ PROBLEM_SOLUTIONS = {
             target_improvement_percentage=40.0,
             roi_estimate="4-7x ROI within 12 months",
             payback_period_months=6,
-            annual_value_generated=500000.0
+            annual_value_generated=500000.0,
         ),
         target_roles=["customer_success_agent", "data_analysis_agent"],
-        key_requirements=["Access to customer usage data", "CRM integration", "Email automation system", "Usage analytics platform"],
-        success_criteria=["Reduce monthly churn by 40%", "Increase customer lifetime value by 25%", "Improve customer satisfaction scores by 20%"],
+        key_requirements=[
+            "Access to customer usage data",
+            "CRM integration",
+            "Email automation system",
+            "Usage analytics platform",
+        ],
+        success_criteria=[
+            "Reduce monthly churn by 40%",
+            "Increase customer lifetime value by 25%",
+            "Improve customer satisfaction scores by 20%",
+        ],
         recommended_agents=["customer_success_agent", "business_intelligence_agent"],
         automation_potential="High",
         integration_complexity="Medium",
-        competitive_advantage="Predictive churn detection and automated retention at scale"
+        competitive_advantage="Predictive churn detection and automated retention at scale",
     ),
-
     "saas_sales_inefficiency": ProblemSolution(
         problem_id="saas_sales_001",
         industry=IndustryDomain.SAAS_SOFTWARE,
@@ -146,17 +157,25 @@ PROBLEM_SOLUTIONS = {
             target_improvement_percentage=50.0,
             roi_estimate="3-5x ROI within 9 months",
             payback_period_months=4,
-            annual_value_generated=750000.0
+            annual_value_generated=750000.0,
         ),
         target_roles=["sales_assistant_agent", "data_analysis_agent"],
-        key_requirements=["CRM system integration", "Marketing automation platform", "Email and calendar integration", "Lead scoring data"],
-        success_criteria=["Increase conversion rate by 50%", "Reduce response time to under 1 hour", "Free up 15+ hours per week per sales rep"],
+        key_requirements=[
+            "CRM system integration",
+            "Marketing automation platform",
+            "Email and calendar integration",
+            "Lead scoring data",
+        ],
+        success_criteria=[
+            "Increase conversion rate by 50%",
+            "Reduce response time to under 1 hour",
+            "Free up 15+ hours per week per sales rep",
+        ],
         recommended_agents=["sales_assistant_agent", "business_intelligence_agent"],
         automation_potential="High",
         integration_complexity="Medium",
-        competitive_advantage="Intelligent lead scoring and automated sales execution"
+        competitive_advantage="Intelligent lead scoring and automated sales execution",
     ),
-
     # E-commerce Industry
     "ecommerce_cart_abandonment": ProblemSolution(
         problem_id="ecom_cart_001",
@@ -174,17 +193,25 @@ PROBLEM_SOLUTIONS = {
             target_improvement_percentage=35.0,
             roi_estimate="5-8x ROI within 6 months",
             payback_period_months=3,
-            annual_value_generated=1200000.0
+            annual_value_generated=1200000.0,
         ),
         target_roles=["content_creator_agent", "sales_assistant_agent"],
-        key_requirements=["E-commerce platform integration", "Customer behavior tracking", "Payment system access", "Email/SMS marketing platform"],
-        success_criteria=["Reduce cart abandonment by 35%", "Increase average order value by 20%", "Recover 15% of abandoned carts"],
+        key_requirements=[
+            "E-commerce platform integration",
+            "Customer behavior tracking",
+            "Payment system access",
+            "Email/SMS marketing platform",
+        ],
+        success_criteria=[
+            "Reduce cart abandonment by 35%",
+            "Increase average order value by 20%",
+            "Recover 15% of abandoned carts",
+        ],
         recommended_agents=["sales_assistant_agent", "content_creator_agent"],
         automation_potential="High",
         integration_complexity="Low",
-        competitive_advantage="Dynamic personalization and intelligent recovery campaigns"
+        competitive_advantage="Dynamic personalization and intelligent recovery campaigns",
     ),
-
     # Healthcare Industry
     "healthcare_patient_engagement": ProblemSolution(
         problem_id="healthcare_engagement_001",
@@ -202,17 +229,25 @@ PROBLEM_SOLUTIONS = {
             target_improvement_percentage=60.0,
             roi_estimate="2-4x ROI within 12 months",
             payback_period_months=8,
-            annual_value_generated=400000.0
+            annual_value_generated=400000.0,
         ),
         target_roles=["customer_success_agent", "content_creator_agent"],
-        key_requirements=["Electronic health records integration", "Patient portal access", "Compliance with HIPAA regulations", "Biometric device integration"],
-        success_criteria=["Increase medication adherence by 60%", "Reduce no-show rate by 40%", "Improve patient satisfaction scores by 25%"],
+        key_requirements=[
+            "Electronic health records integration",
+            "Patient portal access",
+            "Compliance with HIPAA regulations",
+            "Biometric device integration",
+        ],
+        success_criteria=[
+            "Increase medication adherence by 60%",
+            "Reduce no-show rate by 40%",
+            "Improve patient satisfaction scores by 25%",
+        ],
         recommended_agents=["customer_success_agent", "content_creator_agent"],
         automation_potential="Medium",
         integration_complexity="High",
-        competitive_advantage="Personalized health engagement and adherence monitoring"
+        competitive_advantage="Personalized health engagement and adherence monitoring",
     ),
-
     # Manufacturing Industry
     "manufacturing_quality_control": ProblemSolution(
         problem_id="manufacturing_quality_001",
@@ -230,17 +265,25 @@ PROBLEM_SOLUTIONS = {
             target_improvement_percentage=70.0,
             roi_estimate="3-6x ROI within 18 months",
             payback_period_months=10,
-            annual_value_generated=800000.0
+            annual_value_generated=800000.0,
         ),
         target_roles=["process_optimizer_agent", "data_analysis_agent"],
-        key_requirements=["Production line access", "Camera systems integration", "Manufacturing execution system", "Quality data systems"],
-        success_criteria=["Reduce defect rate by 70%", "Cut quality control inspection time by 80%", "Decrease customer returns by 50%"],
+        key_requirements=[
+            "Production line access",
+            "Camera systems integration",
+            "Manufacturing execution system",
+            "Quality data systems",
+        ],
+        success_criteria=[
+            "Reduce defect rate by 70%",
+            "Cut quality control inspection time by 80%",
+            "Decrease customer returns by 50%",
+        ],
         recommended_agents=["process_optimizer_agent", "business_intelligence_agent"],
         automation_potential="High",
         integration_complexity="High",
-        competitive_advantage="Predictive quality control and automated defect detection"
+        competitive_advantage="Predictive quality control and automated defect detection",
     ),
-
     # Financial Services
     "financial_fraud_detection": ProblemSolution(
         problem_id="financial_fraud_001",
@@ -258,16 +301,25 @@ PROBLEM_SOLUTIONS = {
             target_improvement_percentage=80.0,
             roi_estimate="4-8x ROI within 12 months",
             payback_period_months=6,
-            annual_value_generated=2000000.0
+            annual_value_generated=2000000.0,
         ),
         target_roles=["data_analysis_agent", "process_optimizer_agent"],
-        key_requirements=["Transaction data access", "Real-time processing capability", "Regulatory compliance systems", "Security infrastructure"],
-        success_criteria=["Reduce fraud losses by 80%", "Decrease false positives by 60%", "Detect fraud within seconds vs. hours"],
+        key_requirements=[
+            "Transaction data access",
+            "Real-time processing capability",
+            "Regulatory compliance systems",
+            "Security infrastructure",
+        ],
+        success_criteria=[
+            "Reduce fraud losses by 80%",
+            "Decrease false positives by 60%",
+            "Detect fraud within seconds vs. hours",
+        ],
         recommended_agents=["business_intelligence_agent", "process_optimizer_agent"],
         automation_potential="High",
         integration_complexity="High",
-        competitive_advantage="Real-time fraud detection with minimal customer friction"
-    )
+        competitive_advantage="Real-time fraud detection with minimal customer friction",
+    ),
 }
 
 
@@ -281,16 +333,74 @@ class ProblemSolutionEngine:
     def _build_industry_mappings(self) -> Dict[IndustryDomain, List[str]]:
         """Build mappings for industry identification."""
         return {
-            IndustryDomain.SAAS_SOFTWARE: ["saas", "software", "b2b", "subscription", "cloud", "platform"],
-            IndustryDomain.ECOMMERCE: ["ecommerce", "e-commerce", "retail", "online store", "marketplace"],
-            IndustryDomain.HEALTHCARE: ["healthcare", "medical", "hospital", "clinic", "patient", "health"],
-            IndustryDomain.FINANCIAL_SERVICES: ["financial", "bank", "fintech", "payment", "insurance", "credit"],
-            IndustryDomain.MANUFACTURING: ["manufacturing", "production", "factory", "industrial", "assembly"],
+            IndustryDomain.SAAS_SOFTWARE: [
+                "saas",
+                "software",
+                "b2b",
+                "subscription",
+                "cloud",
+                "platform",
+            ],
+            IndustryDomain.ECOMMERCE: [
+                "ecommerce",
+                "e-commerce",
+                "retail",
+                "online store",
+                "marketplace",
+            ],
+            IndustryDomain.HEALTHCARE: [
+                "healthcare",
+                "medical",
+                "hospital",
+                "clinic",
+                "patient",
+                "health",
+            ],
+            IndustryDomain.FINANCIAL_SERVICES: [
+                "financial",
+                "bank",
+                "fintech",
+                "payment",
+                "insurance",
+                "credit",
+            ],
+            IndustryDomain.MANUFACTURING: [
+                "manufacturing",
+                "production",
+                "factory",
+                "industrial",
+                "assembly",
+            ],
             IndustryDomain.RETAIL: ["retail", "store", "shop", "consumer", "merchandise"],
-            IndustryDomain.EDUCATION: ["education", "school", "university", "learning", "training", "course"],
-            IndustryDomain.MEDIA_ENTERTAINMENT: ["media", "entertainment", "content", "publisher", "streaming"],
-            IndustryDomain.REAL_ESTATE: ["real estate", "property", "realty", "housing", "mortgage"],
-            IndustryDomain.LOGISTICS_TRANSPORTATION: ["logistics", "transportation", "shipping", "delivery", "supply chain"],
+            IndustryDomain.EDUCATION: [
+                "education",
+                "school",
+                "university",
+                "learning",
+                "training",
+                "course",
+            ],
+            IndustryDomain.MEDIA_ENTERTAINMENT: [
+                "media",
+                "entertainment",
+                "content",
+                "publisher",
+                "streaming",
+            ],
+            IndustryDomain.REAL_ESTATE: [
+                "real estate",
+                "property",
+                "realty",
+                "housing",
+                "mortgage",
+            ],
+            IndustryDomain.LOGISTICS_TRANSPORTATION: [
+                "logistics",
+                "transportation",
+                "shipping",
+                "delivery",
+                "supply chain",
+            ],
         }
 
     def identify_industry(self, company_description: str) -> Optional[IndustryDomain]:
@@ -309,14 +419,16 @@ class ProblemSolutionEngine:
 
     def find_problem_by_severity(self, severity: ProblemSeverity) -> List[ProblemSolution]:
         """Find all problems of a specific severity."""
-        return [prob for prob in self.problem_database.values() if prob.problem_severity == severity]
+        return [
+            prob for prob in self.problem_database.values() if prob.problem_severity == severity
+        ]
 
     def recommend_solution(self, business_context: Dict[str, Any]) -> ProblemSolution:
         """Recommend the best problem-solution based on business context."""
-        company_description = business_context.get('description', '')
+        company_description = business_context.get("description", "")
         industry = self.identify_industry(company_description)
-        current_challenges = business_context.get('current_challenges', [])
-        goals = business_context.get('goals', [])
+        _current_challenges = business_context.get("current_challenges", [])
+        _goals = business_context.get("goals", [])
 
         if not industry:
             # Default to SaaS if industry unclear
@@ -340,22 +452,28 @@ class ProblemSolutionEngine:
         scored_problems.sort(key=lambda x: x[0], reverse=True)
         return scored_problems[0][1]
 
-    def _calculate_problem_relevance_score(self, problem: ProblemSolution, context: Dict[str, Any]) -> int:
+    def _calculate_problem_relevance_score(
+        self, problem: ProblemSolution, context: Dict[str, Any]
+    ) -> int:
         """Calculate relevance score for a problem based on business context."""
         score = 0
 
         # Industry match
-        if problem.industry == self.identify_industry(context.get('description', '')):
+        if problem.industry == self.identify_industry(context.get("description", "")):
             score += 10
 
         # Challenge alignment
-        for challenge in context.get('current_challenges', []):
-            if any(keyword in challenge.lower() for keyword in problem.problem_name.lower().split()):
+        for challenge in context.get("current_challenges", []):
+            if any(
+                keyword in challenge.lower() for keyword in problem.problem_name.lower().split()
+            ):
                 score += 5
 
         # Goal alignment
-        for goal in context.get('goals', []):
-            if any(keyword in goal.lower() for keyword in problem.solution_approach.lower().split()):
+        for goal in context.get("goals", []):
+            if any(
+                keyword in goal.lower() for keyword in problem.solution_approach.lower().split()
+            ):
                 score += 3
 
         # Severity boost
@@ -363,7 +481,7 @@ class ProblemSolutionEngine:
             ProblemSeverity.CRITICAL: 5,
             ProblemSeverity.HIGH: 4,
             ProblemSeverity.MEDIUM: 3,
-            ProblemSeverity.LOW: 2
+            ProblemSeverity.LOW: 2,
         }
         score += severity_scores.get(problem.problem_severity, 0)
 
@@ -380,19 +498,19 @@ class ProblemSolutionEngine:
                 "name": problem.problem_name,
                 "description": problem.problem_description,
                 "severity": problem.problem_severity.value,
-                "current_impact": problem.current_impact
+                "current_impact": problem.current_impact,
             },
             "solution": {
                 "approach": problem.solution_approach,
                 "description": problem.solution_description,
                 "impact": problem.solution_impact.value,
-                "timeline": problem.implementation_timeline
+                "timeline": problem.implementation_timeline,
             },
             "implementation_plan": {
                 "phase_1": "Problem assessment and solution design (1-2 weeks)",
                 "phase_2": "AI agent development and configuration (2-4 weeks)",
                 "phase_3": "Integration and testing (1-2 weeks)",
-                "phase_4": "Deployment and optimization (2-4 weeks)"
+                "phase_4": "Deployment and optimization (2-4 weeks)",
             },
             "business_case": {
                 "target_agents": problem.recommended_agents,
@@ -400,13 +518,17 @@ class ProblemSolutionEngine:
                 "integration_complexity": problem.integration_complexity,
                 "success_criteria": problem.success_criteria,
                 "expected_roi": problem.business_metrics.roi_estimate,
-                "payback_period": f"{problem.business_metrics.payback_period_months} months"
+                "payback_period": f"{problem.business_metrics.payback_period_months} months",
             },
             "requirements": {
                 "technical": problem.key_requirements,
                 "organizational": problem.target_roles,
-                "infrastructure": ["Cloud infrastructure", "Data security systems", "Integration capabilities"]
-            }
+                "infrastructure": [
+                    "Cloud infrastructure",
+                    "Data security systems",
+                    "Integration capabilities",
+                ],
+            },
         }
 
     def generate_business_proposal(self, problem_id: str) -> str:

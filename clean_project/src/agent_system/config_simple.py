@@ -74,13 +74,9 @@ class Settings:
         self.DISTRIBUTED_SERVICE_NAMESPACE = unified_config.distributed.service_namespace
         self.DISTRIBUTED_MESSAGE_NAMESPACE = unified_config.distributed.message_namespace
         self.DISTRIBUTED_STATE_NAMESPACE = unified_config.distributed.state_namespace
-        self.DISTRIBUTED_HEARTBEAT_INTERVAL = (
-            unified_config.distributed.heartbeat_interval_seconds
-        )
+        self.DISTRIBUTED_HEARTBEAT_INTERVAL = unified_config.distributed.heartbeat_interval_seconds
         self.DISTRIBUTED_SERVICE_TTL = unified_config.distributed.service_ttl_seconds
-        self.DISTRIBUTED_VISIBILITY_TIMEOUT = (
-            unified_config.distributed.visibility_timeout_seconds
-        )
+        self.DISTRIBUTED_VISIBILITY_TIMEOUT = unified_config.distributed.visibility_timeout_seconds
         self.DISTRIBUTED_QUEUE_POLL_INTERVAL = (
             unified_config.distributed.queue_poll_interval_seconds
         )

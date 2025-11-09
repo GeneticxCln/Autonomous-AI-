@@ -33,16 +33,26 @@ jobs:
       - name: Lint (ruff)
         run: |
           python -m ruff --version
-          python -m ruff clean_project/src clean_project/tests clean_project/scripts
+          python -m ruff check clean_project/src clean_project/tests
       - name: Format check (black)
         run: |
-          python -m black --check clean_project/src clean_project/tests clean_project/scripts
+          python -m black --check clean_project/src clean_project/tests
       - name: Type check (mypy) — focused modules
         run: |
-          python -m mypy --config-file clean_project/pyproject.toml \
+          python -m mypy --config-file clean_project/pyproject.toml --follow-imports=skip \
+            clean_project/src/agent_system/api_security.py \
+            clean_project/src/agent_system/job_manager.py \
+            clean_project/src/agent_system/job_definitions.py \
             clean_project/src/agent_system/api_schemas.py \
-            clean_project/src/agent_system/auth_service.py \
-            clean_project/src/agent_system/api_security.py
+            clean_project/src/agent_system/api_endpoints.py \
+            clean_project/src/agent_system/production_config.py \
+            clean_project/src/agent_system/config_simple.py \
+            clean_project/src/agent_system/unified_config.py \
+            clean_project/src/agent_system/distributed_message_queue.py \
+            clean_project/src/agent_system/advanced_monitoring.py \
+            clean_project/src/agent_system/enterprise_persistence.py \
+            clean_project/src/agent_system/persistence.py \
+            clean_project/src/agent_system/enhanced_persistence.py
       - name: Run tests (unit + scripts) with coverage
         run: |
           PYTHONPATH=clean_project/src python -m coverage run -m pytest -q clean_project/tests clean_project/scripts

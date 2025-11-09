@@ -125,17 +125,13 @@ class AutonomousAgent:
             )
         raise RuntimeError("run() cannot be called from an async context; use run_async instead.")
 
-    async def run_async(
-        self, max_cycles: int = 100, max_concurrent_goals: Optional[int] = None
-    ):
+    async def run_async(self, max_cycles: int = 100, max_concurrent_goals: Optional[int] = None):
         """Run the agent for a maximum number of cycles asynchronously."""
         concurrency_limit = max(1, max_concurrent_goals or self.max_concurrent_goals)
         self.is_running = True
         cycle = 0
 
-        logger.info(
-            "Starting agent (max %s cycles, concurrency=%s)", max_cycles, concurrency_limit
-        )
+        logger.info("Starting agent (max %s cycles, concurrency=%s)", max_cycles, concurrency_limit)
 
         try:
             while self.is_running and cycle < max_cycles:
@@ -197,7 +193,9 @@ class AutonomousAgent:
 
         best_sequence = self.cross_session_learning.get_best_action_sequence(goal.description)
         if best_sequence:
-            logger.info("Found cross-session pattern for %s: %s", goal.id, " -> ".join(best_sequence))
+            logger.info(
+                "Found cross-session pattern for %s: %s", goal.id, " -> ".join(best_sequence)
+            )
 
         start_time = time.time() * 1000
         if hasattr(self.planner, "reasoning_engine") and self.planner.reasoning_engine:
@@ -363,7 +361,9 @@ class AutonomousAgent:
         )
 
         plan_actions = context.plan.actions if context.plan else []
-        actions_taken = [action for action in plan_actions if action.id in context.completed_actions]
+        actions_taken = [
+            action for action in plan_actions if action.id in context.completed_actions
+        ]
         observations = [
             memory.observation
             for memory in self.memory_system.working_memory
@@ -382,9 +382,7 @@ class AutonomousAgent:
             for action in actions_taken
         ]
         success_score = 1.0 if success else 0.0
-        self.cross_session_learning.learn_from_goal(
-            goal.description, action_dicts, success_score
-        )
+        self.cross_session_learning.learn_from_goal(goal.description, action_dicts, success_score)
 
         self.performance_monitor.record_goal_metrics(success, 1, 1 if success else 0)
 

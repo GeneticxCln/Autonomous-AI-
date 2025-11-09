@@ -277,7 +277,7 @@ if __name__ == "__main__":
         print("✅ Configuration loaded successfully")
         print(f"   Environment: {config.environment}")
         print(f"   Database: {config.database_url}")
-        print(f"   JWT Configured: {config.jwt_secret_key[:20]}...")
+        print("   JWT Configured: yes")
         print(f"   CORS Origins: {config.cors_origins}")
 
         # Validate for production

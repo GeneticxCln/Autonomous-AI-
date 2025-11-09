@@ -4,22 +4,21 @@ Enterprise Deployment Script
 Complete infrastructure deployment and management
 """
 import asyncio
-import sys
 import os
 import subprocess
+import sys
 import time
 from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Any, Dict
 
 # Add the source directory to Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from agent_system.infrastructure_manager import (
-    infrastructure_manager,
-    initialize_infrastructure,
     get_infrastructure_health,
     get_performance_stats,
     health_check,
+    infrastructure_manager,
 )
 
 
@@ -80,7 +79,7 @@ class EnterpriseDeployer:
             r = redis.Redis(host="localhost", port=6379, socket_timeout=1)
             r.ping()
             self.log_deployment("Redis", "SUCCESS", "Local Redis server detected")
-        except:
+        except Exception:
             self.log_deployment("Redis", "INFO", "No local Redis server (will use Docker)")
 
         return True
@@ -152,7 +151,7 @@ class EnterpriseDeployer:
                             ) as response:
                                 if response.status != 200:
                                     all_healthy = False
-                except:
+                except Exception:
                     all_healthy = False
                     break
 

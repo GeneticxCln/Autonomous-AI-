@@ -145,3 +145,9 @@ class GoalManager:
                 if goal and goal.status == GoalStatus.BLOCKED and self._check_dependencies(goal_id):
                     goal.status = GoalStatus.PENDING
                     heapq.heappush(self.active_goals, (-goal.priority, goal_id))
+
+    def has_pending_goals(self) -> bool:
+        """Return True if any goals are pending or queued for processing."""
+        if any(g.status in (GoalStatus.PENDING, GoalStatus.BLOCKED) for g in self.goals.values()):
+            return True
+        return len(self.active_goals) > 0

@@ -67,21 +67,21 @@ def load_action_selector(
     data = enterprise_persistence.load_action_selector(filename) or {}
     if selector and data:
         _apply_action_selector(selector, data)
-    
+
     # If this is an IntelligentActionSelector with action_history, return that format
     if selector and hasattr(selector, "action_history"):
         # Return the expected payload format for tests
         payload = {"action_history": selector.action_history}
-        
+
         # Add other properties for completeness
         if hasattr(selector, "context_weights"):
             payload["context_weights"] = selector.context_weights
         if hasattr(selector, "goal_patterns"):
             payload["goal_patterns"] = selector.goal_patterns
-        
+
         logger.debug("Action selector loaded from database")
         return payload
-    
+
     # If no selector or regular selector, return the loaded data as-is
     logger.debug("Action selector loaded from database")
     return data
@@ -101,14 +101,16 @@ def _normalize_learning_system(learning_system: Any) -> Dict[str, Any]:
 def _apply_learning_system(learning_system: Any, data: Dict[str, Any]) -> None:
     if hasattr(learning_system, "strategy_performance"):
         learning_system.strategy_performance.update(data.get("strategy_performance", {}))
-        
+
         # Convert lists back to tuples for pattern_library (JSON doesn't preserve types)
         pattern_library_data = data.get("pattern_library", {})
         for pattern_key, pattern_list in pattern_library_data.items():
             # Convert each inner list back to tuple format
             if isinstance(pattern_list, list):
-                pattern_library_data[pattern_key] = [tuple(item) if isinstance(item, list) else item for item in pattern_list]
-        
+                pattern_library_data[pattern_key] = [
+                    tuple(item) if isinstance(item, list) else item for item in pattern_list
+                ]
+
         learning_system.pattern_library.update(pattern_library_data)
 
 
@@ -124,7 +126,7 @@ def load_learning_system(
     data = enterprise_persistence.load_learning_system(filename) or {}
     if learning_system and data:
         _apply_learning_system(learning_system, data)
-    
+
     # If this is a LearningSystem with strategy_performance, return that format
     if learning_system and hasattr(learning_system, "strategy_performance"):
         # Convert lists back to tuples for pattern_library in the payload as well
@@ -132,10 +134,12 @@ def load_learning_system(
         for pattern_key, pattern_list in learning_system.pattern_library.items():
             if isinstance(pattern_list, list):
                 # Make sure each item in the list is a tuple
-                pattern_library_payload[pattern_key] = [tuple(item) if isinstance(item, list) else item for item in pattern_list]
+                pattern_library_payload[pattern_key] = [
+                    tuple(item) if isinstance(item, list) else item for item in pattern_list
+                ]
             else:
                 pattern_library_payload[pattern_key] = pattern_list
-        
+
         # Return the expected payload format for tests
         payload = {
             "strategy_performance": learning_system.strategy_performance,
@@ -143,7 +147,7 @@ def load_learning_system(
         }
         logger.debug("Learning system loaded from database")
         return payload
-    
+
     # If no learning_system or no data, return as-is
     logger.debug("Learning system loaded from database")
     return data
