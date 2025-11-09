@@ -77,7 +77,7 @@
 ### ✅ **4. Enhanced Docker Compose (100% Complete)**
 - **Multi-Service Architecture**: 8 coordinated services
 - **Redis Cluster**: Redis 7 with persistence and health checks
-- **Worker Services**: 3 priority-based worker containers
+- **Worker Pool**: Dedicated `agent_worker` service (scale via replicas)
 - **Monitoring Stack**: Prometheus + Grafana monitoring
 - **Load Balancer**: Nginx reverse proxy
 - **Database Backup**: Automated backup service
@@ -87,9 +87,7 @@
 ```yaml
 ✅ api: Main application (3 replicas)
 ✅ redis: Cache and message queue
-✅ worker_high: Critical priority jobs (2 replicas)
-✅ worker_normal: Normal jobs (3 replicas)
-✅ worker_low: Background tasks (1 replica)
+✅ agent_worker: Asynchronous job processor (scale with replicas)
 ✅ nginx: Load balancer and reverse proxy
 ✅ prometheus: Metrics collection
 ✅ grafana: Monitoring dashboard

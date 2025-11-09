@@ -1,7 +1,22 @@
-PY=python3
+VENV?=.venv
+PY?=$(if $(wildcard $(VENV)/bin/python),$(VENV)/bin/python,python3)
+DEV_REQ?=$(if $(wildcard requirements-dev.txt),requirements-dev.txt,../requirements-dev.txt)
 PKG=src.agent_system
+WORKER_QUEUE?=agent.jobs
 
-.PHONY: install dev lint format typecheck test cov ci run web api interactive infra-up infra-down infra-logs infra-status health clean
+.PHONY: venv install dev lint format typecheck test cov ci run web api interactive worker infra-up infra-down infra-logs infra-status health clean
+
+venv:
+	@if [ ! -d "$(VENV)" ]; then \
+		python3 -m venv $(VENV); \
+	fi
+	@if [ ! -f "$(VENV)/.deps-installed" ]; then \
+		$(VENV)/bin/pip install --upgrade pip; \
+		$(VENV)/bin/pip install -r $(DEV_REQ); \
+		touch $(VENV)/.deps-installed; \
+	else \
+		echo "Virtual environment already provisioned at $(VENV) (remove $(VENV)/.deps-installed to reinstall)."; \
+	fi
 
 install:
 	$(PY) -m pip install --upgrade pip
@@ -20,10 +35,10 @@ typecheck:
 	$(PY) -m mypy $(PKG)
 
 test:
-	$(PY) -m pytest -q
+	PYTHONPATH=src $(PY) -m pytest -q
 
 cov:
-	$(PY) -m coverage run -m pytest -q
+	PYTHONPATH=src $(PY) -m coverage run -m pytest -q
 	$(PY) -m coverage report -m
 
 ci: lint typecheck test
@@ -49,6 +64,10 @@ web:
 # API server
 api:
 	uvicorn src.agent_system.fastapi_app:app --reload
+
+# Distributed worker
+worker:
+	PYTHONPATH=src $(PY) -m agent_system.worker --queue $(WORKER_QUEUE)
 
 # Interactive terminal
 interactive:

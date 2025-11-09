@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import logging
 import shlex
@@ -55,10 +56,10 @@ def run_interactive(max_cycles: int = 100) -> None:
             print(f"added: {g.id} :: {g.description} :: {g.priority}")
         elif cmd == "run":
             n = int(args[0]) if args else max_cycles
-            agent.run(max_cycles=n)
+            asyncio.run(agent.run_async(max_cycles=n))
             print("done")
         elif cmd == "step":
-            worked = agent.run_cycle()
+            worked = asyncio.run(agent.run_cycle_async())
             print("worked" if worked else "idle")
         elif cmd == "status":
             s = agent.get_status()

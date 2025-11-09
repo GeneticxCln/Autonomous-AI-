@@ -9,7 +9,8 @@ import secrets
 import uuid
 from datetime import UTC, datetime
 from enum import Enum
-from typing import List
+from typing import Dict, List
+import os
 
 from passlib.context import CryptContext
 from sqlalchemy import (
@@ -33,18 +34,53 @@ from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 class DatabaseManager:
     """Database connection and session management for auth system."""
 
-    def __init__(self, database_url: str = "sqlite:///./agent_enterprise.db"):
+    def __init__(
+        self,
+        database_url: str = "sqlite:///./agent_enterprise.db",
+        *,
+        pool_size: int | None = None,
+        max_overflow: int | None = None,
+        pool_timeout: int | None = None,
+        pool_recycle: int | None = None,
+    ):
         self.database_url = database_url
         self.engine = None
         self.SessionLocal = None
+        # Allow environment overrides for pooling to support horizontal scaling
+        self.pool_size = pool_size if pool_size is not None else int(os.getenv("DB_POOL_SIZE", "10"))
+        self.max_overflow = (
+            max_overflow if max_overflow is not None else int(os.getenv("DB_MAX_OVERFLOW", "20"))
+        )
+        self.pool_timeout = (
+            pool_timeout if pool_timeout is not None else int(os.getenv("DB_POOL_TIMEOUT", "30"))
+        )
+        self.pool_recycle = (
+            pool_recycle if pool_recycle is not None else int(os.getenv("DB_POOL_RECYCLE", "300"))
+        )
+
+    def _engine_kwargs(self) -> Dict[str, object]:
+        """Build SQLAlchemy engine configuration with pooling enabled."""
+        kwargs: Dict[str, object] = {
+            "pool_pre_ping": True,
+            "pool_recycle": self.pool_recycle,
+            "echo": False,
+        }
+        if self.pool_size:
+            kwargs["pool_size"] = self.pool_size
+        if self.max_overflow is not None:
+            kwargs["max_overflow"] = self.max_overflow
+        if self.pool_timeout is not None:
+            kwargs["pool_timeout"] = self.pool_timeout
+        if self.database_url.startswith("sqlite"):
+            kwargs.setdefault("connect_args", {})
+            kwargs["connect_args"].update({"check_same_thread": False})
+        return kwargs
 
     def initialize(self):
         """Initialize database connection and create tables."""
         try:
-            # Create engine with connection pooling
-            self.engine = create_engine(
-                self.database_url, pool_pre_ping=True, pool_recycle=300, echo=False
-            )
+            engine_kwargs = self._engine_kwargs()
+            self.engine = create_engine(self.database_url, **engine_kwargs)
 
             # Create session factory (prevent attribute expiration on commit)
             self.SessionLocal = sessionmaker(

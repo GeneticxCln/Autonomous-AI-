@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -20,6 +21,7 @@ class AgentConfig:
     """Core agent configuration."""
 
     max_cycles: int = 100
+    max_concurrent_goals: int = 2
     default_goal_priority: float = 0.5
     working_memory_size: int = 10
     learning_rate: float = 0.1
@@ -132,6 +134,24 @@ class AIConfig:
     reasoning_chain_depth: int = 5
 
 
+@dataclass
+class DistributedConfig:
+    """Distributed architecture configuration."""
+
+    enabled: bool = False
+    cluster_name: str = "agent-cluster"
+    node_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    service_namespace: str = "agent:services"
+    message_namespace: str = "agent:queues"
+    state_namespace: str = "agent:state"
+    heartbeat_interval_seconds: int = 15
+    service_ttl_seconds: int = 45
+    visibility_timeout_seconds: int = 30
+    queue_poll_interval_seconds: int = 1
+    message_backend: str = "redis"
+    discovery_backend: str = "redis"
+
+
 class UnifiedConfig:
     """Unified configuration system for the entire agent."""
 
@@ -146,6 +166,7 @@ class UnifiedConfig:
         self.logging = LoggingConfig()
         self.database = DatabaseConfig()
         self.ai = AIConfig()
+        self.distributed = DistributedConfig()
 
         # Load configuration
         self.load_from_file()
@@ -183,6 +204,8 @@ class UnifiedConfig:
         # Agent settings
         if os.getenv("AGENT_MAX_CYCLES"):
             self.agent.max_cycles = int(os.getenv("AGENT_MAX_CYCLES"))
+        if os.getenv("AGENT_MAX_CONCURRENT_GOALS"):
+            self.agent.max_concurrent_goals = int(os.getenv("AGENT_MAX_CONCURRENT_GOALS"))
         if os.getenv("AGENT_ENABLE_LEARNING"):
             self.agent.enable_cross_session_learning = (
                 os.getenv("AGENT_ENABLE_LEARNING").lower() == "true"
@@ -215,6 +238,38 @@ class UnifiedConfig:
                 os.getenv("ENABLE_SEMANTIC_SIMILARITY").lower() == "true"
             )
 
+        # Distributed settings
+        if os.getenv("DISTRIBUTED_ENABLED"):
+            self.distributed.enabled = os.getenv("DISTRIBUTED_ENABLED").lower() == "true"
+        if os.getenv("DISTRIBUTED_CLUSTER_NAME"):
+            self.distributed.cluster_name = os.getenv("DISTRIBUTED_CLUSTER_NAME")
+        if os.getenv("DISTRIBUTED_NODE_ID"):
+            self.distributed.node_id = os.getenv("DISTRIBUTED_NODE_ID")
+        if os.getenv("DISTRIBUTED_SERVICE_NAMESPACE"):
+            self.distributed.service_namespace = os.getenv("DISTRIBUTED_SERVICE_NAMESPACE")
+        if os.getenv("DISTRIBUTED_MESSAGE_NAMESPACE"):
+            self.distributed.message_namespace = os.getenv("DISTRIBUTED_MESSAGE_NAMESPACE")
+        if os.getenv("DISTRIBUTED_STATE_NAMESPACE"):
+            self.distributed.state_namespace = os.getenv("DISTRIBUTED_STATE_NAMESPACE")
+        if os.getenv("DISTRIBUTED_HEARTBEAT_INTERVAL"):
+            self.distributed.heartbeat_interval_seconds = int(
+                os.getenv("DISTRIBUTED_HEARTBEAT_INTERVAL")
+            )
+        if os.getenv("DISTRIBUTED_SERVICE_TTL"):
+            self.distributed.service_ttl_seconds = int(os.getenv("DISTRIBUTED_SERVICE_TTL"))
+        if os.getenv("DISTRIBUTED_VISIBILITY_TIMEOUT"):
+            self.distributed.visibility_timeout_seconds = int(
+                os.getenv("DISTRIBUTED_VISIBILITY_TIMEOUT")
+            )
+        if os.getenv("DISTRIBUTED_QUEUE_POLL_INTERVAL"):
+            self.distributed.queue_poll_interval_seconds = int(
+                os.getenv("DISTRIBUTED_QUEUE_POLL_INTERVAL")
+            )
+        if os.getenv("DISTRIBUTED_MESSAGE_BACKEND"):
+            self.distributed.message_backend = os.getenv("DISTRIBUTED_MESSAGE_BACKEND")
+        if os.getenv("DISTRIBUTED_DISCOVERY_BACKEND"):
+            self.distributed.discovery_backend = os.getenv("DISTRIBUTED_DISCOVERY_BACKEND")
+
     def save_to_file(self) -> None:
         """Save current configuration to file."""
         config_data = {
@@ -225,6 +280,7 @@ class UnifiedConfig:
             "logging": self._dataclass_to_dict(self.logging),
             "database": self._dataclass_to_dict(self.database),
             "ai": self._dataclass_to_dict(self.ai),
+            "distributed": self._dataclass_to_dict(self.distributed),
         }
 
         try:
@@ -266,6 +322,16 @@ class UnifiedConfig:
         # Validate AI config
         if not 0 <= self.ai.similarity_threshold <= 1:
             raise ValueError("similarity_threshold must be between 0 and 1")
+
+        # Validate distributed config
+        if self.distributed.heartbeat_interval_seconds <= 0:
+            raise ValueError("heartbeat_interval_seconds must be positive")
+        if self.distributed.service_ttl_seconds <= 0:
+            raise ValueError("service_ttl_seconds must be positive")
+        if self.distributed.visibility_timeout_seconds <= 0:
+            raise ValueError("visibility_timeout_seconds must be positive")
+        if self.distributed.queue_poll_interval_seconds <= 0:
+            raise ValueError("queue_poll_interval_seconds must be positive")
 
     def get_api_key(self, provider: str) -> Optional[str]:
         """Get API key for a specific provider."""
@@ -328,6 +394,17 @@ class UnifiedConfig:
                 "enable_semantic_similarity": True,
                 "similarity_threshold": 0.5,
                 "max_patterns": 1000,
+            },
+            "distributed": {
+                "enabled": False,
+                "cluster_name": "agent-cluster",
+                "service_namespace": "agent:services",
+                "message_namespace": "agent:queues",
+                "state_namespace": "agent:state",
+                "heartbeat_interval_seconds": 15,
+                "service_ttl_seconds": 45,
+                "visibility_timeout_seconds": 30,
+                "queue_poll_interval_seconds": 1,
             },
         }
 

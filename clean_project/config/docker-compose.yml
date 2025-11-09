@@ -10,6 +10,13 @@ services:
       - API_DEBUG=false
       - DATABASE_URL=sqlite:///./agent_enterprise.db
       - REDIS_URL=redis://redis:6379/0
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+      - DISTRIBUTED_ENABLED=true
+      - ENABLE_TRACING=true
+      - JAEGER_HOST=jaeger
+      - JAEGER_PORT=14268
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-dev-secret-please-change}
     ports:
       - "8000:8000"
@@ -47,68 +54,25 @@ services:
         reservations:
           memory: 256M
 
-  # High Priority Worker
-  worker_high:
+  # Asynchronous Worker Pool
+  worker:
     build: .
-    container_name: agent_worker_high
-    command: rq worker -u redis://redis:6379/0 high --with-scheduler
+    container_name: agent_worker
+    command: python -m agent_system.worker --queue agent.jobs
     environment:
       - ENVIRONMENT=production
       - REDIS_URL=redis://redis:6379/0
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+      - DISTRIBUTED_ENABLED=true
+      - LOG_LEVEL=INFO
       - PYTHONPATH=/app
     depends_on:
       - redis
     restart: unless-stopped
     volumes:
       - ./logs:/app/logs
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-        reservations:
-          memory: 128M
-
-  # Normal Priority Worker
-  worker_normal:
-    build: .
-    container_name: agent_worker_normal
-    command: rq worker -u redis://redis:6379/0 normal --with-scheduler
-    environment:
-      - ENVIRONMENT=production
-      - REDIS_URL=redis://redis:6379/0
-      - PYTHONPATH=/app
-    depends_on:
-      - redis
-    restart: unless-stopped
-    volumes:
-      - ./logs:/app/logs
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-        reservations:
-          memory: 128M
-
-  # Low Priority Worker
-  worker_low:
-    build: .
-    container_name: agent_worker_low
-    command: rq worker -u redis://redis:6379/0 low --with-scheduler
-    environment:
-      - ENVIRONMENT=production
-      - REDIS_URL=redis://redis:6379/0
-      - PYTHONPATH=/app
-    depends_on:
-      - redis
-    restart: unless-stopped
-    volumes:
-      - ./logs:/app/logs
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-        reservations:
-          memory: 128M
 
   # Nginx Load Balancer
   nginx:
@@ -145,6 +109,7 @@ services:
       - "9090:9090"
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
       - prometheus_data:/prometheus
     restart: unless-stopped
     deploy:
@@ -153,6 +118,29 @@ services:
           memory: 512M
         reservations:
           memory: 256M
+
+  # Alertmanager Notifications
+  alertmanager:
+    image: prom/alertmanager:latest
+    container_name: agent_alertmanager
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_data:/alertmanager
+    depends_on:
+      - prometheus
+      - api
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+        reservations:
+          memory: 64M
 
   # Grafana Dashboard
   grafana:
@@ -170,6 +158,7 @@ services:
       - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards
     depends_on:
       - prometheus
+      - alertmanager
     restart: unless-stopped
     deploy:
       resources:
@@ -236,6 +225,8 @@ volumes:
     driver: local
   grafana_data:
     driver: local
+  alertmanager_data:
+    driver: local
 
 networks:
   default:
@@ -244,26 +235,3 @@ networks:
     ipam:
       config:
         - subnet: 172.20.0.0/16
-
-# Health check service
-healthcheck:
-  api:
-    test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-    interval: 30s
-    timeout: 10s
-    retries: 3
-    start_period: 40s
-
-  redis:
-    test: ["CMD", "redis-cli", "ping"]
-    interval: 30s
-    timeout: 5s
-    retries: 3
-    start_period: 20s
-
-  nginx:
-    test: ["CMD", "wget", "-qO-", "http://localhost/health"]
-    interval: 30s
-    timeout: 10s
-    retries: 3
-    start_period: 20s

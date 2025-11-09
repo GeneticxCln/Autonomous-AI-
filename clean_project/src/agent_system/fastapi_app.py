@@ -7,7 +7,9 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,6 +21,12 @@ try:
     _PROM = True
 except Exception:
     _PROM = False
+
+if _PROM:
+    from .advanced_monitoring import initialize_monitoring, monitoring_system
+else:
+    monitoring_system = None
+    initialize_monitoring = None
 
 from .api_endpoints import api_router
 from .api_schemas import (
@@ -54,6 +62,9 @@ from .api_schemas import (
     UserStatus,
     RoleLevel,
     WebhookEvent,
+    AgentCapabilityDescriptor,
+    CapabilityRegisterRequest,
+    CapabilityRecord,
 )
 from .production_config import get_config
 from .api_security import (
@@ -66,6 +77,8 @@ from .api_security import (
 from .auth_models import db_manager as auth_db_manager
 from .auth_service import auth_service
 from .database_models import db_manager
+from .infrastructure_manager import agent_startup_integration, agent_shutdown_integration
+from typing import Optional
 
 # Configure logging
 logging.basicConfig(
@@ -93,6 +106,43 @@ async def lifespan(app: FastAPI):
         auth_service.initialize()
         logger.info("✅ Authentication system initialized")
 
+        # Initialize infrastructure stack (cache, queue, distributed services)
+        await agent_startup_integration()
+        logger.info("✅ Infrastructure stack initialized")
+
+        if _PROM and initialize_monitoring is not None:
+            await initialize_monitoring()
+            logger.info("✅ Monitoring system initialized")
+
+        # Initialize distributed tracing (optional)
+        try:
+            if str(os.getenv("ENABLE_TRACING", "false")).lower() == "true":
+                from .distributed_tracing import initialize_tracing, tracing_manager
+
+                jaeger_host = os.getenv("JAEGER_HOST", "localhost")
+                jaeger_port = int(os.getenv("JAEGER_PORT", "14268"))
+                if initialize_tracing(jaeger_host=jaeger_host, jaeger_port=jaeger_port, service_name="agent-enterprise-api"):
+                    try:
+                        tracing_manager.instrument_sqlalchemy(db_manager.engine)
+                    except Exception:
+                        logger.debug("SQLAlchemy tracing init failed", exc_info=True)
+                    try:
+                        tracing_manager.instrument_requests()
+                    except Exception:
+                        logger.debug("Requests tracing init failed", exc_info=True)
+                    try:
+                        tracing_manager.instrument_redis()
+                    except Exception:
+                        logger.debug("Redis tracing init failed", exc_info=True)
+                    try:
+                        # FastAPI instrumentation requires app instance
+                        tracing_manager.instrument_fastapi(app)
+                    except Exception:
+                        logger.debug("FastAPI tracing init failed", exc_info=True)
+                    logger.info("✅ Distributed tracing initialized")
+        except Exception:
+            logger.debug("Tracing initialization skipped", exc_info=True)
+
         # Log startup
         logger.info("🎉 FastAPI application startup completed")
         yield
@@ -103,6 +153,7 @@ async def lifespan(app: FastAPI):
     finally:
         # Shutdown
         logger.info("🔄 Shutting down Agent Enterprise API Server")
+        await agent_shutdown_integration()
         db_manager.close()
         logger.info("✅ Application shutdown completed")
 
@@ -190,17 +241,44 @@ def create_app() -> FastAPI:
             "http_request_duration_seconds", "Request latency", ["method", "path"]
         )
 
+        def _extract_content_length(headers) -> Optional[int]:
+            try:
+                raw_value = headers.get("content-length")
+                if raw_value is None:
+                    return None
+                return int(raw_value)
+            except Exception:
+                return None
+
         @app.middleware("http")
         async def metrics_middleware(request: Request, call_next):
             start = time.perf_counter()
-            response = await call_next(request)
+            response = None
             try:
-                route = getattr(request.scope.get("route"), "path", request.url.path)
-                REQUEST_COUNT.labels(request.method, route, str(response.status_code)).inc()
-                REQUEST_LATENCY.labels(request.method, route).observe(time.perf_counter() - start)
-            except Exception:
-                pass
-            return response
+                response = await call_next(request)
+                return response
+            finally:
+                duration = time.perf_counter() - start
+                try:
+                    route = getattr(request.scope.get("route"), "path", request.url.path)
+                    status_code = response.status_code if response else 500
+                    REQUEST_COUNT.labels(request.method, route, str(status_code)).inc()
+                    REQUEST_LATENCY.labels(request.method, route).observe(duration)
+
+                    if monitoring_system is not None:
+                        monitoring_system.record_request(
+                            method=request.method,
+                            endpoint=route,
+                            status_code=status_code,
+                            duration=duration,
+                            request_size=_extract_content_length(request.headers),
+                            response_size=
+                                _extract_content_length(response.headers)
+                                if response is not None
+                                else None,
+                        )
+                except Exception:
+                    logger.debug("Failed to record Prometheus metrics", exc_info=True)
 
         if cfg.enable_metrics:
             @app.get("/metrics")
@@ -221,6 +299,11 @@ def create_app() -> FastAPI:
         """Handle general exceptions."""
         logger.error(f"Unexpected error: {exc}", exc_info=True)
         log_api_access(request, status_code=500)
+        if _PROM and monitoring_system is not None:
+            try:
+                monitoring_system.record_error(error_type=type(exc).__name__, severity="critical")
+            except Exception:
+                logger.debug("Failed to record error metric", exc_info=True)
         return create_error_response(
             message="Internal server error", error_type="INTERNAL_ERROR", status_code=500
         )
@@ -296,6 +379,10 @@ def create_app() -> FastAPI:
                 BulkOperationRequest,
                 BulkOperationResponse,
                 WebhookEvent,
+                # Capabilities
+                AgentCapabilityDescriptor,
+                CapabilityRegisterRequest,
+                CapabilityRecord,
             ]
             for model in models_to_include:
                 name = getattr(model, "__name__", str(model))
@@ -355,6 +442,111 @@ def create_app() -> FastAPI:
                     },
                 )
             return {"status": "degraded", "database": "unknown", "error": str(e)}
+
+    # Worker health check endpoints (to replace pgrep probes in Kubernetes)
+    @app.get("/health/worker", tags=["System"])
+    async def worker_health_check():
+        """Worker health check endpoint for Kubernetes probes."""
+        try:
+            import psutil
+            import os
+            
+            # Check if worker process is running
+            process_count = len(psutil.pids())
+            memory_info = psutil.virtual_memory()
+            cpu_percent = psutil.cpu_percent(interval=1)
+            
+            # Basic health indicators
+            health_status = {
+                "status": "healthy",
+                "timestamp": datetime.now(UTC).isoformat(),
+                "processes": process_count,
+                "memory_available_gb": round(memory_info.available / (1024**3), 2),
+                "cpu_usage_percent": cpu_percent,
+                "worker_active": True
+            }
+            
+            # In production, return unhealthy status if resources are critically low
+            if cfg.is_production():
+                if memory_info.percent > 95 or cpu_percent > 95:
+                    return JSONResponse(
+                        status_code=503,
+                        content={
+                            **health_status,
+                            "status": "unhealthy",
+                            "reason": "Resource usage too high"
+                        }
+                    )
+            
+            return health_status
+            
+        except Exception as e:
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "status": "unhealthy",
+                    "timestamp": datetime.now(UTC).isoformat(),
+                    "worker_active": False,
+                    "error": str(e)
+                }
+            )
+
+    @app.get("/health/worker/ready", tags=["System"])
+    async def worker_readiness_check():
+        """Worker readiness check for Kubernetes readiness probes."""
+        try:
+            # Check database connectivity
+            with auth_service.db.get_session() as session:
+                from sqlalchemy import text
+                session.execute(text("SELECT 1"))
+            
+            # Check if monitoring system is available
+            try:
+                from .advanced_monitoring import monitoring_system
+                if not monitoring_system.is_initialized:
+                    raise Exception("Monitoring system not initialized")
+            except Exception:
+                pass  # Not critical for readiness
+            
+            return {
+                "status": "ready",
+                "timestamp": datetime.now(UTC).isoformat(),
+                "database": "connected",
+                "readiness": True
+            }
+            
+        except Exception as e:
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "status": "not_ready",
+                    "timestamp": datetime.now(UTC).isoformat(),
+                    "readiness": False,
+                    "error": str(e)
+                }
+            )
+
+    @app.get("/health/worker/live", tags=["System"])
+    async def worker_liveness_check():
+        """Worker liveness check for Kubernetes liveness probes."""
+        try:
+            # Simple liveness check - if this endpoint responds, the process is alive
+            return {
+                "status": "alive",
+                "timestamp": datetime.now(UTC).isoformat(),
+                "liveness": True,
+                "pid": os.getpid()
+            }
+        except Exception as e:
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "status": "dead",
+                    "timestamp": datetime.now(UTC).isoformat(),
+                    "liveness": False,
+                    "error": str(e)
+                }
+            )
 
     # API information endpoint
     @app.get("/api/info", tags=["System"])

@@ -11,6 +11,7 @@ A sophisticated, enterprise-grade autonomous AI agent platform with real intelli
 - **🛠️ Tool Integration**: Real and mock tool support with API fallbacks
 - **📊 Performance Monitoring**: Real-time metrics and system health tracking
 - **🐳 Production Ready**: Docker deployment with health checks
+- **🕸️ Distributed Architecture**: Cluster message bus, service discovery, and shared state management
 
 ## 🚀 Quick Start
 
@@ -20,6 +21,10 @@ A sophisticated, enterprise-grade autonomous AI agent platform with real intelli
 # Clone the repository
 git clone <repository-url>
 cd clean_project
+
+# (Optional) Prepare project virtual environment
+make venv
+source .venv/bin/activate
 
 # Install dependencies
 make install
@@ -33,6 +38,9 @@ make dev
 ```bash
 # Run the agent with default goals
 make run
+
+# Launch the asynchronous worker (requires Redis + DISTRIBUTED_ENABLED=true)
+make worker
 
 # Interactive terminal mode
 make interactive
@@ -183,6 +191,13 @@ docker-compose -f config/docker-compose.yml up
 - Set up monitoring
 - Use HTTPS in production
 
+### Monitoring & Observability
+- **Prometheus**: scrape the FastAPI `/metrics` endpoint (enabled when `ENABLE_METRICS=1`) for detailed system, cache, and AI-performance metrics including `agent_system_health_score`, `agent_decision_accuracy_ratio`, and `cache_hit_ratio`.
+- **Grafana Dashboards**: prebuilt dashboards live in `config/monitoring/grafana/dashboards/` (`Agent System Overview`, `Agent System Health`, `Agent AI Performance`). They are auto-provisioned by the compose/Kubernetes manifests.
+- **Alerting**: Prometheus alert rules are defined in `config/monitoring/alert_rules.yml` and cover availability, infrastructure saturation, cache efficiency, and AI quality signals. Wire them to Alertmanager (e.g., Slack/Webhook) for paging.
+- **Alertmanager**: `config/monitoring/alertmanager.yml` is enabled via Docker Compose and forwards incidents to the internal `/api/v1/system/alerts/webhook` endpoint. Set `ALERTMANAGER_WEBHOOK_TOKEN` if you want bearer-token protection or swap in your own receivers.
+- **Docker Compose**: `config/docker-compose.yml` mounts both `prometheus.yml` and the alert rules so you get health/AI alerts out-of-the-box (`docker compose -f config/docker-compose.yml up prometheus grafana`).
+
 ## 🧪 Examples
 
 ### Basic Agent Usage
@@ -202,6 +217,20 @@ agent.run(max_cycles=20)
 # Check status
 status = agent.get_status()
 print(f"Current goal: {status['current_goal']}")
+```
+
+### Concurrent Goal Processing
+Set `AGENT_MAX_CONCURRENT_GOALS` (or update `unified_config.agent.max_concurrent_goals`) to enable parallel goal execution:
+
+```python
+import asyncio
+from src.agent_system import AutonomousAgent
+
+agent = AutonomousAgent()
+agent.add_goal("Collect product requirements", priority=0.8)
+agent.add_goal("Draft design proposal", priority=0.9)
+
+asyncio.run(agent.run_async(max_cycles=40, max_concurrent_goals=2))
 ```
 
 ### Custom Tool Integration

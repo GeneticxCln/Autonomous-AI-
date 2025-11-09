@@ -19,6 +19,7 @@ class Settings:
     def __init__(self):
         # Core agent settings
         self.MAX_CYCLES = unified_config.agent.max_cycles
+        self.MAX_CONCURRENT_GOALS = unified_config.agent.max_concurrent_goals
         self.LOG_LEVEL = unified_config.logging.level
         self.DEFAULT_GOAL_PRIORITY = unified_config.agent.default_goal_priority
 
@@ -65,6 +66,26 @@ class Settings:
 
         # Terminal-only mode (no web search/network tools)
         self.TERMINAL_ONLY = os.getenv("TERMINAL_ONLY", "true").lower() == "true"
+
+        # Distributed architecture settings
+        self.DISTRIBUTED_ENABLED = unified_config.distributed.enabled
+        self.DISTRIBUTED_CLUSTER_NAME = unified_config.distributed.cluster_name
+        self.DISTRIBUTED_NODE_ID = unified_config.distributed.node_id
+        self.DISTRIBUTED_SERVICE_NAMESPACE = unified_config.distributed.service_namespace
+        self.DISTRIBUTED_MESSAGE_NAMESPACE = unified_config.distributed.message_namespace
+        self.DISTRIBUTED_STATE_NAMESPACE = unified_config.distributed.state_namespace
+        self.DISTRIBUTED_HEARTBEAT_INTERVAL = (
+            unified_config.distributed.heartbeat_interval_seconds
+        )
+        self.DISTRIBUTED_SERVICE_TTL = unified_config.distributed.service_ttl_seconds
+        self.DISTRIBUTED_VISIBILITY_TIMEOUT = (
+            unified_config.distributed.visibility_timeout_seconds
+        )
+        self.DISTRIBUTED_QUEUE_POLL_INTERVAL = (
+            unified_config.distributed.queue_poll_interval_seconds
+        )
+        self.DISTRIBUTED_MESSAGE_BACKEND = unified_config.distributed.message_backend
+        self.DISTRIBUTED_DISCOVERY_BACKEND = unified_config.distributed.discovery_backend
 
 
 # Global settings instance

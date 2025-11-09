@@ -143,31 +143,26 @@ class EnhancedAutonomousAgent(AutonomousAgent):
             logger.error(f"Error adding goal: {e}")
             raise
 
-    def run_cycle(self) -> bool:
+    async def run_cycle_async(self, concurrency_limit: Optional[int] = None) -> bool:
         """Enhanced run cycle with performance and security monitoring."""
         start_time = time.time()
 
         try:
-            # Record performance metrics
             self.performance_optimizer.response_optimizer.record_operation("run_cycle", 0.0)
 
-            # Run parent cycle
-            result = super().run_cycle()
+            result = await super().run_cycle_async(concurrency_limit=concurrency_limit)
 
-            # Record successful operation
             duration = time.time() - start_time
             self.performance_optimizer.response_optimizer.record_operation(
                 "run_cycle", duration, result
             )
 
-            # Perform periodic optimization
             if self.performance_optimizer.is_enabled:
                 self.performance_optimizer.optimize_system()
 
             return result
 
         except Exception as e:
-            # Record failed operation
             duration = time.time() - start_time
             self.performance_optimizer.response_optimizer.record_operation(
                 "run_cycle", duration, False

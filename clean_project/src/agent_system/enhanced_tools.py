@@ -67,6 +67,10 @@ class EnhancedToolRegistry(ToolRegistry):
         """Execute an action using the appropriate tool."""
         return super().execute_action(action, retry)
 
+    async def execute_action_async(self, action, retry: bool = True):
+        """Async execution helper for enhanced registries."""
+        return await super().execute_action_async(action, retry)
+
     def get_tool_stats(self) -> Dict[str, Dict[str, Any]]:
         """Get statistics for all tools including real tool info."""
         stats = super().get_tool_stats()

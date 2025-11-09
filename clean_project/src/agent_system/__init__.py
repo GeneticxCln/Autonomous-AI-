@@ -1,16 +1,19 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
+import importlib
 import json
 import logging
 import os
 from collections.abc import Sequence
-from typing import Any, Dict, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
 
-from .agent import AutonomousAgent
-from .auth_models import SecurityContext, db_manager
-from .auth_service import auth_service
-from .fastapi_app import app
+if TYPE_CHECKING:  # pragma: no cover - import-time hints only
+    from .agent import AutonomousAgent as AutonomousAgent
+    from .auth_models import SecurityContext as SecurityContext, db_manager as db_manager
+    from .auth_service import auth_service as auth_service
+    from .fastapi_app import app as app
 
 # Version information
 __version__ = "1.0.0"
@@ -79,6 +82,25 @@ __all__ = [
     "config",
     "__version__",
 ]
+
+_LAZY_EXPORTS = {
+    "AutonomousAgent": "agent.AutonomousAgent",
+    "app": "fastapi_app.app",
+    "auth_service": "auth_service.auth_service",
+    "db_manager": "auth_models.db_manager",
+    "SecurityContext": "auth_models.SecurityContext",
+}
+
+
+def __getattr__(name: str):
+    """Provide lazy access to heavy modules to keep base import lightweight."""
+    if name in _LAZY_EXPORTS:
+        module_path, attr = _LAZY_EXPORTS[name].rsplit(".", 1)
+        module = importlib.import_module(f".{module_path}", __name__)
+        value = getattr(module, attr)
+        globals()[name] = value
+        return value
+    raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 
 DEFAULT_GOALS: Tuple[Tuple[str, float], ...] = (
     ("Research machine learning trends", 0.8),
@@ -162,6 +184,8 @@ def main(argv: Optional[Sequence[str]] = None) -> Dict[str, Any]:
             "is_running": False,
         }
 
+    from .agent import AutonomousAgent
+
     agent = AutonomousAgent()
 
     if args.goal:
@@ -172,7 +196,7 @@ def main(argv: Optional[Sequence[str]] = None) -> Dict[str, Any]:
     for description, priority in parsed_goals:
         agent.add_goal(description, priority=priority)
 
-    agent.run(max_cycles=args.max_cycles)
+    asyncio.run(agent.run_async(max_cycles=args.max_cycles))
 
     status = agent.get_status()
     print("\n" + "=" * 80)

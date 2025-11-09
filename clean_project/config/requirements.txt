@@ -24,6 +24,7 @@ cryptography>=41.0.0
 pydantic[email]>=2.0.0
 passlib>=1.7.4
 argon2-cffi>=21.3.0
+python-jose[cryptography]>=3.3.0
 
 # Optional integrations (keep but not required by tests)
 openai>=1.0.0
@@ -35,13 +36,14 @@ beautifulsoup4>=4.12.0
 
 # Optional infra/tooling libs (comment out to slim image)
 # kubernetes>=28.0.0
-# opentelemetry-api>=1.19.0
-# opentelemetry-sdk>=1.19.0
-# opentelemetry-exporter-jaeger-thrift>=1.19.0
-# opentelemetry-instrumentation-fastapi>=0.40b0
-# opentelemetry-instrumentation-redis>=0.40b0
-# opentelemetry-instrumentation-requests>=0.40b0
-# opentelemetry-instrumentation-sqlalchemy>=0.40b0
+# Enable OpenTelemetry + Jaeger tracing stack
+opentelemetry-api>=1.19.0
+opentelemetry-sdk>=1.19.0
+opentelemetry-exporter-jaeger-thrift>=1.19.0
+opentelemetry-instrumentation-fastapi>=0.40b0
+opentelemetry-instrumentation-redis>=0.40b0
+opentelemetry-instrumentation-requests>=0.40b0
+opentelemetry-instrumentation-sqlalchemy>=0.40b0
 # opentelemetry-instrumentation-aiohttp-client>=0.40b0
 # opentelemetry-instrumentation-httpx>=0.40b0
 # istio-client>=1.19.0

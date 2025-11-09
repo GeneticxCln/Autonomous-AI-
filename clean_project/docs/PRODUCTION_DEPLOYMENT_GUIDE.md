@@ -77,6 +77,7 @@ export ENVIRONMENT=production
 export JWT_SECRET_KEY="your-super-secret-jwt-key"
 export API_DEBUG=false
 export LOG_LEVEL=INFO
+export DISTRIBUTED_ENABLED=true
 
 # Start with production configuration
 docker-compose -f config/docker-compose.yml up -d
@@ -90,9 +91,7 @@ curl -f http://localhost:8000/health
 |---------|---------|------|----------|
 | `api` | Main application | 8000 | 3 |
 | `redis` | Cache & message queue | 6379 | 1 |
-| `worker_high` | High priority jobs | - | 2 |
-| `worker_normal` | Normal jobs | - | 3 |
-| `worker_low` | Low priority jobs | - | 1 |
+| `worker` | Asynchronous job processor (`python -m agent_system.worker`) | - | Scale via `docker compose up --scale worker=3` |
 | `nginx` | Load balancer | 80, 443 | 1 |
 | `prometheus` | Metrics collection | 9090 | 1 |
 | `grafana` | Monitoring dashboard | 3000 | 1 |
@@ -173,7 +172,7 @@ kubectl get hpa -n agent-system
 kubectl scale deployment agent-api --replicas=5 -n agent-system
 
 # Scale workers
-kubectl scale deployment agent-worker-normal --replicas=5 -n agent-system
+kubectl scale deployment agent-worker --replicas=5 -n agent-system
 
 # Check HPA status
 kubectl get hpa -n agent-system
@@ -400,6 +399,13 @@ Password: admin (change on first login)
 kubectl apply -f config/monitoring/grafana/dashboards/
 ```
 
+#### Prebuilt Dashboards
+- **Agent System Overview** – end-to-end service health (API latency, cache ratio, task queue depth, alert volume).
+- **Agent System Health** – infrastructure saturation, incidents, uptime, and resource usage with long-running trends.
+- **Agent AI Performance** – AI-specific KPIs (decision accuracy, learning velocity, goal throughput, action mix).
+
+Grafana auto-provisions these from `config/monitoring/grafana/dashboards/` (Compose + Kubernetes manifests mount `/var/lib/grafana/dashboards`). Reloading Grafana after updating JSON picks up changes within a few seconds.
+
 ### **Prometheus Configuration**
 ```bash
 # Access Prometheus
@@ -408,6 +414,16 @@ kubectl port-forward svc/prometheus-service 9090:9090 -n agent-system
 # Check metrics
 curl http://localhost:9090/metrics
 ```
+
+#### Alert Rules & Routing
+- Alert definitions live in `config/monitoring/alert_rules.yml` and cover API uptime, system health score, CPU/memory/disk saturation, cache efficiency, and AI quality (accuracy/latency/goal completion).
+- Docker Compose now mounts the rule file (`./monitoring/alert_rules.yml:/etc/prometheus/alert_rules.yml`) so changes can be hot-reloaded with `docker compose exec prometheus kill -HUP 1`.
+- For Kubernetes, include the file in the Prometheus ConfigMap and enable Alertmanager targets in `config/monitoring/prometheus.yml` (uncomment or point at your Alertmanager service) to forward notifications to Slack, PagerDuty, etc.
+
+#### Alertmanager Webhook
+- Docker Compose now ships an Alertmanager container (`alertmanager` service) using `config/monitoring/alertmanager.yml`.
+- By default alerts are sent to the FastAPI webhook at `/api/v1/system/alerts/webhook`, which increments the `agent_alert_events_total` metric for easier auditing.
+- Set `ALERTMANAGER_WEBHOOK_TOKEN` in your environment to require `X-Alertmanager-Token` on inbound requests. For external integrations, replace the receiver in `alertmanager.yml` with Slack/PagerDuty configs.
 
 ### **Jaeger Configuration**
 ```bash

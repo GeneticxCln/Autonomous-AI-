@@ -1,41 +1,37 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: agent-worker-high
+  name: agent-worker
   namespace: agent-system
   labels:
     app: agent-system
     component: worker
-    priority: high
 spec:
   replicas: 2
   selector:
     matchLabels:
       app: agent-system
       component: worker
-      priority: high
   template:
     metadata:
       labels:
         app: agent-system
         component: worker
-        priority: high
     spec:
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
         fsGroup: 1000
       containers:
-        - name: worker
+        - name: agent-worker
           image: agent-system:latest
           imagePullPolicy: IfNotPresent
           command:
-            - rq
-            - worker
-            - -u
-            - redis://redis-service:6379/0
-            - high
-            - --with-scheduler
+            - python
+            - -m
+            - agent_system.worker
+            - --queue
+            - agent.jobs
           envFrom:
             - configMapRef:
                 name: agent-config
@@ -44,7 +40,15 @@ spec:
           env:
             - name: PYTHONPATH
               value: /app
-            - name: POD_NAME
+            - name: DISTRIBUTED_ENABLED
+              value: "true"
+            - name: REDIS_HOST
+              value: redis-service
+            - name: REDIS_PORT
+              value: "6379"
+            - name: REDIS_DB
+              value: "0"
+            - name: NODE_ROLE
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
@@ -61,175 +65,9 @@ spec:
           livenessProbe:
             exec:
               command:
-                - rq
-                - info
-                - high
-                - --url
-                - redis://redis-service:6379/0
-            initialDelaySeconds: 60
-            periodSeconds: 30
-            timeoutSeconds: 10
-            failureThreshold: 3
-          securityContext:
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop:
-                - ALL
-      volumes:
-        - name: agent-logs
-          persistentVolumeClaim:
-            claimName: agent-logs-pvc
-      restartPolicy: Always
-      terminationGracePeriodSeconds: 30
-
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: agent-worker-normal
-  namespace: agent-system
-  labels:
-    app: agent-system
-    component: worker
-    priority: normal
-spec:
-  replicas: 3
-  selector:
-    matchLabels:
-      app: agent-system
-      component: worker
-      priority: normal
-  template:
-    metadata:
-      labels:
-        app: agent-system
-        component: worker
-        priority: normal
-    spec:
-      securityContext:
-        runAsNonRoot: true
-        runAsUser: 1000
-        fsGroup: 1000
-      containers:
-        - name: worker
-          image: agent-system:latest
-          imagePullPolicy: IfNotPresent
-          command:
-            - rq
-            - worker
-            - -u
-            - redis://redis-service:6379/0
-            - normal
-            - --with-scheduler
-          envFrom:
-            - configMapRef:
-                name: agent-config
-            - secretRef:
-                name: agent-secrets
-          env:
-            - name: PYTHONPATH
-              value: /app
-          volumeMounts:
-            - name: agent-logs
-              mountPath: /app/logs
-          resources:
-            requests:
-              memory: "256Mi"
-              cpu: "250m"
-            limits:
-              memory: "512Mi"
-              cpu: "500m"
-          livenessProbe:
-            exec:
-              command:
-                - rq
-                - info
-                - normal
-                - --url
-                - redis://redis-service:6379/0
-            initialDelaySeconds: 60
-            periodSeconds: 30
-            timeoutSeconds: 10
-            failureThreshold: 3
-          securityContext:
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop:
-                - ALL
-      volumes:
-        - name: agent-logs
-          persistentVolumeClaim:
-            claimName: agent-logs-pvc
-      restartPolicy: Always
-      terminationGracePeriodSeconds: 30
-
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: agent-worker-low
-  namespace: agent-system
-  labels:
-    app: agent-system
-    component: worker
-    priority: low
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: agent-system
-      component: worker
-      priority: low
-  template:
-    metadata:
-      labels:
-        app: agent-system
-        component: worker
-        priority: low
-    spec:
-      securityContext:
-        runAsNonRoot: true
-        runAsUser: 1000
-        fsGroup: 1000
-      containers:
-        - name: worker
-          image: agent-system:latest
-          imagePullPolicy: IfNotPresent
-          command:
-            - rq
-            - worker
-            - -u
-            - redis://redis-service:6379/0
-            - low
-            - --with-scheduler
-          envFrom:
-            - configMapRef:
-                name: agent-config
-            - secretRef:
-                name: agent-secrets
-          env:
-            - name: PYTHONPATH
-              value: /app
-          volumeMounts:
-            - name: agent-logs
-              mountPath: /app/logs
-          resources:
-            requests:
-              memory: "128Mi"
-              cpu: "100m"
-            limits:
-              memory: "256Mi"
-              cpu: "250m"
-          livenessProbe:
-            exec:
-              command:
-                - rq
-                - info
-                - low
-                - --url
-                - redis://redis-service:6379/0
+                - /bin/sh
+                - -c
+                - pgrep -f agent_system.worker >/dev/null || exit 1
             initialDelaySeconds: 60
             periodSeconds: 30
             timeoutSeconds: 10

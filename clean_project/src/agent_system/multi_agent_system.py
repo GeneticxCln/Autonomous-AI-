@@ -17,6 +17,11 @@ from concurrent.futures import ThreadPoolExecutor
 import queue
 import threading
 
+from .config_simple import settings
+from .distributed_message_queue import distributed_message_queue, MessagePriority
+from .distributed_state_manager import distributed_state_manager
+from .infrastructure_manager import infrastructure_manager
+
 logger = logging.getLogger(__name__)
 
 
@@ -111,6 +116,50 @@ class AgentMessage:
     timestamp: datetime = field(default_factory=datetime.now)
     priority: int = 5
     requires_response: bool = False
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def to_transport_dict(self) -> Dict[str, Any]:
+        """Serialize message for distributed transport."""
+        return {
+            "message_id": self.message_id,
+            "from_agent": self.from_agent,
+            "to_agent": self.to_agent,
+            "message_type": self.message_type.value,
+            "task_id": self.task_id,
+            "content": self.content,
+            "timestamp": self.timestamp.isoformat(),
+            "priority": self.priority,
+            "requires_response": self.requires_response,
+            "metadata": self.metadata,
+        }
+
+    @classmethod
+    def from_transport_dict(cls, data: Dict[str, Any]) -> "AgentMessage":
+        """Rehydrate message from distributed transport."""
+        timestamp = data.get("timestamp")
+        if isinstance(timestamp, str):
+            try:
+                timestamp = datetime.fromisoformat(timestamp)
+            except ValueError:
+                timestamp = datetime.now()
+        message_type_value = data.get("message_type", MessageType.STATUS_UPDATE.value)
+        message_type = (
+            message_type_value
+            if isinstance(message_type_value, MessageType)
+            else MessageType(message_type_value)
+        )
+        return cls(
+            message_id=data.get("message_id", str(uuid.uuid4())),
+            from_agent=data.get("from_agent", "unknown"),
+            to_agent=data.get("to_agent"),
+            message_type=message_type,
+            task_id=data.get("task_id"),
+            content=data.get("content", {}),
+            timestamp=timestamp or datetime.now(),
+            priority=int(data.get("priority", 5)),
+            requires_response=bool(data.get("requires_response", False)),
+            metadata=data.get("metadata", {}),
+        )
 
 
 @dataclass
@@ -259,26 +308,73 @@ class AgentRegistry:
 class MessageBus:
     """Asynchronous message bus for agent communication."""
 
-    def __init__(self):
+    def __init__(
+        self,
+        *,
+        use_distributed_backend: bool = False,
+        cluster_queue_name: str = "multi-agent-messages",
+    ):
         self.message_queue = asyncio.Queue()
         self.subscribers: Dict[str, List[Callable]] = {}
         self.running = False
+        self.distributed_enabled = use_distributed_backend and getattr(
+            settings, "DISTRIBUTED_ENABLED", False
+        )
+        self.cluster_queue_name = cluster_queue_name
+        self.node_id = getattr(settings, "DISTRIBUTED_NODE_ID", "local-node")
+        self._distributed_consumer_task: Optional[asyncio.Task] = None
+        self._local_processor_task: Optional[asyncio.Task] = None
 
     async def start(self):
         """Start the message bus."""
         self.running = True
-        asyncio.create_task(self._message_processor())
-        logger.info("Message bus started")
+        self._local_processor_task = asyncio.create_task(self._message_processor())
+        if self.distributed_enabled:
+            await distributed_message_queue.initialize()
+            self._distributed_consumer_task = asyncio.create_task(self._distributed_consumer())
+        logger.info("Message bus started (distributed=%s)", self.distributed_enabled)
 
     async def stop(self):
         """Stop the message bus."""
         self.running = False
+
+        if self._distributed_consumer_task:
+            self._distributed_consumer_task.cancel()
+            try:
+                await self._distributed_consumer_task
+            except asyncio.CancelledError:
+                pass
+
+        if self._local_processor_task:
+            self._local_processor_task.cancel()
+            try:
+                await self._local_processor_task
+            except asyncio.CancelledError:
+                pass
+
         logger.info("Message bus stopped")
 
     async def send_message(self, message: AgentMessage):
         """Send a message to the bus."""
         await self.message_queue.put(message)
-        logger.debug(f"Message sent: {message.message_type.value} from {message.from_agent}")
+
+        if self.distributed_enabled:
+            message.metadata.setdefault("origin_node", self.node_id)
+            message.metadata.setdefault(
+                "cluster", getattr(settings, "DISTRIBUTED_CLUSTER_NAME", "agent-cluster")
+            )
+            await distributed_message_queue.publish(
+                self.cluster_queue_name,
+                message.to_transport_dict(),
+                priority=self._priority_from_message(message),
+            )
+
+        logger.debug(
+            "Message sent: %s from %s (distributed=%s)",
+            message.message_type.value,
+            message.from_agent,
+            self.distributed_enabled,
+        )
 
     def subscribe(self, agent_id: str, callback: Callable):
         """Subscribe to messages for an agent."""
@@ -294,17 +390,63 @@ class MessageBus:
                 await self._deliver_message(message)
             except asyncio.TimeoutError:
                 continue
+            except asyncio.CancelledError:
+                break
             except Exception as e:
                 logger.error(f"Error processing message: {e}")
 
     async def _deliver_message(self, message: AgentMessage):
         """Deliver message to intended recipients."""
+        delivered = False
         if message.to_agent and message.to_agent in self.subscribers:
             for callback in self.subscribers[message.to_agent]:
                 try:
                     await callback(message)
+                    delivered = True
                 except Exception as e:
                     logger.error(f"Error delivering message to {message.to_agent}: {e}")
+        return delivered
+
+    def _priority_from_message(self, message: AgentMessage) -> MessagePriority:
+        if message.priority <= 2:
+            return MessagePriority.CRITICAL
+        if message.priority <= 4:
+            return MessagePriority.HIGH
+        if message.priority <= 7:
+            return MessagePriority.NORMAL
+        return MessagePriority.LOW
+
+    async def _distributed_consumer(self):
+        """Consume messages from the distributed queue."""
+        try:
+            while self.running:
+                envelope = await distributed_message_queue.consume(
+                    self.cluster_queue_name, timeout=1
+                )
+                if not envelope:
+                    continue
+
+                data = envelope.payload if isinstance(envelope.payload, dict) else {}
+                message = AgentMessage.from_transport_dict(data)
+                origin = message.metadata.get("origin_node")
+
+                if origin == self.node_id:
+                    await distributed_message_queue.ack(self.cluster_queue_name, envelope.message_id)
+                    continue
+
+                delivered = await self._deliver_message(message)
+                if delivered:
+                    await distributed_message_queue.ack(self.cluster_queue_name, envelope.message_id)
+                else:
+                    # Requeue the message for another node to process
+                    await distributed_message_queue.publish(
+                        self.cluster_queue_name,
+                        message.to_transport_dict(),
+                        priority=self._priority_from_message(message),
+                    )
+                    await distributed_message_queue.ack(self.cluster_queue_name, envelope.message_id)
+        except asyncio.CancelledError:
+            logger.debug("Distributed message consumer stopped")
 
 
 class MultiAgentOrchestrator:
@@ -312,23 +454,32 @@ class MultiAgentOrchestrator:
 
     def __init__(self):
         self.agent_registry = AgentRegistry()
-        self.message_bus = MessageBus()
+        self.distributed_enabled = getattr(settings, "DISTRIBUTED_ENABLED", False)
+        self.message_bus = MessageBus(use_distributed_backend=self.distributed_enabled)
         self.active_tasks: Dict[str, Task] = {}
         self.active_workflows: Dict[str, List[WorkflowStep]] = {}
         self.task_queue = asyncio.Queue()
         self.running = False
+        self.node_id = getattr(settings, "DISTRIBUTED_NODE_ID", "local-node")
+
+        try:
+            infrastructure_manager.register_distributed_queue(self.message_bus.cluster_queue_name)
+        except Exception:
+            logger.debug("Distributed queue registration skipped (infrastructure not ready)")
 
     async def start(self):
         """Start the multi-agent system."""
         await self.message_bus.start()
         self.running = True
         asyncio.create_task(self._task_processor())
+        await self._persist_cluster_snapshot()
         logger.info("Multi-agent orchestrator started")
 
     async def stop(self):
         """Stop the multi-agent system."""
         self.running = False
         await self.message_bus.stop()
+        await self._persist_cluster_snapshot()
         logger.info("Multi-agent orchestrator stopped")
 
     async def create_workflow(self, workflow_definition: Dict[str, Any]) -> str:
@@ -371,6 +522,9 @@ class MultiAgentOrchestrator:
         self.active_workflows[workflow_id] = steps
         logger.info(f"Created workflow {workflow_id} with {len(steps)} steps")
 
+        await self._update_workflow_state(workflow_id, "pending")
+        await self._persist_cluster_snapshot()
+
         # Start workflow execution
         asyncio.create_task(self._execute_workflow(workflow_id))
 
@@ -381,6 +535,7 @@ class MultiAgentOrchestrator:
         try:
             steps = self.active_workflows[workflow_id]
             logger.info(f"Starting workflow execution: {workflow_id}")
+            await self._update_workflow_state(workflow_id, "in_progress")
 
             # Group steps for parallel execution
             parallel_groups = {}
@@ -402,9 +557,12 @@ class MultiAgentOrchestrator:
                     await asyncio.gather(*[self._execute_step(step) for step in group_steps])
 
             logger.info(f"Workflow completed: {workflow_id}")
+            await self._update_workflow_state(workflow_id, "completed")
+            await self._persist_cluster_snapshot()
 
         except Exception as e:
             logger.error(f"Workflow failed: {workflow_id}, error: {e}")
+            await self._update_workflow_state(workflow_id, "failed")
 
     async def _execute_step(self, step: WorkflowStep):
         """Execute a single workflow step."""
@@ -533,6 +691,47 @@ class MultiAgentOrchestrator:
             ]
         }
 
+    async def _persist_cluster_snapshot(self):
+        """Store orchestrator status in distributed state."""
+        if not self.distributed_enabled:
+            return
+
+        snapshot = {
+            "node_id": self.node_id,
+            "status": "running" if self.running else "stopped",
+            "active_workflows": len(self.active_workflows),
+            "active_tasks": len(self.active_tasks),
+            "timestamp": datetime.now().isoformat(),
+        }
+
+        await distributed_state_manager.set_state("multi_agent", self.node_id, snapshot, ttl=180)
+
+    async def _update_workflow_state(self, workflow_id: str, status: str):
+        """Persist workflow state for distributed coordination."""
+        if not self.distributed_enabled:
+            return
+
+        steps = self.active_workflows.get(workflow_id, [])
+        await distributed_state_manager.set_state(
+            "workflows",
+            workflow_id,
+            {
+                "workflow_id": workflow_id,
+                "status": status,
+                "node_id": self.node_id,
+                "steps": [
+                    {
+                        "step_id": step.step_id,
+                        "agent": step.assigned_agent,
+                        "status": step.task.status.value,
+                    }
+                    for step in steps
+                ],
+                "updated_at": datetime.now().isoformat(),
+            },
+            ttl=3600,
+        )
+
     def get_system_status(self) -> Dict[str, Any]:
         """Get overall system status."""
         return {
@@ -543,7 +742,12 @@ class MultiAgentOrchestrator:
                 role.value: len(agents)
                 for role, agents in self.agent_registry.role_to_agents.items()
             },
-            "system_health": "operational" if self.running else "stopped"
+            "system_health": "operational" if self.running else "stopped",
+            "distributed": {
+                "enabled": self.distributed_enabled,
+                "queue": self.message_bus.cluster_queue_name if self.distributed_enabled else None,
+                "node_id": self.node_id,
+            },
         }
 
 

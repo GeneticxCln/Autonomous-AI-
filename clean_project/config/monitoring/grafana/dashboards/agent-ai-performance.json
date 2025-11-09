@@ -1,0 +1,158 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "Agent AI Performance",
+    "tags": ["agent", "ai", "performance"],
+    "style": "dark",
+    "timezone": "browser",
+    "refresh": "10s",
+    "schemaVersion": 27,
+    "version": 0,
+    "time": {"from": "now-6h", "to": "now"},
+    "panels": [
+      {
+        "id": 30,
+        "title": "Decision Accuracy",
+        "type": "stat",
+        "targets": [{"expr": "agent_decision_accuracy_ratio", "refId": "A"}],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percentunit",
+            "thresholds": {
+              "steps": [
+                {"color": "red", "value": null},
+                {"color": "yellow", "value": 0.75},
+                {"color": "green", "value": 0.9}
+              ]
+            }
+          }
+        },
+        "gridPos": {"h": 8, "w": 6, "x": 0, "y": 0}
+      },
+      {
+        "id": 31,
+        "title": "Goal Completion Rate",
+        "type": "stat",
+        "targets": [{"expr": "agent_goal_completion_rate", "refId": "A"}],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percentunit",
+            "thresholds": {
+              "steps": [
+                {"color": "red", "value": null},
+                {"color": "yellow", "value": 0.6},
+                {"color": "green", "value": 0.85}
+              ]
+            }
+          }
+        },
+        "gridPos": {"h": 8, "w": 6, "x": 6, "y": 0}
+      },
+      {
+        "id": 32,
+        "title": "Learning Velocity",
+        "type": "stat",
+        "targets": [{"expr": "agent_learning_velocity", "refId": "A"}],
+        "fieldConfig": {
+          "defaults": {
+            "thresholds": {
+              "steps": [
+                {"color": "red", "value": null},
+                {"color": "yellow", "value": 0.4},
+                {"color": "green", "value": 0.7}
+              ]
+            }
+          }
+        },
+        "gridPos": {"h": 8, "w": 6, "x": 12, "y": 0}
+      },
+      {
+        "id": 33,
+        "title": "Decision Latency p95",
+        "type": "stat",
+        "targets": [{"expr": "histogram_quantile(0.95, rate(agent_decision_latency_seconds_bucket[5m]))", "refId": "A"}],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s",
+            "thresholds": {
+              "steps": [
+                {"color": "green", "value": null},
+                {"color": "yellow", "value": 1},
+                {"color": "red", "value": 1.5}
+              ]
+            }
+          }
+        },
+        "gridPos": {"h": 8, "w": 6, "x": 18, "y": 0}
+      },
+      {
+        "id": 34,
+        "title": "Decision Latency Trend",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.5, rate(agent_decision_latency_seconds_bucket[5m]))",
+            "refId": "A",
+            "legendFormat": "p50"
+          },
+          {
+            "expr": "histogram_quantile(0.95, rate(agent_decision_latency_seconds_bucket[5m]))",
+            "refId": "B",
+            "legendFormat": "p95"
+          }
+        ],
+        "yAxes": [{"label": "Seconds", "min": 0}],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8}
+      },
+      {
+        "id": 35,
+        "title": "Goal Outcomes / 5m",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "sum by (status)(increase(agent_goals_total[5m]))",
+            "refId": "A"
+          }
+        ],
+        "yAxes": [{"label": "Goals", "min": 0}],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8}
+      },
+      {
+        "id": 36,
+        "title": "Action Throughput",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "sum by (tool)(increase(agent_actions_total{status=\"success\"}[15m]))",
+            "refId": "A"
+          }
+        ],
+        "legend": {"show": true},
+        "yAxes": [{"label": "Actions / 15m", "min": 0}],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16}
+      },
+      {
+        "id": 37,
+        "title": "Learning Velocity Trend",
+        "type": "graph",
+        "targets": [{"expr": "agent_learning_velocity", "refId": "A"}],
+        "yAxes": [{"label": "Velocity", "min": 0, "max": 1}],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16}
+      },
+      {
+        "id": 38,
+        "title": "Performance Alerts",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "sum by (severity)(increase(agent_alert_events_total[15m]))",
+            "refId": "A"
+          }
+        ],
+        "legend": {"show": true},
+        "yAxes": [{"label": "Alerts / 15m", "min": 0}],
+        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 24}
+      }
+    ]
+  }
+}

@@ -34,6 +34,7 @@
 - **FastAPI Web Interface**: Interactive dashboard with real-time monitoring
 - **RESTful API**: Complete CRUD operations for all entities
 - **Interactive CLI**: Chat-based and terminal interfaces
+- **Background Worker Service**: Dedicated queue consumer (`python -m agent_system.worker`)
 - **Comprehensive Documentation**: OpenAPI 3.0 with examples and schemas
 
 ### 🛠️ **Advanced Tool System**
@@ -48,6 +49,13 @@
 - **Database Optimization**: Efficient SQLAlchemy models with indexing
 - **Production Ready**: Docker deployment with health checks
 
+### 🕸️ **Distributed Architecture**
+- **Cluster Message Bus**: Priority-aware queue with Redis backend and in-memory fallback for cross-node agent messaging
+- **Service Discovery**: Self-registering FastAPI and worker services with TTL heartbeats for automatic discovery
+- **Distributed State**: Shared state manager with optimistic versioning for workflow progress and cluster health snapshots
+- **Resilience Features**: Automatic retry/rescue of stale messages plus service cleanup to keep the cluster consistent
+- **Portable Workers**: Launch additional consumers via `make worker` to scale background processing
+
 ## 🚀 Quick Start
 
 ### Prerequisites
@@ -61,6 +69,10 @@
 # Clone the repository
 git clone <repository-url>
 cd agent
+
+# (Optional) Create an isolated environment with all dev tooling
+make venv
+source .venv/bin/activate
 
 # Quick setup with the clean, production-ready version
 cd clean_project
@@ -77,6 +89,9 @@ make setup
 
 # Run the agent
 make run
+
+# Start the asynchronous worker that processes queued jobs (needs Redis + DISTRIBUTED_ENABLED=true)
+make worker
 ```
 
 ### Alternative: Development Setup
@@ -448,6 +463,7 @@ This project is licensed under the MIT License - see the [LICENSE](clean_project
 
 - **📚 API Documentation**: http://localhost:8000/docs (when running)
 - **📖 User Guide**: See `clean_project/docs/` directory
+- **🏗️ Enterprise Scaling Roadmap**: `clean_project/docs/ENTERPRISE_SCALING_ROADMAP.md`
 - **🔧 Configuration Guide**: See Configuration section above
 - **🧪 Testing Guide**: See Testing section above
 

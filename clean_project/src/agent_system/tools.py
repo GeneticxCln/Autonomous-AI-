@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
 from abc import ABC, abstractmethod
+import atexit
 from collections import defaultdict
-from typing import Any, Dict, Tuple
+from concurrent.futures import ThreadPoolExecutor
+import inspect
+from typing import Any, Awaitable, Dict, Tuple
 
 from .models import Action, ActionStatus, Observation
 
@@ -21,7 +25,7 @@ class Tool(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def execute(self, **kwargs) -> Tuple[ActionStatus, Any]:
+    def execute(self, **kwargs) -> Tuple[ActionStatus, Any] | Awaitable[Tuple[ActionStatus, Any]]:
         raise NotImplementedError
 
 
@@ -600,6 +604,19 @@ class ToolRegistry:
             lambda: {"success": 0, "failure": 0, "total": 0}
         )
         self.max_retries = 3
+        max_workers = 4
+        try:  # Avoid import cycles during early bootstrap
+            from .config_simple import settings as _settings
+
+            max_workers = max(1, int(getattr(_settings, "TOOL_EXECUTOR_WORKERS", max_workers)))
+        except Exception:
+            pass
+
+        self._executor = ThreadPoolExecutor(
+            max_workers=max_workers,
+            thread_name_prefix="tool-registry",
+        )
+        atexit.register(self._executor.shutdown, False)
 
     def register_tool(self, tool: Tool):
         """Register a tool."""
@@ -607,7 +624,7 @@ class ToolRegistry:
         logger.info("Registered tool: %s", tool.name)
 
     def execute_action(self, action: Action, retry: bool = True) -> Observation:
-        """Execute an action using the appropriate tool with basic retry logic."""
+        """Execute an action synchronously (legacy compatibility)."""
         tool = self.tools.get(action.tool_name)
 
         if not tool:
@@ -622,7 +639,6 @@ class ToolRegistry:
         attempts = 0
         max_attempts = self.max_retries if retry else 1
 
-        payload_bytes = 0
         try:
             payload_bytes = len(json.dumps(action.parameters, ensure_ascii=False).encode("utf-8"))
         except Exception:
@@ -635,11 +651,7 @@ class ToolRegistry:
             try:
                 status, result = tool.execute(**action.parameters)
 
-                self.tool_stats[tool.name]["total"] += 1
-                if status == ActionStatus.SUCCESS:
-                    self.tool_stats[tool.name]["success"] += 1
-                else:
-                    self.tool_stats[tool.name]["failure"] += 1
+                self._update_tool_stats(tool.name, status)
 
                 duration_ms = (time.perf_counter() - start) * 1000.0
                 try:
@@ -705,6 +717,125 @@ class ToolRegistry:
                 "success": 0.0,
             },
         )
+
+    async def execute_action_async(self, action: Action, retry: bool = True) -> Observation:
+        """Execute an action using the appropriate tool with basic retry logic (async)."""
+        tool = self.tools.get(action.tool_name)
+
+        if not tool:
+            logger.error("Tool not found: %s", action.tool_name)
+            return Observation(
+                action_id=action.id,
+                status=ActionStatus.FAILURE,
+                result=None,
+                feedback=f"Tool {action.tool_name} not available",
+            )
+
+        attempts = 0
+        max_attempts = self.max_retries if retry else 1
+
+        payload_bytes = 0
+        try:
+            payload_bytes = len(json.dumps(action.parameters, ensure_ascii=False).encode("utf-8"))
+        except Exception:
+            payload_bytes = 0
+
+        start = time.perf_counter()
+        while attempts < max_attempts:
+            attempts += 1
+
+            try:
+                status, result = await self._invoke_tool(tool, action.parameters)
+
+                self._update_tool_stats(tool.name, status)
+
+                duration_ms = (time.perf_counter() - start) * 1000.0
+                try:
+                    result_bytes = len(
+                        json.dumps(result, ensure_ascii=False)[:100000].encode("utf-8")
+                    )
+                except Exception:
+                    result_bytes = 0
+
+                observation = Observation(
+                    action_id=action.id,
+                    status=status,
+                    result=result,
+                    feedback=f"Completed in {attempts} attempt(s)",
+                    metrics={
+                        "tool": tool.name,
+                        "latency_ms": round(duration_ms, 3),
+                        "attempts": attempts,
+                        "payload_bytes": payload_bytes,
+                        "result_bytes": result_bytes,
+                        "success": 1.0 if status == ActionStatus.SUCCESS else 0.0,
+                    },
+                )
+
+                if status == ActionStatus.SUCCESS or not retry:
+                    return observation
+
+                logger.warning("Action failed, attempt %s/%s", attempts, max_attempts)
+
+            except Exception as exc:  # pragma: no cover - placeholder for real tool errors
+                logger.error("Tool execution error: %s", exc)
+
+                if attempts >= max_attempts:
+                    duration_ms = (time.perf_counter() - start) * 1000.0
+                    return Observation(
+                        action_id=action.id,
+                        status=ActionStatus.FAILURE,
+                        result=None,
+                        feedback=f"Failed after {attempts} attempts: {exc}",
+                        metrics={
+                            "tool": tool.name,
+                            "latency_ms": round(duration_ms, 3),
+                            "attempts": attempts,
+                            "payload_bytes": payload_bytes,
+                            "result_bytes": 0,
+                            "success": 0.0,
+                            "error_type": type(exc).__name__,
+                        },
+                    )
+
+        duration_ms = (time.perf_counter() - start) * 1000.0
+        return Observation(
+            action_id=action.id,
+            status=ActionStatus.FAILURE,
+            result=None,
+            feedback=f"Failed after {max_attempts} attempts",
+            metrics={
+                "tool": tool.name if tool else action.tool_name,
+                "latency_ms": round(duration_ms, 3),
+                "attempts": attempts,
+                "payload_bytes": payload_bytes,
+                "result_bytes": 0,
+                "success": 0.0,
+            },
+        )
+
+    async def _invoke_tool(self, tool: Tool, parameters: Dict[str, Any]) -> Tuple[ActionStatus, Any]:
+        """Invoke the tool, running sync implementations in a worker thread."""
+        if inspect.iscoroutinefunction(tool.execute):
+            result = await tool.execute(**parameters)
+        else:
+            loop = asyncio.get_running_loop()
+            result = await loop.run_in_executor(
+                self._executor, lambda: tool.execute(**parameters)
+            )
+
+        if inspect.isawaitable(result):
+            result = await result
+
+        return result
+
+    def _update_tool_stats(self, tool_name: str, status: ActionStatus) -> None:
+        stats = self.tool_stats[tool_name]
+        stats["total"] += 1
+        if status == ActionStatus.SUCCESS:
+            stats["success"] += 1
+        else:
+            stats["failure"] += 1
 
     def get_available_tools(self) -> list[str]:
         """Get list of available tool names."""

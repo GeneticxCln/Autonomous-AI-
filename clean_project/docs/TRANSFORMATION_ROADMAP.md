@@ -1,5 +1,7 @@
 # Agent Transformation Roadmap
 
+> For the detailed scaling and enterprise feature plan, see `clean_project/docs/ENTERPRISE_SCALING_ROADMAP.md`.
+
 ## Phase 1: Real Tool Integration (Immediate)
 
 ### Replace Mock Tools with Actual Implementations

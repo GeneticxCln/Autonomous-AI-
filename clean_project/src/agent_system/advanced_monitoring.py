@@ -31,6 +31,7 @@ from prometheus_client.core import REGISTRY, CollectorRegistry
 
 from .config_simple import settings
 from .cache_manager import cache_manager
+from .job_manager import job_store
 
 
 logger = logging.getLogger(__name__)
@@ -70,12 +71,15 @@ class AdvancedMonitoringSystem:
 
     def __init__(self, registry: Optional[CollectorRegistry] = None):
         self.registry = registry or CollectorRegistry()
+        self._owns_registry = registry is None
         self.metrics: Dict[str, Any] = {}
         self.business_metrics: Dict[str, BusinessMetric] = {}
         self.alert_rules: List[Dict[str, Any]] = []
         self.sla_thresholds: Dict[str, float] = {}
         self.is_initialized = False
         self.start_time = datetime.now()
+        self.cache_state = {"hit": 0, "miss": 0}
+        self._last_network_counters = None
 
         # Initialize metric collectors
         self._init_prometheus_collectors()
@@ -84,6 +88,9 @@ class AdvancedMonitoringSystem:
 
     def _init_prometheus_collectors(self):
         """Initialize Prometheus metric collectors."""
+        if not self._owns_registry:
+            logger.debug("Using shared Prometheus registry; base collectors already registered")
+            return
         try:
             # Add process and platform collectors
             ProcessCollector(registry=self.registry)
@@ -140,6 +147,27 @@ class AdvancedMonitoringSystem:
 
         self.metrics["load_average_15m"] = Gauge(
             "system_load_average_15m", "System load average (15 minutes)", registry=self.registry
+        )
+
+        self.metrics["uptime_seconds"] = Gauge(
+            "system_uptime_seconds", "Application uptime in seconds", registry=self.registry
+        )
+
+        self.metrics["thread_count"] = Gauge(
+            "system_thread_count", "Number of threads in agent process", registry=self.registry
+        )
+
+        self.metrics["open_file_descriptors"] = Gauge(
+            "system_open_file_descriptors",
+            "Total open file descriptors for agent process",
+            registry=self.registry,
+        )
+
+        # Queue depth metric
+        self.metrics["agent_job_queue_depth"] = Gauge(
+            "agent_job_queue_depth",
+            "Current depth of agent job queue",
+            registry=self.registry,
         )
 
     def _init_business_collectors(self):
@@ -279,6 +307,65 @@ class AdvancedMonitoringSystem:
             registry=self.registry,
         )
 
+        # System Health Metrics
+        self.metrics["system_health_score"] = Gauge(
+            "agent_system_health_score",
+            "Overall system health score (0-100)",
+            registry=self.registry,
+        )
+
+        self.metrics["component_health_score"] = Gauge(
+            "agent_component_health_score",
+            "Health score per subsystem (0-100)",
+            ["component"],
+            registry=self.registry,
+        )
+
+        self.metrics["active_incidents"] = Gauge(
+            "agent_active_incidents_total", "Number of active health incidents", registry=self.registry
+        )
+
+        # AI Performance Metrics
+        self.metrics["ai_decision_accuracy"] = Gauge(
+            "agent_decision_accuracy_ratio",
+            "Current AI decision accuracy ratio",
+            registry=self.registry,
+        )
+
+        self.metrics["ai_goal_completion_rate"] = Gauge(
+            "agent_goal_completion_rate",
+            "Goal completion rate ratio",
+            registry=self.registry,
+        )
+
+        self.metrics["ai_learning_velocity"] = Gauge(
+            "agent_learning_velocity",
+            "Learning velocity ratio",
+            registry=self.registry,
+        )
+
+        self.metrics["ai_decision_latency"] = Histogram(
+            "agent_decision_latency_seconds",
+            "Observed decision latency in seconds",
+            buckets=(0.01, 0.05, 0.1, 0.25, 0.5, 1, 2, 5),
+            registry=self.registry,
+        )
+
+        # Cache effectiveness
+        self.metrics["cache_hit_ratio"] = Gauge(
+            "cache_hit_ratio",
+            "Rolling cache hit ratio (0-1)",
+            registry=self.registry,
+        )
+
+        # Alerting metrics
+        self.metrics["alert_events_total"] = Counter(
+            "agent_alert_events_total",
+            "Total alert events emitted",
+            ["severity", "source"],
+            registry=self.registry,
+        )
+
     def record_request(
         self,
         method: str,
@@ -331,8 +418,26 @@ class AdvancedMonitoringSystem:
             if duration is not None:
                 self.metrics["cache_duration_seconds"].labels(operation=operation).observe(duration)
 
+            if operation == "get":
+                if status == "hit":
+                    self.cache_state["hit"] += 1
+                elif status == "miss":
+                    self.cache_state["miss"] += 1
+                self._update_cache_hit_ratio()
+
         except Exception as e:
             logger.error(f"Error recording cache metrics: {e}")
+
+    def _update_cache_hit_ratio(self):
+        """Update cache hit ratio gauge."""
+        try:
+            total = self.cache_state["hit"] + self.cache_state["miss"]
+            if total == 0:
+                return
+            ratio = self.cache_state["hit"] / total
+            self.metrics["cache_hit_ratio"].set(ratio)
+        except Exception as e:
+            logger.error(f"Error updating cache hit ratio: {e}")
 
     def record_queue_job(
         self,
@@ -437,7 +542,7 @@ class AdvancedMonitoringSystem:
         """Update system resource metrics."""
         try:
             # CPU Usage
-            cpu_percent = psutil.cpu_percent(interval=1)
+            cpu_percent = psutil.cpu_percent(interval=None)
             self.metrics["cpu_usage_percent"].set(cpu_percent)
 
             # Memory Usage
@@ -450,14 +555,30 @@ class AdvancedMonitoringSystem:
             disk_percent = (disk.used / disk.total) * 100
             self.metrics["disk_usage_percent"].set(disk_percent)
 
-            # Network I/O
+            # Network I/O (incremental)
             network = psutil.net_io_counters()
-            self.metrics["network_bytes_sent"]._value._value = network.bytes_sent
-            self.metrics["network_bytes_recv"]._value._value = network.bytes_recv
+            if self._last_network_counters is None:
+                self._last_network_counters = network
+            else:
+                sent_diff = max(0, network.bytes_sent - self._last_network_counters.bytes_sent)
+                recv_diff = max(0, network.bytes_recv - self._last_network_counters.bytes_recv)
+                if sent_diff:
+                    self.metrics["network_bytes_sent"].inc(sent_diff)
+                if recv_diff:
+                    self.metrics["network_bytes_recv"].inc(recv_diff)
+                self._last_network_counters = network
 
-            # Process Count
+            # Process info
             process_count = len(psutil.pids())
             self.metrics["process_count"].set(process_count)
+            try:
+                process = psutil.Process()
+                if hasattr(process, "num_threads"):
+                    self.metrics["thread_count"].set(process.num_threads())
+                if hasattr(process, "num_fds"):
+                    self.metrics["open_file_descriptors"].set(process.num_fds())
+            except Exception:
+                pass
 
             # Load Average (Unix only)
             try:
@@ -469,8 +590,79 @@ class AdvancedMonitoringSystem:
                 # Windows doesn't have load average
                 pass
 
+            # Uptime
+            uptime = (datetime.now() - self.start_time).total_seconds()
+            self.metrics["uptime_seconds"].set(uptime)
+
         except Exception as e:
             logger.error(f"Error updating system metrics: {e}")
+
+    def update_health_metrics(self):
+        """Update health-related gauges from the health monitor."""
+        try:
+            from .system_health_dashboard import system_health_monitor
+        except Exception as e:
+            logger.debug(f"System health monitor unavailable: {e}")
+            return
+
+        try:
+            health = system_health_monitor.get_comprehensive_health_check()
+            overall = getattr(health, "overall_health_score", 0) * 100
+            self.metrics["system_health_score"].set(max(0, min(100, overall)))
+            component_scores = getattr(health, "component_health", {}) or {}
+            for component, score in component_scores.items():
+                self.metrics["component_health_score"].labels(component=component).set(
+                    max(0, min(100, score * 100))
+                )
+            active_issues = len(getattr(health, "active_issues", []) or [])
+            self.metrics["active_incidents"].set(active_issues)
+        except Exception as e:
+            logger.error(f"Error updating health metrics: {e}")
+
+    def update_ai_performance_metrics(self):
+        """Update AI performance gauges using the performance monitor."""
+        try:
+            from .ai_performance_monitor import ai_performance_monitor
+        except Exception as e:
+            logger.debug(f"AI performance monitor unavailable: {e}")
+            return
+
+        try:
+            performance = ai_performance_monitor.get_current_performance()
+            metrics = performance.get("current_metrics", {}) if isinstance(performance, dict) else {}
+
+            accuracy = metrics.get("decision_accuracy")
+            if accuracy is not None:
+                self.metrics["ai_decision_accuracy"].set(accuracy)
+
+            goal_rate = metrics.get("goal_completion_rate")
+            if goal_rate is not None:
+                self.metrics["ai_goal_completion_rate"].set(goal_rate)
+
+            learning_velocity = metrics.get("learning_velocity")
+            if learning_velocity is not None:
+                self.metrics["ai_learning_velocity"].set(learning_velocity)
+
+            decision_time_ms = metrics.get("decision_time_ms")
+            if decision_time_ms is not None:
+                self.metrics["ai_decision_latency"].observe(max(0.0, decision_time_ms / 1000.0))
+        except Exception as e:
+            logger.error(f"Error updating AI performance metrics: {e}")
+
+    def update_queue_metrics(self):
+        """Update queue depth metrics."""
+        try:
+            queue_depth = job_store.get_queue_depth()
+            self.metrics["agent_job_queue_depth"].set(queue_depth)
+        except Exception as e:
+            logger.error(f"Error updating queue metrics: {e}")
+
+    def record_alert_event(self, severity: str, source: str):
+        """Record alert events for Prometheus tracking."""
+        try:
+            self.metrics["alert_events_total"].labels(severity=severity, source=source).inc()
+        except Exception as e:
+            logger.error(f"Error recording alert event: {e}")
 
     def add_business_metric(
         self,
@@ -627,7 +819,26 @@ class AdvancedMonitoringSystem:
 
 
 # Global monitoring instance
-monitoring_system = AdvancedMonitoringSystem()
+monitoring_system = AdvancedMonitoringSystem(REGISTRY)
+
+
+def _register_performance_alert_callback():
+    try:
+        from .ai_performance_monitor import ai_performance_monitor
+    except Exception as e:
+        logger.debug(f"AI performance monitor import failed for alert callbacks: {e}")
+        return
+
+    def _handle_alert(alert):
+        severity = getattr(alert, "severity", "unknown")
+        severity_value = getattr(severity, "value", str(severity))
+        source = getattr(alert, "metric_name", "unknown")
+        monitoring_system.record_alert_event(severity_value, source)
+
+    ai_performance_monitor.add_alert_callback(_handle_alert)
+
+
+_register_performance_alert_callback()
 
 
 # Decorator for automatic metrics collection
@@ -668,8 +879,13 @@ def monitor_performance(
 async def initialize_monitoring():
     """Initialize the global monitoring system."""
     try:
+        if monitoring_system.is_initialized:
+            return True
         monitoring_system.is_initialized = True
         monitoring_system.update_system_metrics()
+        monitoring_system.update_health_metrics()
+        monitoring_system.update_ai_performance_metrics()
+        monitoring_system.update_queue_metrics()
 
         # Set up periodic system metrics updates
         asyncio.create_task(_periodic_metrics_update())
@@ -686,6 +902,9 @@ async def _periodic_metrics_update():
     while True:
         try:
             monitoring_system.update_system_metrics()
+            monitoring_system.update_health_metrics()
+            monitoring_system.update_ai_performance_metrics()
+            monitoring_system.update_queue_metrics()
             await asyncio.sleep(60)  # Update every minute
         except Exception as e:
             logger.error(f"Error in periodic metrics update: {e}")

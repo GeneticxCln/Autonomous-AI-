@@ -52,6 +52,7 @@ class DatabasePersistence:
                     # Update existing
                     existing.action_scores = selector_data.get("action_scores", {})
                     existing.action_counts = selector_data.get("action_counts", {})
+                    existing.action_history = selector_data.get("action_history", {})
                     existing.context_weights = selector_data.get("context_weights", {})
                     existing.goal_patterns = selector_data.get("goal_patterns", {})
                     existing.learning_rate = selector_data.get("learning_rate", 0.1)
@@ -62,6 +63,7 @@ class DatabasePersistence:
                         selector_type=selector_type,
                         action_scores=selector_data.get("action_scores", {}),
                         action_counts=selector_data.get("action_counts", {}),
+                        action_history=selector_data.get("action_history", {}),
                         context_weights=selector_data.get("context_weights", {}),
                         goal_patterns=selector_data.get("goal_patterns", {}),
                         learning_rate=selector_data.get("learning_rate", 0.1),
@@ -92,6 +94,7 @@ class DatabasePersistence:
                 return {
                     "action_scores": selector.action_scores or {},
                     "action_counts": selector.action_counts or {},
+                    "action_history": selector.action_history or {},
                     "context_weights": selector.context_weights or {},
                     "goal_patterns": selector.goal_patterns or {},
                     "learning_rate": selector.learning_rate,
@@ -185,7 +188,9 @@ class DatabasePersistence:
                 if existing:
                     # Update existing
                     existing.learned_strategies = learning_data.get("learned_strategies", {})
+                    existing.strategy_performance = learning_data.get("strategy_performance", {})
                     existing.strategy_scores = learning_data.get("strategy_scores", {})
+                    existing.pattern_library = learning_data.get("pattern_library", {})
                     existing.total_episodes = learning_data.get("total_episodes", 0)
                     existing.learning_history = learning_data.get("learning_history", [])
                     existing.best_strategies = learning_data.get("best_strategies", {})
@@ -194,7 +199,9 @@ class DatabasePersistence:
                     model = LearningSystemModel(
                         system_type=system_type,
                         learned_strategies=learning_data.get("learned_strategies", {}),
+                        strategy_performance=learning_data.get("strategy_performance", {}),
                         strategy_scores=learning_data.get("strategy_scores", {}),
+                        pattern_library=learning_data.get("pattern_library", {}),
                         total_episodes=learning_data.get("total_episodes", 0),
                         learning_history=learning_data.get("learning_history", []),
                         best_strategies=learning_data.get("best_strategies", {}),
@@ -223,7 +230,9 @@ class DatabasePersistence:
 
                 return {
                     "learned_strategies": learning.learned_strategies or {},
+                    "strategy_performance": learning.strategy_performance or {},
                     "strategy_scores": learning.strategy_scores or {},
+                    "pattern_library": learning.pattern_library or {},
                     "total_episodes": learning.total_episodes,
                     "learning_history": learning.learning_history or [],
                     "best_strategies": learning.best_strategies or {},

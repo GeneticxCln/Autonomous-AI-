@@ -277,6 +277,25 @@ class AgentExecutionResponse(BaseModel):
     started_at: datetime = Field(..., description="Execution start time")
 
 
+class AgentJobStatus(BaseModel):
+    """Background job information."""
+
+    id: str = Field(..., description="Job identifier")
+    agent_id: Optional[str] = Field(None, description="Associated agent identifier")
+    job_type: str = Field(..., description="Type of the asynchronous job")
+    status: str = Field(..., description="Job lifecycle status")
+    priority: str = Field(..., description="Queue priority")
+    queue_name: str = Field(..., description="Queue the job was published to")
+    requested_by: Optional[str] = Field(None, description="User who created the job")
+    tenant_id: Optional[str] = Field(None, description="Tenant or organization scope")
+    result: Dict[str, Any] = Field(default_factory=dict, description="Job result payload")
+    error: Optional[str] = Field(None, description="Error message if failed")
+    created_at: Optional[datetime] = Field(None, description="Creation timestamp")
+    started_at: Optional[datetime] = Field(None, description="Start timestamp")
+    completed_at: Optional[datetime] = Field(None, description="Completion timestamp")
+    last_heartbeat: Optional[datetime] = Field(None, description="Last heartbeat timestamp")
+
+
 # Goal Management Schemas
 class GoalCreate(BaseModel):
     """Goal creation request."""
@@ -430,3 +449,40 @@ class BulkOperationResponse(BaseModel):
     successful: int = Field(..., description="Successful operations")
     failed: int = Field(..., description="Failed operations")
     results: List[Dict[str, Any]] = Field(default_factory=list, description="Operation results")
+
+
+# Agent Capability Schemas (ADR-002)
+class AgentCapabilityDescriptor(BaseModel):
+    name: str = Field(..., description="Capability name")
+    description: Optional[str] = Field("", description="Capability description")
+    input_types: List[str] = Field(default_factory=list)
+    output_types: List[str] = Field(default_factory=list)
+    complexity_level: str = Field("medium", description="low|medium|high|expert")
+    estimated_duration: int = Field(300, description="Estimated seconds to complete")
+    quality_requirements: List[str] = Field(default_factory=list)
+
+
+class CapabilityRegisterRequest(BaseModel):
+    instance_id: str = Field(..., description="Unique runtime instance identifier")
+    agent_name: str = Field(..., description="Human-friendly agent/worker name")
+    role: str = Field(..., description="planner|executor|checker|coordinator|...")
+    capabilities: List[AgentCapabilityDescriptor] = Field(default_factory=list)
+    expertise_domains: List[str] = Field(default_factory=list)
+    capacity: int = Field(1, ge=1, le=100)
+    tool_scopes: List[str] = Field(default_factory=list)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class CapabilityRecord(BaseModel):
+    id: str
+    instance_id: str
+    agent_name: str
+    role: str
+    capabilities: List[AgentCapabilityDescriptor]
+    expertise_domains: List[str]
+    capacity: int
+    tool_scopes: List[str]
+    metadata: Dict[str, Any]
+    heartbeat_at: datetime
+    created_at: datetime
+    updated_at: Optional[datetime]

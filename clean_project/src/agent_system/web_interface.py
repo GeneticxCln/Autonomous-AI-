@@ -40,6 +40,7 @@ class GoalRequest(BaseModel):
 
 class AgentStatusResponse(BaseModel):
     current_goal: Optional[str]
+    active_goals: List[Dict[str, Any]] = Field(default_factory=list)
     goals: Dict[str, Any]
     memory_stats: Dict[str, Any]
     tool_stats: Dict[str, Any]
@@ -169,12 +170,14 @@ async def root():
 
             // Update current goal
             const currentGoalElement = document.getElementById('currentGoal');
-            if (data.current_goal) {
+            const primaryGoal = (data.active_goals && data.active_goals.length > 0) ? data.active_goals[0] : null;
+            if (primaryGoal) {
                 currentGoalElement.innerHTML = `
-                    <strong>Current Goal:</strong> ${data.current_goal}<br>
-                    <strong>Progress:</strong> ${(data.goals.goals[0]?.progress * 100 || 0).toFixed(1)}%
+                    <strong>Current Goal:</strong> ${primaryGoal.description}<br>
+                    <strong>Progress:</strong> ${(primaryGoal.progress * 100 || 0).toFixed(1)}%<br>
+                    <strong>Active Goals:</strong> ${data.active_goals.length}
                 `;
-                document.getElementById('progressFill').style.width = (data.goals.goals[0]?.progress * 100 || 0) + '%';
+                document.getElementById('progressFill').style.width = (primaryGoal.progress * 100 || 0) + '%';
             } else {
                 currentGoalElement.textContent = 'No active goal';
                 document.getElementById('progressFill').style.width = '0%';
@@ -402,7 +405,7 @@ async def run_agent_background(agent_instance: AutonomousAgent, max_cycles: int)
     """Run agent in background task."""
     try:
         logger.info(f"Starting agent background task with {max_cycles} cycles")
-        agent_instance.run(max_cycles=max_cycles)
+        await agent_instance.run_async(max_cycles=max_cycles)
         logger.info("Agent background task completed")
     except Exception as e:
         logger.error(f"Agent background task failed: {e}")

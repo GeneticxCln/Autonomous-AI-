@@ -10,7 +10,8 @@ import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Query, Request, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
+from typing import Optional
 from sqlalchemy import text
 
 # Import auth models to register them with SQLAlchemy
@@ -33,6 +34,9 @@ from .api_schemas import (
     # User Management
     UserCreate,
     UserInfo,
+    # Capabilities
+    AgentCapabilityDescriptor,
+    CapabilityRegisterRequest,
 )
 from .api_security import (
     create_api_response,
@@ -51,7 +55,13 @@ from .auth_models import (
     UserNotFoundError,
 )
 from .auth_service import auth_service
+from .config_simple import settings
+from .advanced_monitoring import monitoring_system
 from .database_models import ActionModel, AgentModel, GoalModel
+from .database_models import AgentCapabilityModel
+from .distributed_message_queue import MessagePriority, distributed_message_queue
+from .job_definitions import AGENT_JOB_QUEUE, AgentExecutionPayload, JobPriority, JobQueueMessage, JobType
+from .job_manager import job_store
 from .production_config import get_config
 
 logger = logging.getLogger(__name__)
@@ -66,11 +76,31 @@ api_router = APIRouter(
         "Goal Management",
         "API Tokens",
         "System",
+        "Capabilities",
     ],
 )
 
 # API envelope alias for backward compatibility
 APIEnvelope = APIResponse
+
+JOB_PRIORITY_TO_MESSAGE = {
+    JobPriority.CRITICAL: MessagePriority.CRITICAL,
+    JobPriority.HIGH: MessagePriority.HIGH,
+    JobPriority.NORMAL: MessagePriority.NORMAL,
+    JobPriority.LOW: MessagePriority.LOW,
+}
+
+
+async def _enqueue_job(job_id: str, *, job_type: JobType, priority: JobPriority = JobPriority.NORMAL):
+    """Publish a job message to the distributed queue."""
+    await distributed_message_queue.initialize()
+    message = JobQueueMessage(job_id=job_id, job_type=job_type, priority=priority)
+    await distributed_message_queue.publish(
+        AGENT_JOB_QUEUE,
+        message.model_dump(),
+        priority=JOB_PRIORITY_TO_MESSAGE.get(priority, MessagePriority.NORMAL),
+        headers={"job_type": job_type.value},
+    )
 
 
 # Authentication Endpoints
@@ -690,38 +720,221 @@ async def execute_agent(
                     status_code=status.HTTP_404_NOT_FOUND,
                 )
 
-            # Record action
             action = ActionModel(
                 action_id=str(uuid.uuid4()),
                 agent_id=agent_id,
                 action_type="manual_execution",
-                description=f"Agent executed by {security_context.user.username}",
+                description=f"Agent execution requested by {security_context.user.username}",
                 user_id=security_context.user.id,
+                status="queued",
             )
             session.add(action)
             session.commit()
 
-            # Update agent status
-            agent.status = "executing"
-            agent.last_execution = datetime.now(UTC)
-            session.commit()
+            payload = AgentExecutionPayload(
+                agent_id=agent_id,
+                max_cycles=getattr(settings, "MAX_CYCLES", 100),
+                max_concurrent_goals=getattr(settings, "MAX_CONCURRENT_GOALS", 1),
+                requested_by=security_context.user.username,
+                tenant_id=getattr(security_context.user, "tenant_id", None),
+                metadata={"action_id": action.id},
+            )
 
-            logger.info(f"Agent {agent.name} executed by {security_context.user.username}")
+            job_record = job_store.create_job(
+                job_type=JobType.AGENT_EXECUTION,
+                priority=JobPriority.HIGH,
+                queue_name=AGENT_JOB_QUEUE,
+                payload=payload.model_dump(),
+                requested_by=security_context.user.username,
+                tenant_id=getattr(security_context.user, "tenant_id", None),
+                agent_id=agent_id,
+            )
+
+            try:
+                await _enqueue_job(
+                    job_record["id"],
+                    job_type=JobType.AGENT_EXECUTION,
+                    priority=JobPriority.HIGH,
+                )
+            except Exception as queue_error:
+                logger.error("Failed to enqueue job %s: %s", job_record["id"], queue_error)
+                job_store.mark_job_failed(job_record["id"], error=str(queue_error))
+                return create_error_response(
+                    message="Failed to enqueue agent job",
+                    error_type="AGENT_JOB_ENQUEUE_FAILED",
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
+
+            logger.info(
+                "Queued agent execution job %s for %s by %s",
+                job_record["id"],
+                agent.name,
+                security_context.user.username,
+            )
 
             return create_api_response(
                 data={
+                    "job_id": job_record["id"],
                     "agent_id": agent_id,
-                    "status": "executing",
-                    "action_id": action.id,
-                    "executed_at": datetime.now(UTC).isoformat(),
+                    "status": job_record["status"],
+                    "queue": job_record["queue_name"],
+                    "priority": job_record["priority"],
                 },
-                message="Agent execution started",
+                message="Agent execution queued",
+                status_code=status.HTTP_202_ACCEPTED,
             )
 
     except Exception as e:
         logger.error(f"Agent execution failed for {agent_id}: {str(e)}")
         return create_error_response(
             message="Failed to execute agent", error_type="AGENT_EXECUTION_FAILED"
+        )
+
+
+# Job Management Endpoints
+@api_router.get("/jobs/{job_id}", response_model=APIEnvelope)
+async def get_job_status(
+    job_id: str,
+    security_context: SecurityContext = Depends(require_permission("agent", "read")),
+):
+    """Retrieve background job status."""
+    job = job_store.get_job(job_id)
+    if not job:
+        return create_error_response(
+            message="Job not found",
+            error_type="JOB_NOT_FOUND",
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
+    return create_api_response(data=job, message="Job status retrieved")
+
+
+@api_router.get("/agents/{agent_id}/jobs", response_model=APIEnvelope)
+async def list_agent_jobs(
+    agent_id: str,
+    limit: int = Query(20, ge=1, le=100),
+    security_context: SecurityContext = Depends(require_permission("agent", "read")),
+):
+    """List recent jobs for an agent."""
+    jobs = job_store.list_jobs(agent_id=agent_id, limit=limit)
+    return create_api_response(data=jobs, message="Agent jobs retrieved")
+
+
+# Job status streaming (SSE)
+@api_router.get("/jobs/{job_id}/stream")
+async def stream_job_status(
+    job_id: str,
+    security_context: SecurityContext = Depends(require_permission("agent", "read")),
+):
+    """Stream job status updates via Server-Sent Events."""
+
+    async def event_gen():
+        import asyncio
+        import json
+
+        deadline = asyncio.get_event_loop().time() + 300  # 5 minutes
+        last_payload = None
+        while asyncio.get_event_loop().time() < deadline:
+            job = job_store.get_job(job_id)
+            if job is None:
+                yield "event: error\n" + f"data: {json.dumps({'error': 'JOB_NOT_FOUND'})}\n\n"
+                break
+            payload = {
+                "id": job.get("id"),
+                "status": job.get("status"),
+                "result": job.get("result", {}),
+                "error": job.get("error"),
+                "started_at": job.get("started_at"),
+                "completed_at": job.get("completed_at"),
+            }
+            if payload != last_payload:
+                yield "data: " + json.dumps(payload) + "\n\n"
+                last_payload = payload
+            if job.get("status") in {"succeeded", "failed"}:
+                break
+            await asyncio.sleep(1)
+
+    return StreamingResponse(event_gen(), media_type="text/event-stream")
+
+
+# Capability discovery (ADR-002)
+@api_router.get("/agents/capabilities", response_model=APIEnvelope)
+async def list_capabilities(
+    role: Optional[str] = Query(None),
+    security_context: SecurityContext = Depends(require_permission("agent", "read")),
+):
+    try:
+        with auth_service.db.get_session() as session:
+            query = session.query(AgentCapabilityModel)
+            if role:
+                query = query.filter(AgentCapabilityModel.role == role)
+            records = query.order_by(AgentCapabilityModel.updated_at.desc()).limit(200).all()
+            items = []
+            for r in records:
+                items.append(
+                    {
+                        "id": r.id,
+                        "instance_id": r.instance_id,
+                        "agent_name": r.agent_name,
+                        "role": r.role,
+                        "capabilities": r.capabilities or [],
+                        "expertise_domains": r.expertise_domains or [],
+                        "capacity": r.capacity,
+                        "tool_scopes": r.tool_scopes or [],
+                        "metadata": r.capability_metadata or {},
+                        "heartbeat_at": r.heartbeat_at.isoformat() if r.heartbeat_at else None,
+                        "created_at": r.created_at.isoformat() if r.created_at else None,
+                        "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+                    }
+                )
+        return create_api_response(data=items, message="Capabilities retrieved")
+    except Exception as e:
+        logger.error(f"Failed to list capabilities: {e}")
+        return create_error_response(
+            message="Failed to retrieve capabilities", error_type="CAPABILITY_LIST_FAILED"
+        )
+
+
+@api_router.post("/agents/capabilities/register", response_model=APIEnvelope)
+async def register_capability(
+    spec: CapabilityRegisterRequest,
+    security_context: SecurityContext = Depends(require_permission("agent", "write")),
+):
+    try:
+        with auth_service.db.get_session() as session:
+            existing = (
+                session.query(AgentCapabilityModel)
+                .filter(AgentCapabilityModel.instance_id == spec.instance_id)
+                .first()
+            )
+            if existing:
+                existing.agent_name = spec.agent_name
+                existing.role = spec.role
+                existing.capabilities = [c.model_dump() for c in spec.capabilities]
+                existing.expertise_domains = spec.expertise_domains
+                existing.capacity = spec.capacity
+                existing.tool_scopes = spec.tool_scopes
+                existing.capability_metadata = spec.metadata
+                existing.heartbeat_at = datetime.now(UTC)
+                session.add(existing)
+            else:
+                rec = AgentCapabilityModel(
+                    instance_id=spec.instance_id,
+                    agent_name=spec.agent_name,
+                    role=spec.role,
+                    capabilities=[c.model_dump() for c in spec.capabilities],
+                    expertise_domains=spec.expertise_domains,
+                    capacity=spec.capacity,
+                    tool_scopes=spec.tool_scopes,
+                    capability_metadata=spec.metadata,
+                )
+                session.add(rec)
+            session.commit()
+        return create_api_response(message="Capability registered", data=True)
+    except Exception as e:
+        logger.error(f"Capability registration failed: {e}")
+        return create_error_response(
+            message="Capability registration failed", error_type="CAPABILITY_REGISTER_FAILED"
         )
 
 
@@ -878,3 +1091,42 @@ async def system_info(
         return create_api_response(
             data=system_data, message="System information degraded due to backend error"
         )
+
+
+@api_router.post(
+    "/system/alerts/webhook",
+    status_code=status.HTTP_202_ACCEPTED,
+    include_in_schema=False,
+)
+async def alertmanager_webhook(request: Request):
+    """Receive Alertmanager notifications and mirror them into local metrics/logs."""
+    expected_token = getattr(settings, "ALERTMANAGER_WEBHOOK_TOKEN", None)
+    provided_token = request.headers.get("X-Alertmanager-Token")
+
+    if expected_token and provided_token != expected_token:
+        return JSONResponse(
+            status_code=status.HTTP_403_FORBIDDEN,
+            content={"success": False, "error": "INVALID_WEBHOOK_TOKEN"},
+        )
+
+    try:
+        payload = await request.json()
+    except Exception as exc:
+        logger.error(f"Invalid Alertmanager payload: {exc}")
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={"success": False, "error": "INVALID_PAYLOAD"},
+        )
+
+    alerts = payload.get("alerts", []) if isinstance(payload, dict) else []
+    processed = 0
+
+    for alert in alerts:
+        labels = alert.get("labels", {}) if isinstance(alert, dict) else {}
+        severity = labels.get("severity", "info")
+        source = labels.get("alertname", "unknown")
+        monitoring_system.record_alert_event(severity, source)
+        processed += 1
+
+    logger.info("Alertmanager webhook received %s alerts", processed)
+    return {"success": True, "alerts_processed": processed}

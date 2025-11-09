@@ -395,7 +395,7 @@ async def run_chat(provider: str = "local", stream: bool = True):
                             expected_outcome="tool_executed",
                             cost=0.1,
                         )
-                        observation = state.tool_registry.execute_action(action)
+                        observation = await state.tool_registry.execute_action_async(action)
                         print(
                             json.dumps(
                                 {
@@ -417,7 +417,7 @@ async def run_chat(provider: str = "local", stream: bool = True):
                         expected_outcome="tool_executed",
                         cost=0.1,
                     )
-                    observation = state.tool_registry.execute_action(action)
+                    observation = await state.tool_registry.execute_action_async(action)
                     print(
                         json.dumps(
                             {"status": observation.status.value, "result": observation.result},
@@ -475,7 +475,7 @@ async def run_chat(provider: str = "local", stream: bool = True):
                             expected_outcome="tool_executed",
                             cost=0.1,
                         )
-                        observation = state.tool_registry.execute_action(action)
+                        observation = await state.tool_registry.execute_action_async(action)
                         print(
                             json.dumps(
                                 {
@@ -497,7 +497,7 @@ async def run_chat(provider: str = "local", stream: bool = True):
                         expected_outcome="tool_executed",
                         cost=0.1,
                     )
-                    observation = state.tool_registry.execute_action(action)
+                    observation = await state.tool_registry.execute_action_async(action)
                     print(
                         json.dumps(
                             {"status": observation.status.value, "result": observation.result},
@@ -538,7 +538,7 @@ async def run_chat(provider: str = "local", stream: bool = True):
                         expected_outcome="tool_executed",
                         cost=0.1,
                     )
-                    observation = state.tool_registry.execute_action(action)
+                    observation = await state.tool_registry.execute_action_async(action)
                     print(
                         json.dumps(
                             {
@@ -564,7 +564,7 @@ async def run_chat(provider: str = "local", stream: bool = True):
                     expected_outcome="ok",
                     cost=0.1,
                 )
-                obs = state.tool_registry.execute_action(action)
+                obs = await state.tool_registry.execute_action_async(action)
                 print(json.dumps({"status": obs.status.value, "result": obs.result}, indent=2))
                 continue
             if cmd == "sh" and rest:
@@ -581,7 +581,7 @@ async def run_chat(provider: str = "local", stream: bool = True):
                     expected_outcome="ok",
                     cost=0.1,
                 )
-                obs = state.tool_registry.execute_action(action)
+                obs = await state.tool_registry.execute_action_async(action)
                 print(json.dumps({"status": obs.status.value, "result": obs.result}, indent=2))
                 continue
             if cmd == "ls":
@@ -594,7 +594,7 @@ async def run_chat(provider: str = "local", stream: bool = True):
                     expected_outcome="ok",
                     cost=0.02,
                 )
-                obs = state.tool_registry.execute_action(action)
+                obs = await state.tool_registry.execute_action_async(action)
                 print(json.dumps({"status": obs.status.value, "result": obs.result}, indent=2))
                 continue
             if cmd == "pwd":
@@ -606,7 +606,7 @@ async def run_chat(provider: str = "local", stream: bool = True):
                     expected_outcome="ok",
                     cost=0.01,
                 )
-                obs = state.tool_registry.execute_action(action)
+                obs = await state.tool_registry.execute_action_async(action)
                 print(json.dumps({"status": obs.status.value, "result": obs.result}, indent=2))
                 continue
             if cmd == "cd" and rest:
@@ -630,7 +630,7 @@ async def run_chat(provider: str = "local", stream: bool = True):
                     expected_outcome="ok",
                     cost=0.05,
                 )
-                obs = state.tool_registry.execute_action(action)
+                obs = await state.tool_registry.execute_action_async(action)
                 print(json.dumps({"status": obs.status.value, "result": obs.result}, indent=2))
                 continue
             if cmd == "write" and len(rest) >= 2:
@@ -644,7 +644,7 @@ async def run_chat(provider: str = "local", stream: bool = True):
                     expected_outcome="ok",
                     cost=0.05,
                 )
-                obs = state.tool_registry.execute_action(action)
+                obs = await state.tool_registry.execute_action_async(action)
                 print(json.dumps({"status": obs.status.value, "result": obs.result}, indent=2))
                 continue
             if cmd == "searchmem" and rest:
@@ -743,7 +743,7 @@ async def run_chat(provider: str = "local", stream: bool = True):
                     expected_outcome="git_ok",
                     cost=0.05,
                 )
-                obs = state.tool_registry.execute_action(action)
+                obs = await state.tool_registry.execute_action_async(action)
                 print(json.dumps({"status": obs.status.value, "result": obs.result}, indent=2))
                 continue
             if cmd == "tests":
@@ -758,7 +758,7 @@ async def run_chat(provider: str = "local", stream: bool = True):
                     expected_outcome="tests_ok",
                     cost=0.1,
                 )
-                obs = state.tool_registry.execute_action(action)
+                obs = await state.tool_registry.execute_action_async(action)
                 print(json.dumps({"status": obs.status.value, "result": obs.result}, indent=2))
                 continue
             if cmd == "format":
@@ -771,7 +771,7 @@ async def run_chat(provider: str = "local", stream: bool = True):
                     expected_outcome="ok",
                     cost=0.1,
                 )
-                obs = state.tool_registry.execute_action(action)
+                obs = await state.tool_registry.execute_action_async(action)
                 print(json.dumps({"status": obs.status.value, "result": obs.result}, indent=2))
                 continue
             if cmd == "lint":
@@ -784,7 +784,7 @@ async def run_chat(provider: str = "local", stream: bool = True):
                     expected_outcome="ok",
                     cost=0.1,
                 )
-                obs = state.tool_registry.execute_action(action)
+                obs = await state.tool_registry.execute_action_async(action)
                 print(json.dumps({"status": obs.status.value, "result": obs.result}, indent=2))
                 continue
             if cmd == "lintfix":
@@ -797,7 +797,7 @@ async def run_chat(provider: str = "local", stream: bool = True):
                     expected_outcome="ok",
                     cost=0.1,
                 )
-                obs = state.tool_registry.execute_action(action)
+                obs = await state.tool_registry.execute_action_async(action)
                 print(json.dumps({"status": obs.status.value, "result": obs.result}, indent=2))
                 continue
             if cmd == "undo":
@@ -809,7 +809,7 @@ async def run_chat(provider: str = "local", stream: bool = True):
                     expected_outcome="restored",
                     cost=0.05,
                 )
-                obs = state.tool_registry.execute_action(action)
+                obs = await state.tool_registry.execute_action_async(action)
                 print(json.dumps({"status": obs.status.value, "result": obs.result}, indent=2))
                 continue
             if cmd == "backups":
@@ -903,7 +903,7 @@ async def run_chat(provider: str = "local", stream: bool = True):
                         expected_outcome="tool_executed",
                         cost=0.1,
                     )
-                    observation = state.tool_registry.execute_action(action)
+                    observation = await state.tool_registry.execute_action_async(action)
                     print(
                         json.dumps(
                             {
@@ -985,7 +985,7 @@ async def run_chat(provider: str = "local", stream: bool = True):
                         expected_outcome="tool_executed",
                         cost=0.1,
                     )
-                    observation = state.tool_registry.execute_action(action)
+                    observation = await state.tool_registry.execute_action_async(action)
                     res = {
                         "type": "tool_result",
                         "tool": tool_name,
@@ -1014,7 +1014,7 @@ async def run_chat(provider: str = "local", stream: bool = True):
                     expected_outcome="tool_executed",
                     cost=0.1,
                 )
-                observation = state.tool_registry.execute_action(action)
+                observation = await state.tool_registry.execute_action_async(action)
                 # Append tool result to messages and loop
                 tool_result = {
                     "type": "tool_result",

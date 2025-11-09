@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from .ai_debugging import ai_debugger
@@ -31,6 +33,16 @@ from .tools import (
 logger = logging.getLogger(__name__)
 
 
+@dataclass
+class GoalExecutionContext:
+    """Execution state tracked per-goal for concurrent processing."""
+
+    goal: Goal
+    plan: Optional[Plan] = None
+    completed_actions: List[str] = field(default_factory=list)
+    initialized: bool = False
+
+
 class AutonomousAgent:
     """Main agent that integrates all subsystems."""
 
@@ -46,9 +58,8 @@ class AutonomousAgent:
         self.ai_debugger = ai_debugger  # Enable AI debugging and explainability
         self.performance_monitor = ai_performance_monitor  # Enable real-time performance monitoring
 
-        self.current_goal: Optional[Goal] = None
-        self.current_plan: Optional[Plan] = None
-        self.completed_actions: List[str] = []
+        self.goal_contexts: Dict[str, GoalExecutionContext] = {}
+        self.max_concurrent_goals = max(1, getattr(settings, "MAX_CONCURRENT_GOALS", 1))
         self.is_running = False
 
         # Enable real tools if APIs are configured
@@ -104,107 +115,144 @@ class AutonomousAgent:
         """Add a new goal for the agent."""
         return self.goal_manager.add_goal(description, priority, constraints=constraints)
 
-    def run(self, max_cycles: int = 100):
-        """Run the agent for a maximum number of cycles."""
+    def run(self, max_cycles: int = 100, max_concurrent_goals: Optional[int] = None):
+        """Run the agent synchronously."""
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.run(
+                self.run_async(max_cycles=max_cycles, max_concurrent_goals=max_concurrent_goals)
+            )
+        raise RuntimeError("run() cannot be called from an async context; use run_async instead.")
+
+    async def run_async(
+        self, max_cycles: int = 100, max_concurrent_goals: Optional[int] = None
+    ):
+        """Run the agent for a maximum number of cycles asynchronously."""
+        concurrency_limit = max(1, max_concurrent_goals or self.max_concurrent_goals)
         self.is_running = True
         cycle = 0
 
-        logger.info("Starting agent (max %s cycles)", max_cycles)
+        logger.info(
+            "Starting agent (max %s cycles, concurrency=%s)", max_cycles, concurrency_limit
+        )
 
-        while self.is_running and cycle < max_cycles:
-            cycle += 1
-            worked = self.run_cycle()
+        try:
+            while self.is_running and cycle < max_cycles:
+                cycle += 1
+                worked = await self.run_cycle_async(concurrency_limit=concurrency_limit)
 
-            if not worked:
-                logger.info("Agent idle, no more work")
-                break
-
-        self.is_running = False
-        logger.info("Agent stopped after %s cycles", cycle)
+                if not worked and not self.goal_contexts:
+                    logger.info("Agent idle, no more work")
+                    break
+        finally:
+            self.is_running = False
+            logger.info("Agent stopped after %s cycles", cycle)
 
     def stop(self):
         """Stop the agent."""
         self.is_running = False
+        self.goal_contexts.clear()
         # End cross-session learning session
         self.cross_session_learning.end_current_session()
 
-    def run_cycle(self) -> bool:
-        """Run one cycle of the agent loop."""
-        if not self.current_goal:
-            self.current_goal = self.goal_manager.get_next_goal()
+    def run_cycle(self, concurrency_limit: Optional[int] = None) -> bool:
+        """Run one cycle synchronously."""
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.run(self.run_cycle_async(concurrency_limit=concurrency_limit))
+        raise RuntimeError(
+            "run_cycle() cannot be called from an async context; use run_cycle_async instead."
+        )
 
-            if not self.current_goal:
-                logger.info("No pending goals")
-                return False
+    async def run_cycle_async(self, concurrency_limit: Optional[int] = None) -> bool:
+        """Run one cycle of the agent loop asynchronously."""
+        limit = max(1, concurrency_limit or self.max_concurrent_goals)
+        self._fill_goal_contexts(limit)
 
-            logger.info("Starting goal: %s", self.current_goal.description)
-
-            # Check for cross-session learning patterns
-            best_sequence = self.cross_session_learning.get_best_action_sequence(
-                self.current_goal.description
-            )
-            if best_sequence:
-                logger.info("Found cross-session pattern: %s", " -> ".join(best_sequence))
-
-            # Log goal analysis decision and record performance metrics
-            start_time = time.time() * 1000
-            if hasattr(self.planner, "reasoning_engine") and self.planner.reasoning_engine:
-                if hasattr(self.planner.reasoning_engine, "enhanced_analyze_goal"):
-                    goal_analysis = self.planner.reasoning_engine.enhanced_analyze_goal(
-                        self.current_goal.description
-                    )
-                else:
-                    goal_analysis = self.planner.reasoning_engine.analyze_goal(
-                        self.current_goal.description
-                    )
-                execution_time = time.time() * 1000 - start_time
-                self.ai_debugger.log_goal_analysis(
-                    self.current_goal.description, goal_analysis, execution_time
-                )
-
-                # Record performance metrics
-                confidence = goal_analysis.get("confidence", 0.0)
-                self.performance_monitor.record_decision_metrics(
-                    "goal_analysis", execution_time, confidence, True
-                )
-
-            context = self.memory_system.get_working_memory_context()
-            self.current_plan = self.planner.create_plan(
-                self.current_goal, self.tool_registry.get_available_tools(), context
-            )
-
-            suggestions = self.learning_system.suggest_improvements(
-                self.current_goal, self.current_plan
-            )
-            if suggestions:
-                logger.info("Learning suggestions: %s", suggestions)
-
-            self.completed_actions = []
-
-        if not self.current_plan:
+        if not self.goal_contexts:
+            logger.info("No pending goals")
             return False
 
+        contexts = list(self.goal_contexts.values())
+        results = await asyncio.gather(*(self._process_goal_step(ctx) for ctx in contexts))
+        return any(results)
+
+    def _fill_goal_contexts(self, limit: int):
+        """Populate active goal contexts up to the concurrency limit."""
+        while len(self.goal_contexts) < limit:
+            goal = self.goal_manager.get_next_goal()
+            if not goal:
+                break
+            self.goal_contexts[goal.id] = GoalExecutionContext(goal=goal)
+
+    def _initialize_goal_context(self, context: GoalExecutionContext):
+        """Perform one-time setup for a goal context."""
+        if context.initialized:
+            return
+
+        goal = context.goal
+        logger.info("Starting goal: %s", goal.description)
+
+        best_sequence = self.cross_session_learning.get_best_action_sequence(goal.description)
+        if best_sequence:
+            logger.info("Found cross-session pattern for %s: %s", goal.id, " -> ".join(best_sequence))
+
+        start_time = time.time() * 1000
+        if hasattr(self.planner, "reasoning_engine") and self.planner.reasoning_engine:
+            reasoning_engine = self.planner.reasoning_engine
+            if hasattr(reasoning_engine, "enhanced_analyze_goal"):
+                goal_analysis = reasoning_engine.enhanced_analyze_goal(goal.description)
+            else:
+                goal_analysis = reasoning_engine.analyze_goal(goal.description)
+            execution_time = time.time() * 1000 - start_time
+            self.ai_debugger.log_goal_analysis(goal.description, goal_analysis, execution_time)
+
+            confidence = goal_analysis.get("confidence", 0.0)
+            self.performance_monitor.record_decision_metrics(
+                "goal_analysis", execution_time, confidence, True
+            )
+
+        memory_context = self.memory_system.get_working_memory_context()
+        context.plan = self.planner.create_plan(
+            goal, self.tool_registry.get_available_tools(), memory_context
+        )
+
+        if context.plan:
+            suggestions = self.learning_system.suggest_improvements(goal, context.plan)
+            if suggestions:
+                logger.info("Learning suggestions for %s: %s", goal.id, suggestions)
+
+        context.completed_actions = []
+        context.initialized = True
+
+    async def _process_goal_step(self, context: GoalExecutionContext) -> bool:
+        """Execute the next step for a goal context."""
+        self._initialize_goal_context(context)
+
+        if not context.plan or not context.plan.actions:
+            logger.warning("No plan available for goal %s", context.goal.id)
+            self._finalize_goal(context, success=False)
+            return True
+
         available_actions = [
-            action
-            for action in self.current_plan.actions
-            if action.id not in self.completed_actions
+            action for action in context.plan.actions if action.id not in context.completed_actions
         ]
 
         if not available_actions:
-            self._finalize_goal(success=True)
+            self._finalize_goal(context, success=True)
             return True
 
-        # Log action selection decision
         start_time = time.time() * 1000
         selected_action = self.action_selector.select_action(
             available_actions,
-            self.current_goal,
+            context.goal,
             self.memory_system.get_working_memory_context(),
-            self.completed_actions,
+            context.completed_actions,
         )
         execution_time = time.time() * 1000 - start_time
 
-        # Log the action selection decision with debugging info
         if hasattr(selected_action, "__dict__"):
             action_dict = {
                 "name": selected_action.name,
@@ -216,7 +264,7 @@ class AutonomousAgent:
             action_dict = selected_action if selected_action else None
 
         selection_criteria = {
-            "final_score": 0.7,  # Placeholder - in real implementation, get from action selector
+            "final_score": 0.7,
             "context_match": 0.8,
             "learning_bonus": 0.1,
         }
@@ -230,27 +278,24 @@ class AutonomousAgent:
             execution_time,
         )
 
-        # Record action selection performance metrics
         confidence = selection_criteria.get("final_score", 0.0)
         self.performance_monitor.record_decision_metrics(
             "action_selection", execution_time, confidence, selected_action is not None
         )
 
         if not selected_action:
-            logger.warning("No suitable action found")
-            self._finalize_goal(success=False)
+            logger.warning("No suitable action found for goal %s", context.goal.id)
+            self._finalize_goal(context, success=False)
             return True
 
-        observation = self.tool_registry.execute_action(selected_action)
+        observation = await self.tool_registry.execute_action_async(selected_action)
 
-        # Log observation analysis decision
         start_time = time.time() * 1000
         analysis = self.observation_analyzer.analyze_observation(
-            observation, selected_action.expected_outcome, self.current_goal
+            observation, selected_action.expected_outcome, context.goal
         )
         execution_time = time.time() * 1000 - start_time
 
-        # Log the observation analysis decision
         self.ai_debugger.log_observation_analysis(
             {
                 "status": observation.status.value,
@@ -262,7 +307,6 @@ class AutonomousAgent:
             execution_time,
         )
 
-        # Record observation analysis performance metrics
         analysis_confidence = analysis.get("confidence", 0.0)
         self.performance_monitor.record_decision_metrics(
             "observation_analysis",
@@ -271,29 +315,32 @@ class AutonomousAgent:
             observation.status == ActionStatus.SUCCESS,
         )
 
-        logger.info("Action result: %s - %s", observation.status.value, analysis)
+        logger.info(
+            "Action result for %s: %s - %s",
+            context.goal.id,
+            observation.status.value,
+            analysis,
+        )
 
         success_score = 1.0 if observation.status == ActionStatus.SUCCESS else 0.0
         self.memory_system.store_memory(
-            self.current_goal.id,
+            context.goal.id,
             selected_action,
             observation,
-            {"goal_description": self.current_goal.description},
+            {"goal_description": context.goal.description},
             success_score,
         )
 
         self.action_selector.update_action_score(selected_action, success_score)
 
         progress_increment = analysis.get("goal_progress", 0.0)
-        new_progress = min(self.current_goal.progress + progress_increment, 1.0)
-        self.goal_manager.update_goal_status(
-            self.current_goal.id, GoalStatus.IN_PROGRESS, new_progress
-        )
+        new_progress = min(context.goal.progress + progress_increment, 1.0)
+        self.goal_manager.update_goal_status(context.goal.id, GoalStatus.IN_PROGRESS, new_progress)
 
         if analysis.get("replanning_needed", False):
-            logger.warning("Replanning needed due to unexpected outcomes")
+            logger.warning("Replanning needed for goal %s", context.goal.id)
 
-        self.completed_actions.append(selected_action.id)
+        context.completed_actions.append(selected_action.id)
 
         recent_observations = [
             memory.observation for memory in self.memory_system.working_memory[-5:]
@@ -304,32 +351,27 @@ class AutonomousAgent:
 
         return True
 
-    def _finalize_goal(self, success: bool):
-        """Finalize current goal."""
-        if not self.current_goal or not self.current_plan:
-            return
+    def _finalize_goal(self, context: GoalExecutionContext, success: bool):
+        """Finalize a goal and persist learning signals."""
+        goal = context.goal
 
         final_status = GoalStatus.COMPLETED if success else GoalStatus.FAILED
         self.goal_manager.update_goal_status(
-            self.current_goal.id,
+            goal.id,
             final_status,
-            1.0 if success else self.current_goal.progress,
+            1.0 if success else goal.progress,
         )
 
-        actions_taken = [
-            action for action in self.current_plan.actions if action.id in self.completed_actions
-        ]
+        plan_actions = context.plan.actions if context.plan else []
+        actions_taken = [action for action in plan_actions if action.id in context.completed_actions]
         observations = [
             memory.observation
             for memory in self.memory_system.working_memory
-            if memory.goal_id == self.current_goal.id
+            if memory.goal_id == goal.id
         ]
 
-        self.learning_system.learn_from_episode(
-            self.current_goal, actions_taken, observations, success
-        )
+        self.learning_system.learn_from_episode(goal, actions_taken, observations, success)
 
-        # Learn from this goal for cross-session knowledge
         action_dicts = [
             {
                 "id": action.id,
@@ -341,33 +383,40 @@ class AutonomousAgent:
         ]
         success_score = 1.0 if success else 0.0
         self.cross_session_learning.learn_from_goal(
-            self.current_goal.description, action_dicts, success_score
+            goal.description, action_dicts, success_score
         )
 
-        # Record goal completion metrics
         self.performance_monitor.record_goal_metrics(success, 1, 1 if success else 0)
 
-        # Record learning metrics
         knowledge_stats = self.cross_session_learning.get_knowledge_statistics()
         self.performance_monitor.record_learning_metrics(
             patterns_learned=knowledge_stats.get("total_patterns", 0),
             knowledge_base_size=knowledge_stats.get("high_confidence_patterns", 0),
-            confidence_scores=[success_score],  # Simplified for now
+            confidence_scores=[success_score],
         )
 
-        logger.info("Goal %s: %s", final_status.value, self.current_goal.description)
+        logger.info("Goal %s: %s", final_status.value, goal.description)
 
-        # Persist state after finishing a goal
         save_all(self)
 
-        self.current_goal = None
-        self.current_plan = None
-        self.completed_actions = []
+        self.goal_contexts.pop(goal.id, None)
 
     def get_status(self) -> Dict[str, Any]:
         """Get comprehensive agent status."""
+        active_goals = [
+            {
+                "id": ctx.goal.id,
+                "description": ctx.goal.description,
+                "status": ctx.goal.status.value,
+                "progress": ctx.goal.progress,
+                "priority": ctx.goal.priority,
+            }
+            for ctx in self.goal_contexts.values()
+        ]
+
         return {
-            "current_goal": self.current_goal.description if self.current_goal else None,
+            "current_goal": active_goals[0]["description"] if active_goals else None,
+            "active_goals": active_goals,
             "goals": self.goal_manager.get_goal_hierarchy(),
             "memory_stats": self.memory_system.get_memory_stats(),
             "tool_stats": self.tool_registry.get_tool_stats(),

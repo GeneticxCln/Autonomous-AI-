@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
+import os
+from typing import Dict
 
 from sqlalchemy import (
     JSON,
@@ -40,6 +42,7 @@ class ActionSelectorModel(Base):
     selector_type = Column(String(50), nullable=False, default="intelligent")
     action_scores = Column(JSON, default=dict)
     action_counts = Column(JSON, default=dict)
+    action_history = Column(JSON, default=dict)  # For IntelligentActionSelector
     context_weights = Column(JSON, default=dict)
     goal_patterns = Column(JSON, default=dict)
     learning_rate = Column(Float, default=0.1)
@@ -89,7 +92,9 @@ class LearningSystemModel(Base):
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     system_type = Column(String(50), nullable=False, default="default")
     learned_strategies = Column(JSON, default=dict)
+    strategy_performance = Column(JSON, default=dict)  # For LearningSystem
     strategy_scores = Column(JSON, default=dict)
+    pattern_library = Column(JSON, default=dict)  # For LearningSystem
     total_episodes = Column(Integer, default=0)
     learning_history = Column(JSON, default=list)
     best_strategies = Column(JSON, default=dict)
@@ -194,6 +199,37 @@ class ActionModel(Base):
         Index("idx_action_created", "created_at"),
         Index("idx_action_user_id", "user_id"),
         UniqueConstraint("action_id", name="uq_action_id"),
+    )
+
+
+class AgentJobModel(Base):
+    """Database model tracking asynchronous agent jobs."""
+
+    __tablename__ = "agent_jobs"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    agent_id = Column(String(36), index=True, nullable=True)
+    job_type = Column(String(50), nullable=False)
+    status = Column(String(20), default="queued")
+    priority = Column(String(20), default="normal")
+    queue_name = Column(String(50), default="normal")
+    parameters = Column(JSON, default=dict)
+    result = Column(JSON, default=dict)
+    error = Column(Text, nullable=True)
+    requested_by = Column(String(100), nullable=True)
+    tenant_id = Column(String(100), nullable=True)
+    retries = Column(Integer, default=0)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), index=True)
+    started_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+    last_heartbeat = Column(DateTime, nullable=True)
+
+    __table_args__ = (
+        Index("idx_agent_jobs_agent_id", "agent_id"),
+        Index("idx_agent_jobs_type", "job_type"),
+        Index("idx_agent_jobs_status", "status"),
+        Index("idx_agent_jobs_queue", "queue_name"),
+        Index("idx_agent_jobs_created", "created_at"),
     )
 
 
@@ -373,24 +409,82 @@ class ConfigurationModel(Base):
     )
 
 
+class AgentCapabilityModel(Base):
+    """Cluster-wide registry of agent/worker capabilities (ADR-002)."""
+
+    __tablename__ = "agent_capabilities"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    instance_id = Column(String(100), unique=True, nullable=False, index=True)
+    agent_name = Column(String(100), nullable=False)
+    role = Column(String(50), nullable=False)  # planner/executor/checker/etc
+    capabilities = Column(JSON, default=list)  # list of capability descriptors
+    expertise_domains = Column(JSON, default=list)
+    capacity = Column(Integer, default=1)  # concurrent tasks supported
+    tool_scopes = Column(JSON, default=list)
+    capability_metadata = Column("metadata", JSON, default=dict)
+    heartbeat_at = Column(DateTime, default=lambda: datetime.now(UTC), index=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), index=True)
+    updated_at = Column(
+        DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+    )
+
+    __table_args__ = (
+        Index("idx_capabilities_role", "role"),
+        Index("idx_capabilities_capacity", "capacity"),
+        Index("idx_capabilities_updated", "updated_at"),
+        UniqueConstraint("instance_id", name="uq_capability_instance_id"),
+    )
+
+
 class DatabaseManager:
     """Database connection and session management."""
 
-    def __init__(self, database_url: str = "sqlite:///./agent_enterprise.db"):
+    def __init__(
+        self,
+        database_url: str = "sqlite:///./agent_enterprise.db",
+        *,
+        pool_size: int | None = None,
+        max_overflow: int | None = None,
+        pool_timeout: int | None = None,
+        pool_recycle: int | None = None,
+    ):
         self.database_url = database_url
         self.engine = None
         self.SessionLocal = None
+        self.pool_size = pool_size if pool_size is not None else int(os.getenv("DB_POOL_SIZE", "10"))
+        self.max_overflow = (
+            max_overflow if max_overflow is not None else int(os.getenv("DB_MAX_OVERFLOW", "20"))
+        )
+        self.pool_timeout = (
+            pool_timeout if pool_timeout is not None else int(os.getenv("DB_POOL_TIMEOUT", "30"))
+        )
+        self.pool_recycle = (
+            pool_recycle if pool_recycle is not None else int(os.getenv("DB_POOL_RECYCLE", "300"))
+        )
+
+    def _engine_kwargs(self) -> Dict[str, object]:
+        kwargs: Dict[str, object] = {
+            "pool_pre_ping": True,
+            "pool_recycle": self.pool_recycle,
+            "echo": False,
+        }
+        if self.pool_size:
+            kwargs["pool_size"] = self.pool_size
+        if self.max_overflow is not None:
+            kwargs["max_overflow"] = self.max_overflow
+        if self.pool_timeout is not None:
+            kwargs["pool_timeout"] = self.pool_timeout
+        if self.database_url.startswith("sqlite"):
+            kwargs.setdefault("connect_args", {})
+            kwargs["connect_args"].update({"check_same_thread": False})
+        return kwargs
 
     def initialize(self):
         """Initialize database connection and create tables."""
         try:
-            # Create engine with connection pooling
-            self.engine = create_engine(
-                self.database_url,
-                pool_pre_ping=True,
-                pool_recycle=300,
-                echo=False,  # Set to True for SQL debugging
-            )
+            engine_kwargs = self._engine_kwargs()
+            self.engine = create_engine(self.database_url, **engine_kwargs)
 
             # Create session factory (prevent attribute expiration on commit)
             self.SessionLocal = sessionmaker(

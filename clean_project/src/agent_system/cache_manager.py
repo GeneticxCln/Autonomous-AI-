@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import logging
 import pickle
+import time
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Union
 from dataclasses import dataclass
@@ -67,6 +68,8 @@ class CacheManager:
         self.connection_pool = None
         self._is_connected = False
         self._cache_stats = {"hits": 0, "misses": 0, "sets": 0, "deletes": 0, "errors": 0}
+        self._monitoring_system = None
+        self._monitoring_checked = False
 
     async def connect(self) -> bool:
         """Connect to Redis server."""
@@ -189,6 +192,36 @@ class CacheManager:
             logger.warning(f"Could not deserialize value: {type(value)}")
             return str(value)
 
+    def _get_monitoring_system(self):
+        """Lazy-load monitoring system to avoid circular imports."""
+        if self._monitoring_checked:
+            return self._monitoring_system
+
+        try:
+            from .advanced_monitoring import monitoring_system
+
+            self._monitoring_system = monitoring_system
+        except Exception as exc:
+            logger.debug(f"Monitoring system unavailable: {exc}")
+            self._monitoring_system = None
+
+        self._monitoring_checked = True
+        return self._monitoring_system
+
+    def _record_cache_metric(self, operation: str, status: str, start_time: Optional[float] = None):
+        monitoring = self._get_monitoring_system()
+        if monitoring is None:
+            return
+
+        duration = None
+        if start_time is not None:
+            duration = time.perf_counter() - start_time
+
+        try:
+            monitoring.record_cache_operation(operation, status, duration)
+        except Exception as exc:
+            logger.debug(f"Failed to record cache metric: {exc}")
+
     async def set(
         self, namespace: str, key: str, value: Any, ttl: Optional[int] = None, *args
     ) -> bool:
@@ -199,6 +232,7 @@ class CacheManager:
         if not self._is_connected:
             return False
 
+        start_time = time.perf_counter()
         try:
             redis_key = self._make_key(namespace, key, *args)
             serialized_value = self._serialize(value)
@@ -210,11 +244,13 @@ class CacheManager:
 
             self._cache_stats["sets"] += 1
             logger.debug(f"Cache SET: {redis_key} (TTL: {ttl}s)")
+            self._record_cache_metric("set", "success", start_time)
             return True
 
         except Exception as e:
             self._cache_stats["errors"] += 1
             logger.error(f"Cache SET error for {key}: {e}")
+            self._record_cache_metric("set", "error", start_time)
             return False
 
     async def get(self, namespace: str, key: str, default: Any = None, *args) -> Any:
@@ -225,6 +261,7 @@ class CacheManager:
         if not self._is_connected:
             return default
 
+        start_time = time.perf_counter()
         try:
             redis_key = self._make_key(namespace, key, *args)
             value = await self.redis_client.get(redis_key)
@@ -232,16 +269,19 @@ class CacheManager:
             if value is None:
                 self._cache_stats["misses"] += 1
                 logger.debug(f"Cache MISS: {redis_key}")
+                self._record_cache_metric("get", "miss", start_time)
                 return default
 
             self._cache_stats["hits"] += 1
             result = self._deserialize(value)
             logger.debug(f"Cache HIT: {redis_key}")
+            self._record_cache_metric("get", "hit", start_time)
             return result
 
         except Exception as e:
             self._cache_stats["errors"] += 1
             logger.error(f"Cache GET error for {key}: {e}")
+            self._record_cache_metric("get", "error", start_time)
             return default
 
     async def delete(self, namespace: str, key: str, *args) -> bool:
@@ -252,6 +292,7 @@ class CacheManager:
         if not self._is_connected:
             return False
 
+        start_time = time.perf_counter()
         try:
             redis_key = self._make_key(namespace, key, *args)
             result = await self.redis_client.delete(redis_key)
@@ -259,6 +300,7 @@ class CacheManager:
             if result:
                 self._cache_stats["deletes"] += 1
                 logger.debug(f"Cache DELETE: {redis_key}")
+                self._record_cache_metric("delete", "success", start_time)
                 return True
 
             return False
@@ -266,6 +308,7 @@ class CacheManager:
         except Exception as e:
             self._cache_stats["errors"] += 1
             logger.error(f"Cache DELETE error for {key}: {e}")
+            self._record_cache_metric("delete", "error", start_time)
             return False
 
     async def delete_pattern(self, namespace: str, pattern: str) -> int:
@@ -276,6 +319,7 @@ class CacheManager:
         if not self._is_connected:
             return 0
 
+        start_time = time.perf_counter()
         try:
             redis_pattern = self._make_key(namespace, pattern)
             keys = await self.redis_client.keys(redis_pattern)
@@ -284,6 +328,8 @@ class CacheManager:
                 deleted_count = await self.redis_client.delete(*keys)
                 self._cache_stats["deletes"] += deleted_count
                 logger.debug(f"Cache DELETE PATTERN: {redis_pattern} ({deleted_count} keys)")
+                status = "success" if deleted_count else "miss"
+                self._record_cache_metric("delete", status, start_time)
                 return deleted_count
 
             return 0
@@ -291,6 +337,7 @@ class CacheManager:
         except Exception as e:
             self._cache_stats["errors"] += 1
             logger.error(f"Cache DELETE PATTERN error for {pattern}: {e}")
+            self._record_cache_metric("delete", "error", start_time)
             return 0
 
     async def exists(self, namespace: str, key: str, *args) -> bool:
