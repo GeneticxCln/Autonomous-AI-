@@ -20,8 +20,9 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# set the SQLAlchemy URL from our application's DB manager
-config.set_main_option("sqlalchemy.url", app_db_manager.database_url)
+# set the SQLAlchemy URL from environment if provided, otherwise from the application's DB manager
+_env_db_url = os.getenv("DATABASE_URL")
+config.set_main_option("sqlalchemy.url", _env_db_url or app_db_manager.database_url)
 
 target_metadata = DBBase.metadata
 

@@ -13,10 +13,10 @@ from datetime import datetime
 from typing import Any, Dict
 
 # Add the source directory to Python path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 
@@ -30,7 +30,7 @@ class CompleteSystemValidator:
     async def validate_all_steps(self) -> Dict[str, Any]:
         """Validate all 9 implementation steps."""
         logger.info("🔍 Starting Complete System Implementation Validation")
-        logger.info("="*80)
+        logger.info("=" * 80)
 
         # Validate all 9 steps
         await self.validate_step_1_agent_role()
@@ -73,8 +73,8 @@ class CompleteSystemValidator:
                         f"✅ Business value: {business_value.value_delivered}",
                         f"✅ ROI estimate: {business_value.roi_estimate}",
                         f"✅ Time savings: {business_value.time_savings}",
-                        f"✅ Target audience: {sales_agent.target_audience[:100]}..."
-                    ]
+                        f"✅ Target audience: {sales_agent.target_audience[:100]}...",
+                    ],
                 }
                 logger.info("✅ Step 1: SPECIFIC AGENT ROLES WITH BUSINESS VALUE - IMPLEMENTED")
             else:
@@ -97,8 +97,13 @@ class CompleteSystemValidator:
 
             # Validate core capabilities
             capabilities = [
-                "goal_setting", "task_planning", "execution", "learning",
-                "communication", "problem_solving", "adaptation"
+                "goal_setting",
+                "task_planning",
+                "execution",
+                "learning",
+                "communication",
+                "problem_solving",
+                "adaptation",
             ]
 
             # Check for actual implemented capabilities in the agent
@@ -116,13 +121,16 @@ class CompleteSystemValidator:
                 "learning": ["learn", "adapt", "improve"],
                 "communication": ["communicate", "message", "respond"],
                 "problem_solving": ["solve", "analyze", "resolve"],
-                "adaptation": ["adapt", "adjust", "modify"]
+                "adaptation": ["adapt", "adjust", "modify"],
             }
 
             for capability in capabilities:
                 # Check for capability indicators in agent attributes and string representation
                 for indicator in capability_mapping.get(capability, [capability]):
-                    if any(indicator in attr.lower() for attr in agent_attrs) or indicator in agent_str:
+                    if (
+                        any(indicator in attr.lower() for attr in agent_attrs)
+                        or indicator in agent_str
+                    ):
                         implemented_capabilities.append(capability)
                         break
 
@@ -136,8 +144,8 @@ class CompleteSystemValidator:
                     f"✅ Agent class: {type(agent).__name__}",
                     f"✅ Implemented: {', '.join(implemented_capabilities) if implemented_capabilities else 'Core agent architecture'}",
                     "✅ Tools system: File operations, code execution, web access",
-                    "✅ Persistence: Database-backed state management"
-                ]
+                    "✅ Persistence: Database-backed state management",
+                ],
             }
             logger.info("✅ Step 2: AGENT CAPABILITIES - IMPLEMENTED")
 
@@ -156,7 +164,7 @@ class CompleteSystemValidator:
             business_context = {
                 "description": "B2B SaaS company with 100+ customers experiencing 12% monthly churn",
                 "current_challenges": ["customer retention", "churn rate", "customer success"],
-                "goals": ["reduce churn", "increase retention", "improve customer satisfaction"]
+                "goals": ["reduce churn", "increase retention", "improve customer satisfaction"],
             }
 
             recommended_problem = problem_solver.recommend_solution(business_context)
@@ -173,8 +181,8 @@ class CompleteSystemValidator:
                         f"✅ Problem severity: {recommended_problem.problem_severity.value}",
                         f"✅ Solution approach: {recommended_problem.solution_approach[:100]}...",
                         f"✅ Business metrics: ROI {metrics.roi_estimate}",
-                        f"✅ Industry-specific problems: {len(problem_solver.problem_database)} total"
-                    ]
+                        f"✅ Industry-specific problems: {len(problem_solver.problem_database)} total",
+                    ],
                 }
                 logger.info("✅ Step 3: INDUSTRY-SPECIFIC PROBLEM-SOLUTION - IMPLEMENTED")
             else:
@@ -200,7 +208,7 @@ class CompleteSystemValidator:
                 test_variables = {
                     "industry": "SaaS",
                     "company_size": "medium",
-                    "analysis_type": "customer_success"
+                    "analysis_type": "customer_success",
                 }
 
                 generated_prompt = prompt_manager.generate_prompt(
@@ -215,8 +223,8 @@ class CompleteSystemValidator:
                         f"✅ Template types: {', '.join([t.prompt_type.value for t in templates[:3]])}",
                         f"✅ Business analysis template: {business_analysis_template.name}",
                         f"✅ Generated prompt length: {len(generated_prompt)} characters",
-                        f"✅ Optimization strategies: {len(prompt_manager.optimizer.optimization_strategies)} available"
-                    ]
+                        f"✅ Optimization strategies: {len(prompt_manager.optimizer.optimization_strategies)} available",
+                    ],
                 }
                 logger.info("✅ Step 4: COMPREHENSIVE PROMPT ENGINEERING - IMPLEMENTED")
             else:
@@ -238,7 +246,7 @@ class CompleteSystemValidator:
             # Check if app has proper routes
             routes = []
             for route in app.routes:
-                if hasattr(route, 'path'):
+                if hasattr(route, "path"):
                     routes.append(route.path)
 
             # Validate interface components
@@ -252,8 +260,8 @@ class CompleteSystemValidator:
                     f"✅ FastAPI app: {type(app).__name__}",
                     f"✅ API router: {type(api_router).__name__}",
                     f"✅ Sample routes: {routes[:5] if routes else 'None'}",
-                    "✅ Interactive features: Chat CLI, API endpoints, web interface"
-                ]
+                    "✅ Interactive features: Chat CLI, API endpoints, web interface",
+                ],
             }
             logger.info(f"✅ Step 5: INTERACTION DESIGN - {interface_score:.0f}% IMPLEMENTED")
 
@@ -289,10 +297,12 @@ class CompleteSystemValidator:
                     f"✅ Agent roles: {', '.join([role.value for role in set(roles)])}",
                     f"✅ Specialized agents: Coordinator({len(coordinator_agents)}), Planner({len(planner_agents)}), Executor({len(executor_agents)}), Checker({len(checker_agents)})",
                     "✅ Orchestration: MultiAgentOrchestrator class",
-                    "✅ Communication: MessageBus and inter-agent messaging"
-                ]
+                    "✅ Communication: MessageBus and inter-agent messaging",
+                ],
             }
-            logger.info(f"✅ Step 6: MULTI-AGENT COLLABORATION - {collaboration_score:.0f}% IMPLEMENTED")
+            logger.info(
+                f"✅ Step 6: MULTI-AGENT COLLABORATION - {collaboration_score:.0f}% IMPLEMENTED"
+            )
 
         except Exception as e:
             self.implementation_status["step6"] = {"status": "ERROR", "score": 0, "error": str(e)}
@@ -309,8 +319,11 @@ class CompleteSystemValidator:
             # Check persistence system
             _ = get_storage_info()
             knowledge_systems = [
-                "enhanced_persistence", "enterprise_persistence", "database_persistence",
-                "vector_storage", "semantic_search"
+                "enhanced_persistence",
+                "enterprise_persistence",
+                "database_persistence",
+                "vector_storage",
+                "semantic_search",
             ]
 
             implemented_systems = []
@@ -318,6 +331,7 @@ class CompleteSystemValidator:
                 try:
                     # For persistence systems, check if they can be imported
                     import importlib
+
                     spec = importlib.util.find_spec(f"agent_system.{system}")
                     if spec:
                         implemented_systems.append(system)
@@ -334,8 +348,8 @@ class CompleteSystemValidator:
                     f"✅ Implemented: {', '.join(implemented_systems[:3])}",
                     "✅ Persistence: Enhanced persistence with multiple backends",
                     "✅ Learning: Agent learning and adaptation capabilities",
-                    "✅ Memory: Context management and experience tracking"
-                ]
+                    "✅ Memory: Context management and experience tracking",
+                ],
             }
             logger.info("✅ Step 7: KNOWLEDGE MANAGEMENT - IMPLEMENTED")
 
@@ -346,8 +360,8 @@ class CompleteSystemValidator:
                 "evidence": [
                     "✅ Persistence: Enhanced persistence with multiple backends",
                     "✅ Learning: Agent learning and adaptation capabilities",
-                    "✅ Memory: Context management and experience tracking"
-                ]
+                    "✅ Memory: Context management and experience tracking",
+                ],
             }
             logger.info("✅ Step 7: KNOWLEDGE MANAGEMENT - IMPLEMENTED")
 
@@ -380,8 +394,8 @@ class CompleteSystemValidator:
                     f"✅ Performance tracker: {len(perf_summary.get('metrics', {}))} tracked metrics",
                     f"✅ Health analysis: {health_analysis.get('status', 'unknown')} status",
                     f"✅ Optimization recommendations: {len(recommendations)} generated",
-                    "✅ Prometheus integration: Custom business metrics"
-                ]
+                    "✅ Prometheus integration: Custom business metrics",
+                ],
             }
             logger.info(f"✅ Step 8: MONITORING & EVALUATION - {monitoring_score:.0f}% IMPLEMENTED")
 
@@ -393,8 +407,8 @@ class CompleteSystemValidator:
                     "✅ Advanced monitoring: Comprehensive metrics system",
                     "✅ Health monitoring: Real-time health scoring",
                     "✅ Performance tracking: Response times, success rates",
-                    "✅ Prometheus integration: Custom business metrics"
-                ]
+                    "✅ Prometheus integration: Custom business metrics",
+                ],
             }
             logger.info("✅ Step 8: MONITORING & EVALUATION - IMPLEMENTED")
 
@@ -413,11 +427,11 @@ class CompleteSystemValidator:
                 "config/monitoring/grafana/provisioning/datasources/prometheus.yml",
                 "k8s/deployments/agent-api-deployment.yaml",
                 "k8s/istio/istio-config.yaml",
-                ".github/workflows/ci-cd.yml"
+                ".github/workflows/ci-cd.yml",
             ]
 
             existing_files = []
-            base_path = os.path.join(os.path.dirname(__file__), '..')
+            base_path = os.path.join(os.path.dirname(__file__), "..")
             for file_path in infrastructure_files:
                 full_path = os.path.join(base_path, file_path)
                 if os.path.exists(full_path):
@@ -442,10 +456,12 @@ class CompleteSystemValidator:
                     "✅ Monitoring: Prometheus + Grafana stack",
                     "✅ Service Mesh: Istio integration",
                     "✅ CI/CD: GitHub Actions pipeline",
-                    f"✅ Infrastructure Manager: {infrastructure_status}"
-                ]
+                    f"✅ Infrastructure Manager: {infrastructure_status}",
+                ],
             }
-            logger.info(f"✅ Step 9: ENTERPRISE DEPLOYMENT - {infrastructure_score:.0f}% IMPLEMENTED")
+            logger.info(
+                f"✅ Step 9: ENTERPRISE DEPLOYMENT - {infrastructure_score:.0f}% IMPLEMENTED"
+            )
 
         except Exception as e:
             self.implementation_status["step9"] = {"status": "ERROR", "score": 0, "error": str(e)}
@@ -457,10 +473,18 @@ class CompleteSystemValidator:
 
         # Calculate overall statistics
         total_steps = 9
-        completed_steps = sum(1 for step in self.implementation_status.values() if step.get("status") in ["EXCELLENT", "GOOD"])
-        excellent_steps = sum(1 for step in self.implementation_status.values() if step.get("status") == "EXCELLENT")
+        completed_steps = sum(
+            1
+            for step in self.implementation_status.values()
+            if step.get("status") in ["EXCELLENT", "GOOD"]
+        )
+        excellent_steps = sum(
+            1 for step in self.implementation_status.values() if step.get("status") == "EXCELLENT"
+        )
 
-        overall_score = sum(step.get("score", 0) for step in self.implementation_status.values()) / total_steps
+        overall_score = (
+            sum(step.get("score", 0) for step in self.implementation_status.values()) / total_steps
+        )
 
         # Determine overall status
         if overall_score >= 85:
@@ -479,20 +503,30 @@ class CompleteSystemValidator:
                 "score": overall_score,
                 "completed_steps": completed_steps,
                 "excellent_steps": excellent_steps,
-                "total_steps": total_steps
+                "total_steps": total_steps,
             },
             "step_details": self.implementation_status,
             "summary": {
-                "implementation_quality": "Enterprise-Grade" if overall_score > 80 else "Good" if overall_score > 60 else "Needs Work",
-                "business_value": "High" if completed_steps >= 7 else "Medium" if completed_steps >= 5 else "Low",
-                "production_readiness": "Ready" if overall_score > 80 else "Almost Ready" if overall_score > 70 else "Not Ready"
-            }
+                "implementation_quality": (
+                    "Enterprise-Grade"
+                    if overall_score > 80
+                    else "Good" if overall_score > 60 else "Needs Work"
+                ),
+                "business_value": (
+                    "High" if completed_steps >= 7 else "Medium" if completed_steps >= 5 else "Low"
+                ),
+                "production_readiness": (
+                    "Ready"
+                    if overall_score > 80
+                    else "Almost Ready" if overall_score > 70 else "Not Ready"
+                ),
+            },
         }
 
         # Print final report
-        logger.info("="*80)
+        logger.info("=" * 80)
         logger.info("🏁 COMPLETE SYSTEM IMPLEMENTATION VALIDATION")
-        logger.info("="*80)
+        logger.info("=" * 80)
         logger.info(f"Overall Status: {overall_status}")
         logger.info(f"Overall Score: {overall_score:.1f}%")
         logger.info(f"Completed Steps: {completed_steps}/{total_steps}")
@@ -508,7 +542,7 @@ class CompleteSystemValidator:
             "6. Multi-Agent Collaboration",
             "7. Knowledge Management",
             "8. Monitoring & Evaluation",
-            "9. Enterprise Deployment"
+            "9. Enterprise Deployment",
         ]
 
         for i, (step_key, step_data) in enumerate(self.implementation_status.items(), 1):
@@ -517,10 +551,12 @@ class CompleteSystemValidator:
                 "GOOD": "✅",
                 "NEEDS_IMPROVEMENT": "⚠️",
                 "MISSING": "❌",
-                "ERROR": "💥"
+                "ERROR": "💥",
             }.get(step_data.get("status", "UNKNOWN"), "❓")
 
-            logger.info(f"   {status_emoji} Step {i}: {step_data.get('score', 0):.0f}% - {step_data.get('status', 'UNKNOWN')}")
+            logger.info(
+                f"   {status_emoji} Step {i}: {step_data.get('score', 0):.0f}% - {step_data.get('status', 'UNKNOWN')}"
+            )
 
         logger.info(f"\n🎯 Final Assessment: {self.results['summary']['implementation_quality']}")
         logger.info(f"💼 Business Value: {self.results['summary']['business_value']}")

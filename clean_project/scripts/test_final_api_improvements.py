@@ -3,12 +3,7 @@ Final comprehensive test for API documentation improvements
 Verifies that comprehensive schemas are properly integrated and working
 """
 
-from fastapi.testclient import TestClient
-
-from agent_system.fastapi_app import app
-
-# Create test client
-client = TestClient(app)
+from scripts.test_client import client
 
 
 def test_openapi_generation_success():

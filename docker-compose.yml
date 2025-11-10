@@ -8,20 +8,43 @@ services:
       - ENVIRONMENT=production
       - API_DEBUG=false
       - DISTRIBUTED_ENABLED=true
+      - POSTGRES_USER=${POSTGRES_USER:-agent}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-agentpass}
+      - POSTGRES_DB=${POSTGRES_DB:-agent_db}
+      - DATABASE_URL=${DATABASE_URL:-postgresql://${POSTGRES_USER:-agent}:${POSTGRES_PASSWORD:-agentpass}@db:5432/${POSTGRES_DB:-agent_db}}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_DB=0
       - REDIS_URL=redis://redis:6379/0
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-dev-secret-please-change}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY must be set to a strong value}
     ports:
       - "8000:8000"
     depends_on:
+      - db
       - redis
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request,sys;\ntry:\n  r=urllib.request.urlopen('http://localhost:8000/health', timeout=3)\n  sys.exit(0 if r.getcode()==200 else 1)\nexcept Exception:\n  sys.exit(1)\n\""]
       interval: 10s
       timeout: 5s
       retries: 5
+
+  db:
+    image: postgres:15-alpine
+    container_name: agent_db
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-agent}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-agentpass}
+      - POSTGRES_DB=${POSTGRES_DB:-agent_db}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
 
   redis:
     image: redis:7-alpine
@@ -47,12 +70,17 @@ services:
     environment:
       - ENVIRONMENT=production
       - DISTRIBUTED_ENABLED=true
+      - POSTGRES_USER=${POSTGRES_USER:-agent}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-agentpass}
+      - POSTGRES_DB=${POSTGRES_DB:-agent_db}
+      - DATABASE_URL=${DATABASE_URL:-postgresql://${POSTGRES_USER:-agent}:${POSTGRES_PASSWORD:-agentpass}@db:5432/${POSTGRES_DB:-agent_db}}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_DB=0
       - REDIS_URL=redis://redis:6379/0
       - PYTHONPATH=/app
     depends_on:
+      - db
       - redis
     restart: unless-stopped
     
@@ -80,7 +108,7 @@ services:
       - "3000:3000"
     environment:
       - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:?GRAFANA_PASSWORD must be set}
     volumes:
       - grafana_data:/var/lib/grafana
       - ./config/monitoring/grafana/provisioning:/etc/grafana/provisioning
@@ -97,6 +125,7 @@ services:
     restart: unless-stopped
 
 volumes:
+  pg_data:
   prometheus_data:
   grafana_data:
   alertmanager_data:

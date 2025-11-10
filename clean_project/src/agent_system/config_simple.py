@@ -62,7 +62,9 @@ class Settings:
         self.MEMORY_LIMIT = os.getenv("MEMORY_LIMIT", "512m")
 
         # Tool selection
-        self.USE_REAL_TOOLS = os.getenv("USE_REAL_TOOLS", "true").lower() == "true"
+        use_real_tools_raw = os.getenv("USE_REAL_TOOLS")
+        self.USE_REAL_TOOLS_CONFIGURED = use_real_tools_raw is not None
+        self.USE_REAL_TOOLS = (use_real_tools_raw or "false").lower() == "true"
 
         # Terminal-only mode (no web search/network tools)
         self.TERMINAL_ONLY = os.getenv("TERMINAL_ONLY", "true").lower() == "true"

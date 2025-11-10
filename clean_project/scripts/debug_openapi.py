@@ -2,12 +2,7 @@
 Debug what schemas are actually generated in OpenAPI
 """
 
-from fastapi.testclient import TestClient
-
-from agent_system.fastapi_app import app
-
-# Create test client
-client = TestClient(app)
+from scripts.test_client import client
 
 # Get OpenAPI schema
 response = client.get("/openapi.json")

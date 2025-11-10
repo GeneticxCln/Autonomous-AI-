@@ -56,7 +56,7 @@ spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: agent-worker-normal
+    name: agent-worker
   minReplicas: 2
   maxReplicas: 8
   metrics:

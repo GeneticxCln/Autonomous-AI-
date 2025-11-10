@@ -11,6 +11,7 @@ from typing import Any, Dict, List
 
 from .enterprise_persistence import enterprise_persistence
 from .models import Action, ActionStatus, Memory, Observation
+from .async_utils import run_blocking
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +62,12 @@ def save_action_selector(selector: Any, filename: str = "action_selector.json") 
     logger.debug("Action selector saved successfully")
 
 
+async def save_action_selector_async(selector: Any, filename: str = "action_selector.json") -> None:
+    selector_data = _normalize_action_selector(selector)
+    await enterprise_persistence.save_action_selector_async(selector_data, filename)
+    logger.debug("Action selector saved successfully (async)")
+
+
 def load_action_selector(
     selector: Any = None, filename: str = "action_selector.json"
 ) -> Dict[str, Any]:
@@ -84,6 +91,26 @@ def load_action_selector(
 
     # If no selector or regular selector, return the loaded data as-is
     logger.debug("Action selector loaded from database")
+    return data
+
+
+async def load_action_selector_async(
+    selector: Any = None, filename: str = "action_selector.json"
+) -> Dict[str, Any]:
+    data = await enterprise_persistence.load_action_selector_async(filename) or {}
+    if selector and data:
+        _apply_action_selector(selector, data)
+
+    if selector and hasattr(selector, "action_history"):
+        payload = {"action_history": selector.action_history}
+        if hasattr(selector, "context_weights"):
+            payload["context_weights"] = selector.context_weights
+        if hasattr(selector, "goal_patterns"):
+            payload["goal_patterns"] = selector.goal_patterns
+        logger.debug("Action selector loaded from database (async)")
+        return payload
+
+    logger.debug("Action selector loaded from database (async)")
     return data
 
 
@@ -120,6 +147,14 @@ def save_learning_system(learning_system: Any, filename: str = "learning_system.
     logger.debug("Learning system saved successfully")
 
 
+async def save_learning_system_async(
+    learning_system: Any, filename: str = "learning_system.json"
+) -> None:
+    payload = _normalize_learning_system(learning_system)
+    await enterprise_persistence.save_learning_system_async(payload, filename)
+    logger.debug("Learning system saved successfully (async)")
+
+
 def load_learning_system(
     learning_system: Any = None, filename: str = "learning_system.json"
 ) -> Dict[str, Any]:
@@ -150,6 +185,34 @@ def load_learning_system(
 
     # If no learning_system or no data, return as-is
     logger.debug("Learning system loaded from database")
+    return data
+
+
+async def load_learning_system_async(
+    learning_system: Any = None, filename: str = "learning_system.json"
+) -> Dict[str, Any]:
+    data = await enterprise_persistence.load_learning_system_async(filename) or {}
+    if learning_system and data:
+        _apply_learning_system(learning_system, data)
+
+        if hasattr(learning_system, "strategy_performance"):
+            pattern_library_payload = {}
+            for pattern_key, pattern_list in learning_system.pattern_library.items():
+                if isinstance(pattern_list, list):
+                    pattern_library_payload[pattern_key] = [
+                        tuple(item) if isinstance(item, list) else item for item in pattern_list
+                    ]
+                else:
+                    pattern_library_payload[pattern_key] = pattern_list
+
+            payload = {
+                "strategy_performance": learning_system.strategy_performance,
+                "pattern_library": pattern_library_payload,
+            }
+            logger.debug("Learning system loaded from database (async)")
+            return payload
+
+    logger.debug("Learning system loaded from database (async)")
     return data
 
 
@@ -272,6 +335,22 @@ def save_memory_system(memory_system: Any, filename: str = "episodic_memory.json
     logger.debug("Memory system saved: %s memories", len(memories))
 
 
+async def save_memory_system_async(
+    memory_system: Any, filename: str = "episodic_memory.json"
+) -> None:
+    if hasattr(memory_system, "episodic_memory"):
+        memories: List[Dict[str, Any]] = []
+        for memory in getattr(memory_system, "episodic_memory", []):
+            memories.append(_serialize_memory(memory, "episodic"))
+        for memory in getattr(memory_system, "working_memory", []):
+            memories.append(_serialize_memory(memory, "working"))
+    else:
+        memories = list(memory_system) if isinstance(memory_system, list) else []
+
+    await enterprise_persistence.save_memories_async(memories, filename)
+    logger.debug("Memory system saved (async): %s memories", len(memories))
+
+
 def load_memory_system(
     memory_system: Any = None, filename: str = "episodic_memory.json"
 ) -> List[Dict[str, Any]]:
@@ -282,11 +361,28 @@ def load_memory_system(
     return memories
 
 
+async def load_memory_system_async(
+    memory_system: Any = None, filename: str = "episodic_memory.json"
+) -> List[Dict[str, Any]]:
+    memories = await enterprise_persistence.load_memories_async(filename) or []
+    if memory_system is not None:
+        _apply_memories(memory_system, memories)
+    logger.debug("Memory system loaded from database (async): %s memories", len(memories))
+    return memories
+
+
 def save_all(agent: Any) -> None:
     save_action_selector(agent.action_selector)
     save_learning_system(agent.learning_system)
     save_memory_system(agent.memory_system)
     logger.info("Persisted agent state to database")
+
+
+async def save_all_async(agent: Any) -> None:
+    await save_action_selector_async(agent.action_selector)
+    await save_learning_system_async(agent.learning_system)
+    await save_memory_system_async(agent.memory_system)
+    logger.info("Persisted agent state to database (async)")
 
 
 def load_all(agent: Any) -> None:
@@ -296,11 +392,28 @@ def load_all(agent: Any) -> None:
     logger.info("Loaded agent state from database")
 
 
+async def load_all_async(agent: Any) -> None:
+    await load_action_selector_async(agent.action_selector)
+    await load_learning_system_async(agent.learning_system)
+    await load_memory_system_async(agent.memory_system)
+    logger.info("Loaded agent state from database (async)")
+
+
 def get_storage_info() -> Dict[str, Any]:
     return enterprise_persistence.get_storage_info()
+
+
+async def get_storage_info_async() -> Dict[str, Any]:
+    return await enterprise_persistence.get_storage_info_async()
 
 
 def get_database_stats() -> Dict[str, int]:
     from .database_persistence import db_persistence
 
     return db_persistence.get_database_stats()
+
+
+async def get_database_stats_async() -> Dict[str, int]:
+    from .database_persistence import db_persistence
+
+    return await run_blocking(db_persistence.get_database_stats)

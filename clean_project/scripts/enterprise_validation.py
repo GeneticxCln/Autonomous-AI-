@@ -14,10 +14,10 @@ from pathlib import Path
 from typing import Any, Dict
 
 # Add the source directory to Python path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 
@@ -32,13 +32,13 @@ class EnterpriseValidator:
             "validation_start": self.start_time.isoformat(),
             "features": {},
             "summary": {},
-            "recommendations": []
+            "recommendations": [],
         }
 
     def validate_all_features(self) -> Dict[str, Any]:
         """Run all enterprise feature validations."""
         logger.info("🚀 Starting Enterprise Features Validation")
-        logger.info("="*60)
+        logger.info("=" * 60)
 
         # Run validations
         self.validate_database_migrations()
@@ -60,7 +60,7 @@ class EnterpriseValidator:
             "name": "Database Migrations (Alembic)",
             "status": "pending",
             "tests": {},
-            "files": []
+            "files": [],
         }
 
         try:
@@ -89,10 +89,16 @@ class EnterpriseValidator:
                 # Test current revision
                 try:
                     command.current(config)
-                    feature_result["tests"]["alembic_connection"] = {"status": "pass", "message": "Alembic connected successfully"}
+                    feature_result["tests"]["alembic_connection"] = {
+                        "status": "pass",
+                        "message": "Alembic connected successfully",
+                    }
                     logger.info("✅ Alembic connection test passed")
                 except Exception as e:
-                    feature_result["tests"]["alembic_connection"] = {"status": "fail", "message": str(e)}
+                    feature_result["tests"]["alembic_connection"] = {
+                        "status": "fail",
+                        "message": str(e),
+                    }
                     logger.warning(f"⚠️ Alembic connection test failed: {e}")
 
                 # Test database schema
@@ -108,18 +114,24 @@ class EnterpriseValidator:
                         feature_result["tests"]["database_schema"] = {
                             "status": "pass",
                             "message": f"Found {len(tables)} database tables",
-                            "tables_count": len(tables)
+                            "tables_count": len(tables),
                         }
                         logger.info(f"✅ Database schema test passed - {len(tables)} tables")
                     except Exception as e:
-                        feature_result["tests"]["database_schema"] = {"status": "fail", "message": str(e)}
+                        feature_result["tests"]["database_schema"] = {
+                            "status": "fail",
+                            "message": str(e),
+                        }
                         logger.error(f"❌ Database schema test failed: {e}")
 
                 feature_result["status"] = "pass"
                 feature_result["completeness"] = 100
 
             except ImportError as e:
-                feature_result["tests"]["alembic_import"] = {"status": "fail", "message": f"Import error: {e}"}
+                feature_result["tests"]["alembic_import"] = {
+                    "status": "fail",
+                    "message": f"Import error: {e}",
+                }
                 feature_result["status"] = "fail"
                 logger.error(f"❌ Alembic import failed: {e}")
 
@@ -139,7 +151,7 @@ class EnterpriseValidator:
             "name": "Performance Monitoring (Prometheus/Grafana)",
             "status": "pending",
             "tests": {},
-            "files": []
+            "files": [],
         }
 
         try:
@@ -152,24 +164,40 @@ class EnterpriseValidator:
                 # Validate YAML structure
                 try:
                     import yaml
+
                     with open(prometheus_config) as f:
                         prom_config = yaml.safe_load(f)
 
-                    if 'scrape_configs' in prom_config:
+                    if "scrape_configs" in prom_config:
                         feature_result["tests"]["prometheus_config"] = {
                             "status": "pass",
                             "message": f"Found {len(prom_config['scrape_configs'])} scrape targets",
-                            "targets_count": len(prom_config['scrape_configs'])
+                            "targets_count": len(prom_config["scrape_configs"]),
                         }
-                        logger.info(f"✅ Prometheus config valid - {len(prom_config['scrape_configs'])} targets")
+                        logger.info(
+                            f"✅ Prometheus config valid - {len(prom_config['scrape_configs'])} targets"
+                        )
                 except Exception as e:
-                    feature_result["tests"]["prometheus_config"] = {"status": "fail", "message": str(e)}
+                    feature_result["tests"]["prometheus_config"] = {
+                        "status": "fail",
+                        "message": str(e),
+                    }
                     logger.error(f"❌ Prometheus config validation failed: {e}")
 
             # Check Grafana datasource configuration
-            grafana_datasource = self.base_path / "config" / "monitoring" / "grafana" / "provisioning" / "datasources" / "prometheus.yml"
+            grafana_datasource = (
+                self.base_path
+                / "config"
+                / "monitoring"
+                / "grafana"
+                / "provisioning"
+                / "datasources"
+                / "prometheus.yml"
+            )
             if grafana_datasource.exists():
-                feature_result["files"].append("config/monitoring/grafana/datasources/prometheus.yml")
+                feature_result["files"].append(
+                    "config/monitoring/grafana/datasources/prometheus.yml"
+                )
                 logger.info("✅ Grafana datasource configuration found")
 
             # Test advanced monitoring system
@@ -181,23 +209,30 @@ class EnterpriseValidator:
                 feature_result["tests"]["monitoring_system"] = {
                     "status": "pass",
                     "message": f"Monitoring system initialized with {metrics_info.get('metrics_count', 0)} metrics",
-                    "metrics_count": metrics_info.get('metrics_count', 0),
-                    "business_metrics_count": metrics_info.get('business_metrics_count', 0)
+                    "metrics_count": metrics_info.get("metrics_count", 0),
+                    "business_metrics_count": metrics_info.get("business_metrics_count", 0),
                 }
-                logger.info(f"✅ Advanced monitoring system operational - {metrics_info.get('metrics_count', 0)} metrics")
+                logger.info(
+                    f"✅ Advanced monitoring system operational - {metrics_info.get('metrics_count', 0)} metrics"
+                )
 
                 # Test health score calculation
                 health_score = monitoring_system.get_health_score()
                 feature_result["tests"]["health_monitoring"] = {
                     "status": "pass",
                     "message": f"Health score: {health_score.get('health_score', 0)}%",
-                    "health_score": health_score.get('health_score', 0),
-                    "status_text": health_score.get('status', 'unknown')
+                    "health_score": health_score.get("health_score", 0),
+                    "status_text": health_score.get("status", "unknown"),
                 }
-                logger.info(f"✅ Health monitoring working - Score: {health_score.get('health_score', 0)}%")
+                logger.info(
+                    f"✅ Health monitoring working - Score: {health_score.get('health_score', 0)}%"
+                )
 
             except ImportError as e:
-                feature_result["tests"]["monitoring_system"] = {"status": "fail", "message": f"Import error: {e}"}
+                feature_result["tests"]["monitoring_system"] = {
+                    "status": "fail",
+                    "message": f"Import error: {e}",
+                }
                 logger.error(f"❌ Monitoring system import failed: {e}")
 
             # Check Docker Compose monitoring services
@@ -205,22 +240,26 @@ class EnterpriseValidator:
             if docker_compose.exists():
                 try:
                     import yaml
+
                     with open(docker_compose) as f:
                         compose_config = yaml.safe_load(f)
 
-                    services = compose_config.get('services', {})
-                    monitoring_services = ['prometheus', 'grafana', 'jaeger']
+                    services = compose_config.get("services", {})
+                    monitoring_services = ["prometheus", "grafana", "jaeger"]
                     found_services = [svc for svc in monitoring_services if svc in services]
 
                     feature_result["tests"]["docker_compose_monitoring"] = {
                         "status": "pass" if found_services else "partial",
                         "message": f"Found {len(found_services)} monitoring services in Docker Compose",
-                        "services_found": found_services
+                        "services_found": found_services,
                     }
                     logger.info(f"✅ Docker Compose monitoring services: {found_services}")
 
                 except Exception as e:
-                    feature_result["tests"]["docker_compose_monitoring"] = {"status": "fail", "message": str(e)}
+                    feature_result["tests"]["docker_compose_monitoring"] = {
+                        "status": "fail",
+                        "message": str(e),
+                    }
                     logger.error(f"❌ Docker Compose validation failed: {e}")
 
             feature_result["status"] = "pass"
@@ -242,7 +281,7 @@ class EnterpriseValidator:
             "name": "Security Hardening (Enhanced Secrets Management)",
             "status": "pending",
             "tests": {},
-            "files": []
+            "files": [],
         }
 
         try:
@@ -273,16 +312,18 @@ class EnterpriseValidator:
                     "status": "pass" if all(validation_results) else "fail",
                     "message": f"Input validation: {sum(validation_results)}/{len(validation_results)} tests passed",
                     "tests_passed": sum(validation_results),
-                    "total_tests": len(validation_results)
+                    "total_tests": len(validation_results),
                 }
-                logger.info(f"✅ Input validation: {sum(validation_results)}/{len(validation_results)} passed")
+                logger.info(
+                    f"✅ Input validation: {sum(validation_results)}/{len(validation_results)} passed"
+                )
 
                 # Test secure token generation
                 token = security.generate_secure_token(32)
                 feature_result["tests"]["secure_tokens"] = {
                     "status": "pass" if len(token) > 0 else "fail",
                     "message": f"Generated secure token of length {len(token)}",
-                    "token_length": len(token)
+                    "token_length": len(token),
                 }
                 logger.info(f"✅ Secure token generation: {len(token)} chars")
 
@@ -290,12 +331,15 @@ class EnterpriseValidator:
                 rate_limit_result = security.check_rate_limit("test_ip", 10, 60)
                 feature_result["tests"]["rate_limiting"] = {
                     "status": "pass" if rate_limit_result else "fail",
-                    "message": "Rate limiting system operational"
+                    "message": "Rate limiting system operational",
                 }
                 logger.info("✅ Rate limiting system working")
 
             except ImportError as e:
-                feature_result["tests"]["security_system"] = {"status": "fail", "message": f"Import error: {e}"}
+                feature_result["tests"]["security_system"] = {
+                    "status": "fail",
+                    "message": f"Import error: {e}",
+                }
                 logger.error(f"❌ Security system import failed: {e}")
 
             # Check advanced security module
@@ -315,23 +359,28 @@ class EnterpriseValidator:
                 # This would test actual API responses
                 feature_result["tests"]["security_headers"] = {
                     "status": "skipped",
-                    "message": "API server not running - would test security headers in production"
+                    "message": "API server not running - would test security headers in production",
                 }
             except Exception as e:
-                feature_result["tests"]["security_headers"] = {"status": "skipped", "message": str(e)}
+                feature_result["tests"]["security_headers"] = {
+                    "status": "skipped",
+                    "message": str(e),
+                }
 
             # Check .gitignore for secrets
             gitignore = self.base_path / ".gitignore"
             if gitignore.exists():
                 with open(gitignore) as f:
                     gitignore_content = f.read()
-                    secrets_patterns = ['.env', '*.key', '*secret*', 'secrets']
-                    found_patterns = [pattern for pattern in secrets_patterns if pattern in gitignore_content]
+                    secrets_patterns = [".env", "*.key", "*secret*", "secrets"]
+                    found_patterns = [
+                        pattern for pattern in secrets_patterns if pattern in gitignore_content
+                    ]
 
                     feature_result["tests"]["gitignore_secrets"] = {
                         "status": "pass" if found_patterns else "partial",
                         "message": f"Found {len(found_patterns)} secret protection patterns in .gitignore",
-                        "patterns_found": found_patterns
+                        "patterns_found": found_patterns,
                     }
                     logger.info(f"✅ .gitignore secrets protection: {len(found_patterns)} patterns")
 
@@ -354,7 +403,7 @@ class EnterpriseValidator:
             "name": "Load Testing (Comprehensive Performance Testing)",
             "status": "pending",
             "tests": {},
-            "files": []
+            "files": [],
         }
 
         try:
@@ -374,7 +423,7 @@ class EnterpriseValidator:
                     "status": "pass" if not missing_tests else "partial",
                     "message": f"Found {len(test_files)} test files, missing: {missing_tests}",
                     "files_found": found_tests,
-                    "missing_files": missing_tests
+                    "missing_files": missing_tests,
                 }
                 logger.info(f"✅ k6 test files: {len(found_tests)} found")
 
@@ -387,12 +436,19 @@ class EnterpriseValidator:
                 try:
                     # Test benchmark script import
                     import importlib.util
+
                     spec = importlib.util.spec_from_file_location("benchmark", benchmark_script)
                     if spec and spec.loader:
-                        feature_result["tests"]["benchmark_import"] = {"status": "pass", "message": "Benchmark script is importable"}
+                        feature_result["tests"]["benchmark_import"] = {
+                            "status": "pass",
+                            "message": "Benchmark script is importable",
+                        }
                         logger.info("✅ Performance benchmark script importable")
                 except Exception as e:
-                    feature_result["tests"]["benchmark_import"] = {"status": "fail", "message": str(e)}
+                    feature_result["tests"]["benchmark_import"] = {
+                        "status": "fail",
+                        "message": str(e),
+                    }
                     logger.error(f"❌ Benchmark script import failed: {e}")
 
             # Check CI/CD load testing configuration
@@ -404,13 +460,13 @@ class EnterpriseValidator:
                         feature_result["files"].append(".github/workflows/ci-cd.yml")
                         feature_result["tests"]["ci_cd_integration"] = {
                             "status": "pass",
-                            "message": "Load testing integrated in CI/CD pipeline"
+                            "message": "Load testing integrated in CI/CD pipeline",
                         }
                         logger.info("✅ Load testing integrated in CI/CD")
                     else:
                         feature_result["tests"]["ci_cd_integration"] = {
                             "status": "partial",
-                            "message": "CI/CD found but load testing may not be fully integrated"
+                            "message": "CI/CD found but load testing may not be fully integrated",
                         }
                         logger.warning("⚠️ CI/CD load testing integration unclear")
 
@@ -419,7 +475,7 @@ class EnterpriseValidator:
             if config_test.exists():
                 feature_result["tests"]["load_test_config"] = {
                     "status": "pass",
-                    "message": "Load test configuration and utilities available"
+                    "message": "Load test configuration and utilities available",
                 }
                 logger.info("✅ Load test configuration found")
 
@@ -428,10 +484,13 @@ class EnterpriseValidator:
                 # This would run a quick load test if the API was available
                 feature_result["tests"]["load_test_execution"] = {
                     "status": "skipped",
-                    "message": "API server not running - would execute load tests in production"
+                    "message": "API server not running - would execute load tests in production",
                 }
             except Exception as e:
-                feature_result["tests"]["load_test_execution"] = {"status": "skipped", "message": str(e)}
+                feature_result["tests"]["load_test_execution"] = {
+                    "status": "skipped",
+                    "message": str(e),
+                }
 
             feature_result["status"] = "pass"
             feature_result["completeness"] = 95  # 95% because actual execution requires running API
@@ -452,7 +511,7 @@ class EnterpriseValidator:
             "name": "Infrastructure Integration",
             "status": "pending",
             "tests": {},
-            "files": []
+            "files": [],
         }
 
         try:
@@ -465,12 +524,15 @@ class EnterpriseValidator:
                 feature_result["tests"]["infrastructure_manager"] = {
                     "status": "pass",
                     "message": "Infrastructure manager operational",
-                    "components": status.get('health_status', {})
+                    "components": status.get("health_status", {}),
                 }
                 logger.info("✅ Infrastructure manager working")
 
             except ImportError as e:
-                feature_result["tests"]["infrastructure_manager"] = {"status": "fail", "message": f"Import error: {e}"}
+                feature_result["tests"]["infrastructure_manager"] = {
+                    "status": "fail",
+                    "message": f"Import error: {e}",
+                }
                 logger.error(f"❌ Infrastructure manager import failed: {e}")
 
             # Check Docker Compose configuration
@@ -481,34 +543,40 @@ class EnterpriseValidator:
 
                 try:
                     import yaml
+
                     with open(docker_compose) as f:
                         compose_config = yaml.safe_load(f)
 
-                    services = compose_config.get('services', {})
+                    services = compose_config.get("services", {})
                     total_services = len(services)
                     feature_result["tests"]["docker_compose"] = {
                         "status": "pass",
                         "message": f"Docker Compose has {total_services} services configured",
                         "services_count": total_services,
-                        "services": list(services.keys())
+                        "services": list(services.keys()),
                     }
                     logger.info(f"✅ Docker Compose: {total_services} services")
 
                 except Exception as e:
-                    feature_result["tests"]["docker_compose"] = {"status": "fail", "message": str(e)}
+                    feature_result["tests"]["docker_compose"] = {
+                        "status": "fail",
+                        "message": str(e),
+                    }
                     logger.error(f"❌ Docker Compose validation failed: {e}")
 
             # Check Kubernetes manifests
             k8s_dir = self.base_path / "k8s"
             if k8s_dir.exists():
                 yaml_files = list(k8s_dir.rglob("*.yaml"))
-                feature_result["files"].extend([f"k8s/{f.relative_to(k8s_dir)}" for f in yaml_files])
+                feature_result["files"].extend(
+                    [f"k8s/{f.relative_to(k8s_dir)}" for f in yaml_files]
+                )
                 logger.info(f"✅ Found {len(yaml_files)} Kubernetes manifest files")
 
                 feature_result["tests"]["kubernetes_manifests"] = {
                     "status": "pass",
                     "message": f"Found {len(yaml_files)} Kubernetes manifest files",
-                    "files_count": len(yaml_files)
+                    "files_count": len(yaml_files),
                 }
 
             # Check deployment scripts
@@ -537,10 +605,17 @@ class EnterpriseValidator:
 
         # Calculate overall statistics
         total_features = len(self.test_results["features"])
-        passed_features = sum(1 for f in self.test_results["features"].values() if f["status"] == "pass")
-        failed_features = sum(1 for f in self.test_results["features"].values() if f["status"] == "fail")
+        passed_features = sum(
+            1 for f in self.test_results["features"].values() if f["status"] == "pass"
+        )
+        failed_features = sum(
+            1 for f in self.test_results["features"].values() if f["status"] == "fail"
+        )
 
-        overall_completeness = sum(f.get("completeness", 0) for f in self.test_results["features"].values()) / total_features
+        overall_completeness = (
+            sum(f.get("completeness", 0) for f in self.test_results["features"].values())
+            / total_features
+        )
 
         # Generate summary
         self.test_results["summary"] = {
@@ -549,35 +624,47 @@ class EnterpriseValidator:
             "total_features": total_features,
             "passed_features": passed_features,
             "failed_features": failed_features,
-            "overall_status": "pass" if failed_features == 0 else "partial" if passed_features > 0 else "fail",
+            "overall_status": (
+                "pass" if failed_features == 0 else "partial" if passed_features > 0 else "fail"
+            ),
             "overall_completeness": overall_completeness,
-            "enterprise_readiness": "Enterprise Ready" if overall_completeness >= 95 else "Needs Attention" if overall_completeness >= 80 else "Not Ready"
+            "enterprise_readiness": (
+                "Enterprise Ready"
+                if overall_completeness >= 95
+                else "Needs Attention" if overall_completeness >= 80 else "Not Ready"
+            ),
         }
 
         # Generate recommendations
         recommendations = []
         for feature_name, feature_data in self.test_results["features"].items():
             if feature_data["status"] == "fail":
-                recommendations.append(f"Fix {feature_name}: {feature_data.get('error', 'Unknown error')}")
+                recommendations.append(
+                    f"Fix {feature_name}: {feature_data.get('error', 'Unknown error')}"
+                )
             elif feature_data.get("completeness", 100) < 100:
                 incomplete_aspects = []
                 for test_name, test_result in feature_data.get("tests", {}).items():
                     if test_result.get("status") in ["fail", "partial"]:
                         incomplete_aspects.append(test_name)
                 if incomplete_aspects:
-                    recommendations.append(f"Complete {feature_name}: {', '.join(incomplete_aspects)}")
+                    recommendations.append(
+                        f"Complete {feature_name}: {', '.join(incomplete_aspects)}"
+                    )
 
         self.test_results["recommendations"] = recommendations
 
         # Print summary
-        logger.info("="*60)
+        logger.info("=" * 60)
         logger.info("🏁 ENTERPRISE VALIDATION COMPLETE")
-        logger.info("="*60)
+        logger.info("=" * 60)
         logger.info(f"📊 Total Features: {total_features}")
         logger.info(f"✅ Passed: {passed_features}")
         logger.info(f"❌ Failed: {failed_features}")
         logger.info(f"📈 Overall Completeness: {overall_completeness:.1f}%")
-        logger.info(f"🎯 Enterprise Readiness: {self.test_results['summary']['enterprise_readiness']}")
+        logger.info(
+            f"🎯 Enterprise Readiness: {self.test_results['summary']['enterprise_readiness']}"
+        )
         logger.info(f"⏱️  Duration: {duration:.2f}s")
 
         if recommendations:
@@ -593,7 +680,7 @@ class EnterpriseValidator:
         filepath = self.base_path / "validation_results" / filename
         filepath.parent.mkdir(exist_ok=True)
 
-        with open(filepath, 'w') as f:
+        with open(filepath, "w") as f:
             json.dump(self.test_results, f, indent=2, default=str)
 
         logger.info(f"💾 Results saved to: {filepath}")

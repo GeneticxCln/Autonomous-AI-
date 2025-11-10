@@ -3,12 +3,7 @@ Test OpenAPI schema generation and documentation
 Verifies that comprehensive schemas are properly defined and documented
 """
 
-from fastapi.testclient import TestClient
-
-from agent_system.fastapi_app import app
-
-# Create test client
-client = TestClient(app)
+from scripts.test_client import client
 
 
 def test_openapi_schema_structure():

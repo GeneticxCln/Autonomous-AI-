@@ -6,11 +6,13 @@ This implements actual intelligence, not just framework.
 from __future__ import annotations
 
 import logging
+import os
 import re
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from .config_simple import settings
+from .unified_config import unified_config
 
 # Initialize variables for optional imports
 SENTENCE_TRANSFORMERS_AVAILABLE = False
@@ -68,23 +70,43 @@ class ReasoningEngine:
         self.action_templates = self._load_action_templates()
         self.success_patterns = {}
 
+        # Determine whether semantic similarity should be enabled (requires network + optional deps)
+        disable_flag = os.getenv("DISABLE_SEMANTIC_SIMILARITY", "").lower() == "true"
+        self.semantic_similarity_enabled = (
+            unified_config.ai.enable_semantic_similarity
+            and not getattr(settings, "TERMINAL_ONLY", False)
+            and not disable_flag
+        )
+
         # Initialize semantic similarity components
-        if SENTENCE_TRANSFORMERS_AVAILABLE and NUMPY_AVAILABLE:
-            logger.info("Loading sentence transformer model for semantic similarity")
+        if self.semantic_similarity_enabled and SENTENCE_TRANSFORMERS_AVAILABLE and NUMPY_AVAILABLE:
+            logger.info(
+                "Loading sentence transformer model for semantic similarity (model=%s)",
+                unified_config.ai.sentence_transformer_model,
+            )
             try:
-                self.model = SentenceTransformer("all-MiniLM-L6-v2")
+                self.model = SentenceTransformer(unified_config.ai.sentence_transformer_model)
                 self.pattern_embeddings = self._precompute_embeddings()
             except Exception as e:
                 logger.warning(
-                    f"Failed to load sentence transformer: {e}. Using fallback similarity"
+                    "Failed to load sentence transformer (%s). Using fallback similarity.",
+                    e,
                 )
                 self.model = None
                 self.pattern_embeddings = None
                 self._setup_fallback_similarity()
         else:
-            logger.warning(
-                "Sentence transformers or numpy not available, using fallback similarity"
-            )
+            if not self.semantic_similarity_enabled:
+                logger.info(
+                    "Semantic similarity disabled (terminal_only=%s, disable_flag=%s). "
+                    "Using fallback heuristics.",
+                    getattr(settings, "TERMINAL_ONLY", False),
+                    disable_flag,
+                )
+            elif not SENTENCE_TRANSFORMERS_AVAILABLE or not NUMPY_AVAILABLE:
+                logger.warning(
+                    "Sentence transformers or numpy not available, using fallback similarity"
+                )
             self.model = None
             self.pattern_embeddings = None
             self._setup_fallback_similarity()

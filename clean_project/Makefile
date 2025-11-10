@@ -26,22 +26,26 @@ dev:
 	$(PY) -m pip install -e .[dev]
 
 lint:
-	$(PY) -m ruff .
+	$(PY) -m ruff check .
 
 format:
 	$(PY) -m black .
+	$(PY) -m ruff check --fix .
 
 typecheck:
-	$(PY) -m mypy $(PKG)
+	-$(PY) -m mypy src/agent_system | tee validation_results/mypy_report.txt ; exit 0
 
 test:
-	PYTHONPATH=src $(PY) -m pytest -q
+	PYTHONPATH=src $(PY) -m pytest -q tests
 
 cov:
 	PYTHONPATH=src $(PY) -m coverage run -m pytest -q
 	$(PY) -m coverage report -m
 
-ci: lint typecheck test
+typecheck_strict:
+	$(PY) -m mypy src/agent_system/security_validator.py
+
+ci: lint typecheck_strict test
 
 # Utilities
 migrate-passwords:

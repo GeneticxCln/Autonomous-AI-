@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 
 from .database_models import db_manager
 from .database_persistence import db_persistence
+from .async_utils import run_blocking
 
 logger = logging.getLogger(__name__)
 
@@ -118,6 +119,38 @@ class EnterprisePersistence:
             except Exception as exc:  # pragma: no cover - diagnostics only
                 info["database_error"] = str(exc)
         return info
+
+    async def save_action_selector_async(
+        self, selector_data: Dict[str, Any], *_args, **_kwargs
+    ) -> None:
+        """Async wrapper for save_action_selector."""
+        await run_blocking(self.save_action_selector, selector_data, *_args, **_kwargs)
+
+    async def load_action_selector_async(self, *_args, **_kwargs) -> Optional[Dict[str, Any]]:
+        """Async wrapper for load_action_selector."""
+        return await run_blocking(self.load_action_selector, *_args, **_kwargs)
+
+    async def save_learning_system_async(
+        self, learning_data: Dict[str, Any], *_args, **_kwargs
+    ) -> None:
+        """Async wrapper for save_learning_system."""
+        await run_blocking(self.save_learning_system, learning_data, *_args, **_kwargs)
+
+    async def load_learning_system_async(self, *_args, **_kwargs) -> Optional[Dict[str, Any]]:
+        """Async wrapper for load_learning_system."""
+        return await run_blocking(self.load_learning_system, *_args, **_kwargs)
+
+    async def save_memories_async(self, memories: List[Dict[str, Any]], *_args, **_kwargs) -> None:
+        """Async wrapper for save_memories."""
+        await run_blocking(self.save_memories, memories, *_args, **_kwargs)
+
+    async def load_memories_async(self, *_args, **_kwargs) -> List[Dict[str, Any]]:
+        """Async wrapper for load_memories."""
+        return await run_blocking(self.load_memories, *_args, **_kwargs)
+
+    async def get_storage_info_async(self) -> Dict[str, Any]:
+        """Async wrapper for get_storage_info."""
+        return await run_blocking(self.get_storage_info)
 
 
 # Global enterprise persistence instance (lazy initialization)

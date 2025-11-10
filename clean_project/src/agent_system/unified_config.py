@@ -152,6 +152,23 @@ class DistributedConfig:
     discovery_backend: str = "redis"
 
 
+@dataclass
+class ProjectAnalysisConfig:
+    """Configuration for large-project analysis subsystems."""
+
+    ast_cache_entries: int = 2048
+    ast_cache_max_mb: int = 512
+    ast_cache_ttl_seconds: int = 3600
+    memory_soft_limit_mb: int = 4096
+    memory_hard_limit_mb: int = 6144
+    memory_pressure_threshold: float = 0.85
+    profiler_enabled: bool = True
+    default_language: str = "python"
+    max_parallel_parse_tasks: int = 8
+    diff_sample_window: int = 200
+    delta_change_ratio_threshold: float = 0.05
+
+
 class UnifiedConfig:
     """Unified configuration system for the entire agent."""
 
@@ -167,6 +184,7 @@ class UnifiedConfig:
         self.database = DatabaseConfig()
         self.ai = AIConfig()
         self.distributed = DistributedConfig()
+        self.project_analysis = ProjectAnalysisConfig()
 
         # Load configuration
         self.load_from_file()
@@ -270,6 +288,52 @@ class UnifiedConfig:
         if os.getenv("DISTRIBUTED_DISCOVERY_BACKEND"):
             self.distributed.discovery_backend = os.getenv("DISTRIBUTED_DISCOVERY_BACKEND")
 
+        # Project analysis settings
+        if os.getenv("PROJECT_ANALYSIS_AST_CACHE_ENTRIES"):
+            self.project_analysis.ast_cache_entries = int(
+                os.getenv("PROJECT_ANALYSIS_AST_CACHE_ENTRIES")
+            )
+        if os.getenv("PROJECT_ANALYSIS_AST_CACHE_MAX_MB"):
+            self.project_analysis.ast_cache_max_mb = int(
+                os.getenv("PROJECT_ANALYSIS_AST_CACHE_MAX_MB")
+            )
+        if os.getenv("PROJECT_ANALYSIS_AST_CACHE_TTL_SECONDS"):
+            self.project_analysis.ast_cache_ttl_seconds = int(
+                os.getenv("PROJECT_ANALYSIS_AST_CACHE_TTL_SECONDS")
+            )
+        if os.getenv("PROJECT_ANALYSIS_MEMORY_SOFT_LIMIT_MB"):
+            self.project_analysis.memory_soft_limit_mb = int(
+                os.getenv("PROJECT_ANALYSIS_MEMORY_SOFT_LIMIT_MB")
+            )
+        if os.getenv("PROJECT_ANALYSIS_MEMORY_HARD_LIMIT_MB"):
+            self.project_analysis.memory_hard_limit_mb = int(
+                os.getenv("PROJECT_ANALYSIS_MEMORY_HARD_LIMIT_MB")
+            )
+        if os.getenv("PROJECT_ANALYSIS_MEMORY_PRESSURE_THRESHOLD"):
+            self.project_analysis.memory_pressure_threshold = float(
+                os.getenv("PROJECT_ANALYSIS_MEMORY_PRESSURE_THRESHOLD")
+            )
+        if os.getenv("PROJECT_ANALYSIS_PROFILER_ENABLED"):
+            self.project_analysis.profiler_enabled = (
+                os.getenv("PROJECT_ANALYSIS_PROFILER_ENABLED").lower() == "true"
+            )
+        if os.getenv("PROJECT_ANALYSIS_DEFAULT_LANGUAGE"):
+            self.project_analysis.default_language = os.getenv(
+                "PROJECT_ANALYSIS_DEFAULT_LANGUAGE"
+            )
+        if os.getenv("PROJECT_ANALYSIS_MAX_PARALLEL_PARSE_TASKS"):
+            self.project_analysis.max_parallel_parse_tasks = int(
+                os.getenv("PROJECT_ANALYSIS_MAX_PARALLEL_PARSE_TASKS")
+            )
+        if os.getenv("PROJECT_ANALYSIS_DIFF_SAMPLE_WINDOW"):
+            self.project_analysis.diff_sample_window = int(
+                os.getenv("PROJECT_ANALYSIS_DIFF_SAMPLE_WINDOW")
+            )
+        if os.getenv("PROJECT_ANALYSIS_DELTA_CHANGE_RATIO_THRESHOLD"):
+            self.project_analysis.delta_change_ratio_threshold = float(
+                os.getenv("PROJECT_ANALYSIS_DELTA_CHANGE_RATIO_THRESHOLD")
+            )
+
     def save_to_file(self) -> None:
         """Save current configuration to file."""
         config_data = {
@@ -281,6 +345,7 @@ class UnifiedConfig:
             "database": self._dataclass_to_dict(self.database),
             "ai": self._dataclass_to_dict(self.ai),
             "distributed": self._dataclass_to_dict(self.distributed),
+            "project_analysis": self._dataclass_to_dict(self.project_analysis),
         }
 
         try:
@@ -332,6 +397,27 @@ class UnifiedConfig:
             raise ValueError("visibility_timeout_seconds must be positive")
         if self.distributed.queue_poll_interval_seconds <= 0:
             raise ValueError("queue_poll_interval_seconds must be positive")
+
+        # Validate project analysis config
+        if self.project_analysis.ast_cache_entries <= 0:
+            raise ValueError("ast_cache_entries must be positive")
+        if self.project_analysis.ast_cache_max_mb <= 0:
+            raise ValueError("ast_cache_max_mb must be positive")
+        if self.project_analysis.memory_soft_limit_mb <= 0:
+            raise ValueError("memory_soft_limit_mb must be positive")
+        if self.project_analysis.memory_hard_limit_mb <= 0:
+            raise ValueError("memory_hard_limit_mb must be positive")
+        if (
+            self.project_analysis.memory_pressure_threshold <= 0
+            or self.project_analysis.memory_pressure_threshold >= 1
+        ):
+            raise ValueError("memory_pressure_threshold must be between 0 and 1")
+        if self.project_analysis.max_parallel_parse_tasks <= 0:
+            raise ValueError("max_parallel_parse_tasks must be positive")
+        if self.project_analysis.diff_sample_window <= 0:
+            raise ValueError("diff_sample_window must be positive")
+        if not 0 < self.project_analysis.delta_change_ratio_threshold < 1:
+            raise ValueError("delta_change_ratio_threshold must be between 0 and 1")
 
     def get_api_key(self, provider: str) -> Optional[str]:
         """Get API key for a specific provider."""
@@ -405,6 +491,19 @@ class UnifiedConfig:
                 "service_ttl_seconds": 45,
                 "visibility_timeout_seconds": 30,
                 "queue_poll_interval_seconds": 1,
+            },
+            "project_analysis": {
+                "ast_cache_entries": 2048,
+                "ast_cache_max_mb": 512,
+                "ast_cache_ttl_seconds": 3600,
+                "memory_soft_limit_mb": 4096,
+                "memory_hard_limit_mb": 6144,
+                "memory_pressure_threshold": 0.85,
+                "profiler_enabled": True,
+                "default_language": "python",
+                "max_parallel_parse_tasks": 8,
+                "diff_sample_window": 200,
+                "delta_change_ratio_threshold": 0.05,
             },
         }
 

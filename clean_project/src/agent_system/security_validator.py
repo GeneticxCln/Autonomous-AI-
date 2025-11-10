@@ -7,10 +7,10 @@ from __future__ import annotations
 
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Set
+from typing import Any, Dict, List, Optional, Set
 
 logger = logging.getLogger(__name__)
 
@@ -28,12 +28,16 @@ class ValidationResult:
     """Result of security validation."""
 
     def __init__(
-        self, is_valid: bool, level: SecurityLevel, message: str, suggestions: List[str] = None
-    ):
+        self,
+        is_valid: bool,
+        level: SecurityLevel,
+        message: str,
+        suggestions: Optional[List[str]] = None,
+    ) -> None:
         self.is_valid = is_valid
         self.level = level
         self.message = message
-        self.suggestions = suggestions or []
+        self.suggestions: List[str] = suggestions or []
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -49,53 +53,47 @@ class SecurityConfig:
     """Enhanced security configuration."""
 
     max_file_size_mb: int = 100
-    allowed_file_extensions: Set[str] = None
-    blocked_file_patterns: Set[str] = None
+    allowed_file_extensions: Set[str] = field(
+        default_factory=lambda: {
+            ".txt",
+            ".json",
+            ".csv",
+            ".py",
+            ".md",
+            ".log",
+            ".yaml",
+            ".yml",
+            ".xml",
+            ".html",
+        }
+    )
+    blocked_file_patterns: Set[str] = field(
+        default_factory=lambda: {
+            r"\.exe$",
+            r"\.bat$",
+            r"\.cmd$",
+            r"\.sh$",
+            r"\.ps1$",
+            r"\.dll$",
+            r"\.so$",
+            r"\.dylib$",
+        }
+    )
     max_path_depth: int = 10
     max_execution_time_seconds: int = 30
     allow_network_access: bool = True
-    allowed_domains: Set[str] = None
-    blocked_domains: Set[str] = None
+    allowed_domains: Set[str] = field(default_factory=set)
+    blocked_domains: Set[str] = field(default_factory=set)
     max_memory_mb: int = 1024
     max_cpu_percent: int = 80
-
-    def __post_init__(self):
-        if self.allowed_file_extensions is None:
-            self.allowed_file_extensions = {
-                ".txt",
-                ".json",
-                ".csv",
-                ".py",
-                ".md",
-                ".log",
-                ".yaml",
-                ".yml",
-                ".xml",
-                ".html",
-            }
-        if self.blocked_file_patterns is None:
-            self.blocked_file_patterns = {
-                r"\.exe$",
-                r"\.bat$",
-                r"\.cmd$",
-                r"\.sh$",
-                r"\.ps1$",
-                r"\.dll$",
-                r"\.so$",
-                r"\.dylib$",
-            }
-        if self.allowed_domains is None:
-            self.allowed_domains = set()
-        if self.blocked_domains is None:
-            self.blocked_domains = set()
 
 
 class InputValidator:
     """Validates user inputs for security."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.config = SecurityConfig()
-        self.validation_rules = self._load_validation_rules()
+        self.validation_rules: Dict[str, Any] = self._load_validation_rules()
 
     def _load_validation_rules(self) -> Dict[str, Any]:
         """Load input validation rules."""
@@ -333,13 +331,13 @@ class InputValidator:
 class ResourceValidator:
     """Validates resource usage against limits."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.config = SecurityConfig()
-        self.current_usage = {
-            "memory_mb": 0,
-            "cpu_percent": 0,
-            "file_size_mb": 0,
-            "execution_time": 0,
+        self.current_usage: Dict[str, float] = {
+            "memory_mb": 0.0,
+            "cpu_percent": 0.0,
+            "file_size_mb": 0.0,
+            "execution_time": 0.0,
         }
 
     def validate_memory_usage(self, memory_mb: float) -> ValidationResult:
@@ -403,10 +401,10 @@ class ResourceValidator:
 class SecurityAudit:
     """Performs security audits of the system."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.input_validator = InputValidator()
         self.resource_validator = ResourceValidator()
-        self.audit_log = []
+        self.audit_log: List[Dict[str, Any]] = []
 
     def audit_file_operations(self, file_paths: List[str]) -> List[ValidationResult]:
         """Audit file operations for security."""
@@ -456,7 +454,7 @@ class SecurityAudit:
 
         return results
 
-    def _log_audit_result(self, operation_type: str, target: str, result: ValidationResult):
+    def _log_audit_result(self, operation_type: str, target: str, result: ValidationResult) -> None:
         """Log audit result."""
         import time
 
@@ -481,13 +479,13 @@ class SecurityAudit:
         success_rate = (total_audits - failed_audits) / total_audits if total_audits > 0 else 0
 
         # Group by level
-        level_counts = {}
+        level_counts: Dict[str, int] = {}
         for audit in self.audit_log:
             level = audit["level"]
             level_counts[level] = level_counts.get(level, 0) + 1
 
         # Group by operation type
-        operation_counts = {}
+        operation_counts: Dict[str, int] = {}
         for audit in self.audit_log:
             op_type = audit["operation_type"]
             operation_counts[op_type] = operation_counts.get(op_type, 0) + 1
@@ -557,6 +555,6 @@ class SecurityAudit:
 
 
 # Global security instances
-input_validator = InputValidator()
-resource_validator = ResourceValidator()
-security_audit = SecurityAudit()
+input_validator: InputValidator = InputValidator()
+resource_validator: ResourceValidator = ResourceValidator()
+security_audit: SecurityAudit = SecurityAudit()

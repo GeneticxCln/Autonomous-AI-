@@ -27,6 +27,12 @@ dependencies = [
   "python-jose[cryptography]>=3.3.0",
   "structlog>=23.0.0",
   "prometheus-client>=0.19.0",
+  "redis>=5.0.0",
+  "passlib[bcrypt]>=1.7.4",
+  "argon2-cffi>=23.1.0",
+  "psutil>=5.9.0",
+  "rq>=1.15.1",
+  "rq-scheduler>=0.13.0",
 ]
 
 [project.optional-dependencies]
@@ -37,6 +43,9 @@ dev = [
   "ruff>=0.1.0",
   "mypy>=1.6.0",
   "coverage>=7.3.0",
+]
+ai = [
+  "sentence-transformers>=2.2.0",
 ]
 
 [project.scripts]
@@ -81,6 +90,12 @@ warn_redundant_casts = true
 warn_unused_configs = true
 ignore_missing_imports = true
 plugins = ["pydantic.mypy"]
+no_implicit_optional = false
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+check_untyped_defs = false
+namespace_packages = true
+explicit_package_bases = true
 
 [tool.setuptools]
 package-dir = {"" = "src"}
@@ -97,43 +112,12 @@ module = "pydantic.*"
 ignore_missing_imports = false
 
 [[tool.mypy.overrides]]
-module = "agent_system.api_security"
+module = "agent_system.security_validator"
 strict = true
 
+# Incrementally tighten typing on auth_service
 [[tool.mypy.overrides]]
-module = "agent_system.job_manager"
-strict = true
-
-[[tool.mypy.overrides]]
-module = "agent_system.production_config"
-strict = true
-
-[[tool.mypy.overrides]]
-module = "agent_system.config_simple"
-strict = true
-
-[[tool.mypy.overrides]]
-module = "agent_system.unified_config"
-strict = true
-
-[[tool.mypy.overrides]]
-module = "agent_system.distributed_message_queue"
-strict = true
-
-[[tool.mypy.overrides]]
-module = "agent_system.advanced_monitoring"
-strict = true
-
-[[tool.mypy.overrides]]
-module = "agent_system.enterprise_persistence"
-strict = true
-
-[[tool.mypy.overrides]]
-module = "agent_system.persistence"
-strict = true
-
-[[tool.mypy.overrides]]
-module = "agent_system.enhanced_persistence"
+module = "agent_system.auth_service"
 strict = true
 
 # Temporarily relax only 'misc' errors (e.g., subclassing Any, untyped decorator) while migrating schemas

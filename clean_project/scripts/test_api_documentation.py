@@ -5,20 +5,13 @@ Verifies OpenAPI schema integration and endpoint functionality
 
 import time
 
-from fastapi.testclient import TestClient
-
 from agent_system.auth_models import db_manager as auth_db_manager
 from agent_system.auth_service import auth_service
-
-# Import and initialize the app properly
-from agent_system.fastapi_app import app
+from scripts.test_client import client
 
 # Initialize auth system for testing
 auth_db_manager.initialize()
 auth_service.initialize()
-
-# Create test client after initialization
-client = TestClient(app)
 
 
 class TestAPIDocumentation:

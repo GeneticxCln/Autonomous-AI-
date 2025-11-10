@@ -11,6 +11,8 @@ from agent_system.database_models import AgentModel, db_manager
 from agent_system.job_definitions import JobPriority, JobType
 from agent_system.job_manager import AgentJobStore
 
+pytestmark = pytest.mark.asyncio
+
 
 @pytest.fixture(autouse=True)
 def isolated_job_database(tmp_path: Path):
@@ -35,7 +37,7 @@ def agent_id() -> str:
         return agent.id
 
 
-def test_job_store_lifecycle(agent_id: str):
+async def test_job_store_lifecycle(agent_id: str):
     store = AgentJobStore()
     payload: Dict[str, object] = {
         "agent_id": agent_id,
@@ -43,7 +45,7 @@ def test_job_store_lifecycle(agent_id: str):
         "max_concurrent_goals": 1,
     }
 
-    record = store.create_job(
+    record = await store.create_job(
         job_type=JobType.AGENT_EXECUTION,
         priority=JobPriority.HIGH,
         queue_name="agent.jobs",
@@ -54,12 +56,12 @@ def test_job_store_lifecycle(agent_id: str):
 
     assert record["status"] == "queued"
 
-    running = store.mark_job_running(record["id"])
+    running = await store.mark_job_running(record["id"])
     assert running is not None
     assert running["status"] == "running"
     assert running["started_at"] is not None
 
-    completed = store.mark_job_succeeded(record["id"], result={"ok": True})
+    completed = await store.mark_job_succeeded(record["id"], result={"ok": True})
     assert completed is not None
     assert completed["status"] == "succeeded"
     assert completed["result"]["ok"] is True
@@ -71,10 +73,10 @@ def test_job_store_lifecycle(agent_id: str):
         assert agent.last_execution is not None
 
 
-def test_job_store_failure(agent_id: str):
+async def test_job_store_failure(agent_id: str):
     store = AgentJobStore()
     payload = {"agent_id": agent_id, "max_cycles": 3, "max_concurrent_goals": 1}
-    record = store.create_job(
+    record = await store.create_job(
         job_type=JobType.AGENT_EXECUTION,
         priority=JobPriority.NORMAL,
         queue_name="agent.jobs",
@@ -83,11 +85,11 @@ def test_job_store_failure(agent_id: str):
         agent_id=agent_id,
     )
 
-    failed = store.mark_job_failed(record["id"], error="boom")
+    failed = await store.mark_job_failed(record["id"], error="boom")
     assert failed is not None
     assert failed["status"] == "failed"
     assert failed["error"] == "boom"
 
-    jobs = store.list_jobs(agent_id=agent_id)
+    jobs = await store.list_jobs(agent_id=agent_id)
     assert len(jobs) >= 1
     assert jobs[0]["id"] == record["id"]

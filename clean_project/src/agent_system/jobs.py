@@ -26,13 +26,13 @@ async def execute_agent_job_async(job_id: str) -> Dict[str, Any]:
     Returns:
         Result metadata persisted to the job record.
     """
-    job_record = job_store.get_job(job_id)
+    job_record = await job_store.get_job(job_id)
     if not job_record:
         raise RuntimeError(f"Job {job_id} not found")
 
     payload = AgentExecutionPayload(**job_record["parameters"])
     logger.info("Starting agent execution job %s (agent=%s)", job_id, payload.agent_id)
-    job_store.mark_job_running(job_id)
+    await job_store.mark_job_running(job_id)
 
     agent = AutonomousAgent()
     start = time.perf_counter()
@@ -46,13 +46,13 @@ async def execute_agent_job_async(job_id: str) -> Dict[str, Any]:
         duration = time.perf_counter() - start
         result["duration_seconds"] = round(duration, 2)
         result["status"] = JobStatus.SUCCEEDED.value
-        job_store.mark_job_succeeded(job_id, result=result)
+        await job_store.mark_job_succeeded(job_id, result=result)
         logger.info("Completed job %s in %.2fs", job_id, duration)
         return result
     except Exception as exc:  # pragma: no cover - defensive logging
         logger.exception("Job %s failed: %s", job_id, exc)
         result["status"] = JobStatus.FAILED.value
-        job_store.mark_job_failed(job_id, error=str(exc), result=result)
+        await job_store.mark_job_failed(job_id, error=str(exc), result=result)
         raise
     finally:
         try:

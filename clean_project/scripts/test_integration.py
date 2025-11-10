@@ -10,11 +10,10 @@ from pathlib import Path
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from fastapi.testclient import TestClient
-
 from agent_system.auth_models import db_manager
 from agent_system.auth_service import auth_service
 from agent_system.fastapi_app import app
+from scripts.test_client import client as shared_client
 
 
 def test_complete_authentication_workflow():
@@ -160,12 +159,9 @@ def test_fastapi_integration():
     print("=" * 50)
 
     try:
-        # Create test client
-        client = TestClient(app)
-
         # Test health endpoint
         print("\n1. Testing health endpoint...")
-        response = client.get("/health")
+        response = shared_client.get("/health")
         print(f"   Status: {response.status_code}")
         print(f"   Response: {response.json()}")
 
@@ -177,7 +173,7 @@ def test_fastapi_integration():
 
         # Test root endpoint
         print("\n2. Testing root endpoint...")
-        response = client.get("/")
+        response = shared_client.get("/")
         if response.status_code == 200:
             print("✅ Root endpoint working")
         else:
@@ -186,7 +182,7 @@ def test_fastapi_integration():
 
         # Test API info endpoint
         print("\n3. Testing API info endpoint...")
-        response = client.get("/api/info")
+        response = shared_client.get("/api/info")
         if response.status_code == 200:
             print("✅ API info endpoint working")
         else:

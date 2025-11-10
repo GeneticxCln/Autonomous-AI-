@@ -13,7 +13,7 @@ from datetime import datetime
 from enum import Enum
 from functools import wraps
 from types import TracebackType
-from typing import Any, Dict, List, Optional, Callable, ParamSpec, TypeVar, Type
+from typing import Any, Callable, Dict, List, Optional, ParamSpec, Type, TypeVar
 
 import psutil
 from prometheus_client import (
@@ -650,10 +650,10 @@ class AdvancedMonitoringSystem:
         except Exception as e:
             logger.error(f"Error updating AI performance metrics: {e}")
 
-    def update_queue_metrics(self) -> None:
+    async def update_queue_metrics(self) -> None:
         """Update queue depth metrics."""
         try:
-            queue_depth = job_store.get_queue_depth()
+            queue_depth = await job_store.get_queue_depth()
             self.metrics["agent_job_queue_depth"].set(queue_depth)
         except Exception as e:
             logger.error(f"Error updating queue metrics: {e}")
@@ -846,6 +846,7 @@ _register_performance_alert_callback()
 P = ParamSpec("P")
 R = TypeVar("R")
 
+
 def monitor_performance(
     metric_name: Optional[str] = None, track_errors: bool = True, track_duration: bool = True
 ) -> Callable[[Callable[P, R]], Callable[P, R]]:
@@ -890,7 +891,7 @@ async def initialize_monitoring() -> bool:
         monitoring_system.update_system_metrics()
         monitoring_system.update_health_metrics()
         monitoring_system.update_ai_performance_metrics()
-        monitoring_system.update_queue_metrics()
+        await monitoring_system.update_queue_metrics()
 
         # Set up periodic system metrics updates
         asyncio.create_task(_periodic_metrics_update())
@@ -909,7 +910,7 @@ async def _periodic_metrics_update() -> None:
             monitoring_system.update_system_metrics()
             monitoring_system.update_health_metrics()
             monitoring_system.update_ai_performance_metrics()
-            monitoring_system.update_queue_metrics()
+            await monitoring_system.update_queue_metrics()
             await asyncio.sleep(60)  # Update every minute
         except Exception as e:
             logger.error(f"Error in periodic metrics update: {e}")
@@ -967,7 +968,9 @@ def record_queue_job(status: str, priority: str, duration: Optional[float] = Non
     monitoring_system.record_queue_job(status, priority, duration)
 
 
-def record_goal(status: str, priority: Optional[str] = None, duration: Optional[float] = None) -> None:
+def record_goal(
+    status: str, priority: Optional[str] = None, duration: Optional[float] = None
+) -> None:
     """Record goal."""
     monitoring_system.record_goal(status, priority, duration)
 

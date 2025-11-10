@@ -11,8 +11,9 @@ import ipaddress
 import logging
 import re
 import secrets
+import threading
 import time
-from typing import Any, Dict
+from typing import Any, Dict, Tuple
 from urllib.parse import urlparse
 
 from fastapi import HTTPException, Request, status
@@ -29,6 +30,9 @@ class SecurityHardening:
         self.rate_limit_storage = {}
         self.failed_attempts = {}
         self.blocked_ips = {}
+        self.csrf_token_ttl = 900  # seconds
+        self._csrf_tokens: Dict[str, Tuple[str, float]] = {}
+        self._csrf_lock = threading.Lock()
 
         # Suspicious activity detection
         self.suspicious_patterns = [
@@ -327,15 +331,37 @@ class SecurityHardening:
         expected_signature = hmac.new(secret.encode(), data.encode(), hashlib.sha256).hexdigest()
         return hmac.compare_digest(expected_signature, signature)
 
-    def create_csrf_token(self) -> str:
+    def create_csrf_token(self, session_token: str | None = None) -> str:
         """Create CSRF token."""
-        return secrets.token_urlsafe(32)
+        token = secrets.token_urlsafe(32)
+        if session_token:
+            expires_at = time.time() + self.csrf_token_ttl
+            with self._csrf_lock:
+                self._csrf_tokens[session_token] = (token, expires_at)
+        return token
 
     def validate_csrf_token(self, token: str, session_token: str) -> bool:
         """Validate CSRF token."""
-        # In production, store CSRF tokens in secure session storage
-        # This is a simplified implementation
-        return len(token) > 0 and len(token) < 100
+        if not token or not session_token:
+            return False
+
+        now = time.time()
+        with self._csrf_lock:
+            stored = self._csrf_tokens.get(session_token)
+            if not stored:
+                return False
+
+            expected, expires_at = stored
+            if expires_at < now:
+                self._csrf_tokens.pop(session_token, None)
+                return False
+
+            if not hmac.compare_digest(expected, token):
+                return False
+
+            # One-time use token
+            self._csrf_tokens.pop(session_token, None)
+            return True
 
 
 # Global security hardening instance

@@ -8,6 +8,7 @@ import logging
 from datetime import UTC, datetime
 from typing import Any, Dict, List, Optional, cast
 
+from .async_utils import run_blocking
 from .database_models import AgentJobModel, AgentModel, db_manager
 from .job_definitions import JobPriority, JobStatus, JobType
 
@@ -31,7 +32,7 @@ class AgentJobStore:
     def __init__(self) -> None:
         self.db = db_manager
 
-    def create_job(
+    async def create_job(
         self,
         *,
         job_type: JobType,
@@ -44,56 +45,66 @@ class AgentJobStore:
     ) -> Dict[str, Any]:
         """Create a persisted job record."""
         parameters = self._normalize_payload(payload)
-        with self.db.get_session() as session:
-            job = AgentJobModel(
-                agent_id=agent_id,
-                job_type=job_type.value,
-                status=JobStatus.QUEUED.value,
-                priority=priority.value,
-                queue_name=queue_name,
-                parameters=parameters,
-                requested_by=requested_by,
-                tenant_id=tenant_id,
-                created_at=_now(),
-            )
-            session.add(job)
-            self._update_agent_status(session, agent_id, JobStatus.QUEUED)
-            session.commit()
-            session.refresh(job)
-            return self._to_dict(job)
 
-    def mark_job_running(self, job_id: str) -> Optional[Dict[str, Any]]:
+        def _create_job() -> Dict[str, Any]:
+            with self.db.get_session() as session:
+                job = AgentJobModel(
+                    agent_id=agent_id,
+                    job_type=job_type.value,
+                    status=JobStatus.QUEUED.value,
+                    priority=priority.value,
+                    queue_name=queue_name,
+                    parameters=parameters,
+                    requested_by=requested_by,
+                    tenant_id=tenant_id,
+                    created_at=_now(),
+                )
+                session.add(job)
+                self._update_agent_status(session, agent_id, JobStatus.QUEUED)
+                session.commit()
+                session.refresh(job)
+                return self._to_dict(job)
+
+        return await run_blocking(_create_job)
+
+    async def mark_job_running(self, job_id: str) -> Optional[Dict[str, Any]]:
         """Transition a job to running state."""
-        with self.db.get_session() as session:
-            job = session.query(AgentJobModel).filter(AgentJobModel.id == job_id).first()
-            if not job:
-                return None
-            job.status = JobStatus.RUNNING.value
-            job.started_at = _now()
-            job.last_heartbeat = job.started_at
-            self._update_agent_status(session, job.agent_id, JobStatus.RUNNING)
-            session.commit()
-            session.refresh(job)
-            return self._to_dict(job)
+        def _mark_running() -> Optional[Dict[str, Any]]:
+            with self.db.get_session() as session:
+                job = session.query(AgentJobModel).filter(AgentJobModel.id == job_id).first()
+                if not job:
+                    return None
+                job.status = JobStatus.RUNNING.value
+                job.started_at = _now()
+                job.last_heartbeat = job.started_at
+                self._update_agent_status(session, job.agent_id, JobStatus.RUNNING)
+                session.commit()
+                session.refresh(job)
+                return self._to_dict(job)
 
-    def mark_job_succeeded(
+        return await run_blocking(_mark_running)
+
+    async def mark_job_succeeded(
         self, job_id: str, result: Optional[Dict[str, Any]] = None
     ) -> Optional[Dict[str, Any]]:
         """Mark job as completed successfully."""
-        with self.db.get_session() as session:
-            job = session.query(AgentJobModel).filter(AgentJobModel.id == job_id).first()
-            if not job:
-                return None
-            job.status = JobStatus.SUCCEEDED.value
-            job.result = result or {}
-            job.completed_at = _now()
-            self._update_agent_status(session, job.agent_id, JobStatus.SUCCEEDED)
-            self._update_agent_last_run(session, job.agent_id)
-            session.commit()
-            session.refresh(job)
-            return self._to_dict(job)
+        def _mark_succeeded() -> Optional[Dict[str, Any]]:
+            with self.db.get_session() as session:
+                job = session.query(AgentJobModel).filter(AgentJobModel.id == job_id).first()
+                if not job:
+                    return None
+                job.status = JobStatus.SUCCEEDED.value
+                job.result = result or {}
+                job.completed_at = _now()
+                self._update_agent_status(session, job.agent_id, JobStatus.SUCCEEDED)
+                self._update_agent_last_run(session, job.agent_id)
+                session.commit()
+                session.refresh(job)
+                return self._to_dict(job)
 
-    def mark_job_failed(
+        return await run_blocking(_mark_succeeded)
+
+    async def mark_job_failed(
         self,
         job_id: str,
         *,
@@ -101,34 +112,43 @@ class AgentJobStore:
         result: Optional[Dict[str, Any]] = None,
     ) -> Optional[Dict[str, Any]]:
         """Mark job as failed."""
-        with self.db.get_session() as session:
-            job = session.query(AgentJobModel).filter(AgentJobModel.id == job_id).first()
-            if not job:
-                return None
-            job.status = JobStatus.FAILED.value
-            job.error = error
-            job.result = result or {}
-            job.completed_at = _now()
-            self._update_agent_status(session, job.agent_id, JobStatus.FAILED)
-            session.commit()
-            session.refresh(job)
-            return self._to_dict(job)
+        def _mark_failed() -> Optional[Dict[str, Any]]:
+            with self.db.get_session() as session:
+                job = session.query(AgentJobModel).filter(AgentJobModel.id == job_id).first()
+                if not job:
+                    return None
+                job.status = JobStatus.FAILED.value
+                job.error = error
+                job.result = result or {}
+                job.completed_at = _now()
+                self._update_agent_status(session, job.agent_id, JobStatus.FAILED)
+                session.commit()
+                session.refresh(job)
+                return self._to_dict(job)
 
-    def record_heartbeat(self, job_id: str) -> None:
+        return await run_blocking(_mark_failed)
+
+    async def record_heartbeat(self, job_id: str) -> None:
         """Update heartbeat timestamp for long-running jobs."""
-        with self.db.get_session() as session:
-            session.query(AgentJobModel).filter(AgentJobModel.id == job_id).update(
-                {"last_heartbeat": _now()}
-            )
-            session.commit()
+        def _record() -> None:
+            with self.db.get_session() as session:
+                session.query(AgentJobModel).filter(AgentJobModel.id == job_id).update(
+                    {"last_heartbeat": _now()}
+                )
+                session.commit()
 
-    def get_job(self, job_id: str) -> Optional[Dict[str, Any]]:
+        await run_blocking(_record)
+
+    async def get_job(self, job_id: str) -> Optional[Dict[str, Any]]:
         """Return a serialized job record."""
-        with self.db.get_session() as session:
-            job = session.query(AgentJobModel).filter(AgentJobModel.id == job_id).first()
-            return self._to_dict(job) if job else None
+        def _get_job() -> Optional[Dict[str, Any]]:
+            with self.db.get_session() as session:
+                job = session.query(AgentJobModel).filter(AgentJobModel.id == job_id).first()
+                return self._to_dict(job) if job else None
 
-    def list_jobs(
+        return await run_blocking(_get_job)
+
+    async def list_jobs(
         self,
         *,
         agent_id: Optional[str] = None,
@@ -136,28 +156,36 @@ class AgentJobStore:
         limit: int = 50,
     ) -> List[Dict[str, Any]]:
         """List recent jobs filtered by agent or status."""
-        with self.db.get_session() as session:
-            query = session.query(AgentJobModel)
-            if agent_id:
-                query = query.filter(AgentJobModel.agent_id == agent_id)
-            if status:
-                query = query.filter(AgentJobModel.status == status.value)
-            jobs = query.order_by(AgentJobModel.created_at.desc()).limit(limit).all()
-            return [self._to_dict(job) for job in jobs]
+        def _list_jobs() -> List[Dict[str, Any]]:
+            with self.db.get_session() as session:
+                query = session.query(AgentJobModel)
+                if agent_id:
+                    query = query.filter(AgentJobModel.agent_id == agent_id)
+                if status:
+                    query = query.filter(AgentJobModel.status == status.value)
+                jobs = query.order_by(AgentJobModel.created_at.desc()).limit(limit).all()
+                return [self._to_dict(job) for job in jobs]
 
-    def get_queue_depth(self) -> int:
+        return await run_blocking(_list_jobs)
+
+    async def get_queue_depth(self) -> int:
         """Get the current depth of the job queue (number of queued jobs)."""
-        with self.db.get_session() as session:
-            return cast(
-                int,
-                (
-                    session.query(AgentJobModel)
-                    .filter(AgentJobModel.status == JobStatus.QUEUED.value)
-                    .count()
-                ),
-            )
+        def _queue_depth() -> int:
+            with self.db.get_session() as session:
+                return cast(
+                    int,
+                    (
+                        session.query(AgentJobModel)
+                        .filter(AgentJobModel.status == JobStatus.QUEUED.value)
+                        .count()
+                    ),
+                )
 
-    def _update_agent_status(self, session: Any, agent_id: Optional[str], job_status: JobStatus) -> None:
+        return await run_blocking(_queue_depth)
+
+    def _update_agent_status(
+        self, session: Any, agent_id: Optional[str], job_status: JobStatus
+    ) -> None:
         if not agent_id:
             return
         status_value = self._AGENT_STATUS_MAP.get(job_status)

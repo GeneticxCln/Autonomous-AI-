@@ -14,8 +14,8 @@ from dataclasses import dataclass, field
 from enum import IntEnum
 from typing import Any, Dict, Optional, Tuple
 
-from .cache_manager import cache_manager
 from .cache_manager import Redis as RedisClient
+from .cache_manager import cache_manager
 from .config_simple import settings
 
 logger = logging.getLogger(__name__)
@@ -108,7 +108,9 @@ class DistributedMessageQueue:
         self.force_fallback = force_fallback
         self._is_initialized: bool = False
         self._using_fallback: bool = force_fallback
-        self._fallback_queues: Dict[str, asyncio.PriorityQueue[DistributedMessageQueue.PriorityItem]] = {}
+        self._fallback_queues: Dict[
+            str, asyncio.PriorityQueue[DistributedMessageQueue.PriorityItem]
+        ] = {}
         self._fallback_pending: Dict[str, Dict[str, MessageEnvelope]] = {}
         self._fallback_lock: asyncio.Lock = asyncio.Lock()
         self._message_counter: int = 0
@@ -290,7 +292,9 @@ class DistributedMessageQueue:
                     maxsize=self.config.max_fallback_queue_size
                 )
 
-            priority_queue: asyncio.PriorityQueue[DistributedMessageQueue.PriorityItem] = self._fallback_queues[queue]
+            priority_queue: asyncio.PriorityQueue[DistributedMessageQueue.PriorityItem] = (
+                self._fallback_queues[queue]
+            )
             if priority_queue.full():
                 # Drop lowest priority entry to make space
                 try:
@@ -306,10 +310,14 @@ class DistributedMessageQueue:
         async with self._fallback_lock:
             if queue not in self._fallback_queues:
                 self._fallback_queues[queue] = asyncio.PriorityQueue()
-            priority_queue: asyncio.PriorityQueue[DistributedMessageQueue.PriorityItem] = self._fallback_queues[queue]
+            priority_queue: asyncio.PriorityQueue[DistributedMessageQueue.PriorityItem] = (
+                self._fallback_queues[queue]
+            )
 
         try:
-            item: DistributedMessageQueue.PriorityItem = await asyncio.wait_for(priority_queue.get(), timeout=timeout)
+            item: DistributedMessageQueue.PriorityItem = await asyncio.wait_for(
+                priority_queue.get(), timeout=timeout
+            )
         except asyncio.TimeoutError:
             return None
 
@@ -325,10 +333,16 @@ class DistributedMessageQueue:
             if not pending:
                 return 0
 
-            queued: asyncio.PriorityQueue[DistributedMessageQueue.PriorityItem] = self._fallback_queues.setdefault(queue, asyncio.PriorityQueue())
+            queued: asyncio.PriorityQueue[DistributedMessageQueue.PriorityItem] = (
+                self._fallback_queues.setdefault(queue, asyncio.PriorityQueue())
+            )
             requeued = 0
             for message_id, envelope in list(pending.items()):
-                entry: DistributedMessageQueue.PriorityItem = (int(envelope.priority), self._message_counter, envelope)
+                entry: DistributedMessageQueue.PriorityItem = (
+                    int(envelope.priority),
+                    self._message_counter,
+                    envelope,
+                )
                 self._message_counter += 1
                 await queued.put(entry)
                 requeued += 1

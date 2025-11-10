@@ -24,13 +24,16 @@ try:
 except Exception:
     _PROM = False
 
+if "PYTEST_CURRENT_TEST" in os.environ:
+    os.environ.setdefault("SKIP_INFRA_STARTUP", "true")
+
 if _PROM:
     from .advanced_monitoring import initialize_monitoring, monitoring_system
 else:
     monitoring_system = None
     initialize_monitoring = None
 
-from typing import Optional, AsyncIterator, Callable, Awaitable
+from typing import AsyncIterator, Awaitable, Callable, Optional
 
 from .api_endpoints import api_router
 from .api_schemas import (
@@ -77,6 +80,7 @@ from .api_security import (
     create_error_response,
     log_api_access,
 )
+from .async_utils import run_blocking
 from .auth_models import db_manager as auth_db_manager
 from .auth_service import auth_service
 from .database_models import db_manager
@@ -97,21 +101,42 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info("🚀 Starting Agent Enterprise API Server")
 
     try:
-        # Initialize database
-        db_manager.initialize()
+        # Initialize database (prefer DATABASE_URL env)
+        try:
+            db_url = os.getenv("DATABASE_URL")
+            if db_url:
+                db_manager.database_url = db_url
+        except Exception:
+            logger.debug("DATABASE_URL not set; using default DB URL")
+        logger.debug("Initializing primary database")
+        await run_blocking(db_manager.initialize)
+        logger.debug("Primary database ready")
         logger.info("✅ Database initialized successfully")
 
-        # Initialize authentication database (separate manager)
-        auth_db_manager.initialize()
+        # Initialize authentication database (prefer AUTH_DATABASE_URL or fallback to DATABASE_URL)
+        try:
+            auth_db_url = os.getenv("AUTH_DATABASE_URL") or os.getenv("DATABASE_URL")
+            if auth_db_url:
+                auth_db_manager.database_url = auth_db_url
+        except Exception:
+            logger.debug("AUTH/DATABASE_URL not set for auth DB; using default")
+        logger.debug("Initializing auth database")
+        await run_blocking(auth_db_manager.initialize)
+        logger.debug("Auth database ready")
         logger.info("✅ Authentication database initialized")
 
         # Setup authentication system
-        auth_service.initialize()
+        logger.debug("Initializing auth service defaults")
+        await run_blocking(auth_service.initialize)
+        logger.debug("Auth service ready")
         logger.info("✅ Authentication system initialized")
 
         # Initialize infrastructure stack (cache, queue, distributed services)
-        await agent_startup_integration()
-        logger.info("✅ Infrastructure stack initialized")
+        if os.getenv("SKIP_INFRA_STARTUP", "false").lower() == "true":
+            logger.info("⚙️  Infrastructure startup skipped via SKIP_INFRA_STARTUP")
+        else:
+            await agent_startup_integration()
+            logger.info("✅ Infrastructure stack initialized")
 
         if _PROM and initialize_monitoring is not None:
             await initialize_monitoring()
@@ -160,8 +185,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     finally:
         # Shutdown
         logger.info("🔄 Shutting down Agent Enterprise API Server")
-        await agent_shutdown_integration()
-        db_manager.close()
+        if os.getenv("SKIP_INFRA_STARTUP", "false").lower() != "true":
+            await agent_shutdown_integration()
+        await run_blocking(db_manager.close)
+        await run_blocking(auth_db_manager.close)
         logger.info("✅ Application shutdown completed")
 
 
@@ -433,11 +460,18 @@ def create_app() -> FastAPI:
     async def health_check():
         """Basic health check endpoint."""
         try:
-            # Use auth service's database manager for consistency
-            with auth_service.db.get_session() as session:
+
+            async def _probe():
                 from sqlalchemy import text
 
-                session.execute(text("SELECT 1"))
+                def _task():
+                    with auth_service.db.get_session() as session:
+                        session.execute(text("SELECT 1"))
+                    return True
+
+                return await run_blocking(_task)
+
+            await _probe()
             return {"status": "healthy", "database": "connected"}
         except Exception as e:
             # In production, reflect failure; in non-prod, degrade gracefully
@@ -456,24 +490,25 @@ def create_app() -> FastAPI:
 
             import psutil
 
-            # Check if worker process is running
-            process_count = len(psutil.pids())
-            memory_info = psutil.virtual_memory()
-            cpu_percent = psutil.cpu_percent(interval=1)
+            def _collect():
+                process_count = len(psutil.pids())
+                memory_info = psutil.virtual_memory()
+                cpu_percent = psutil.cpu_percent(interval=1)
+                health_status = {
+                    "status": "healthy",
+                    "timestamp": datetime.now(UTC).isoformat(),
+                    "processes": process_count,
+                    "memory_available_gb": round(memory_info.available / (1024**3), 2),
+                    "cpu_usage_percent": cpu_percent,
+                    "worker_active": True,
+                }
+                return health_status, memory_info.percent, cpu_percent
 
-            # Basic health indicators
-            health_status = {
-                "status": "healthy",
-                "timestamp": datetime.now(UTC).isoformat(),
-                "processes": process_count,
-                "memory_available_gb": round(memory_info.available / (1024**3), 2),
-                "cpu_usage_percent": cpu_percent,
-                "worker_active": True,
-            }
+            health_status, mem_pct, cpu_percent = await run_blocking(_collect)
 
             # In production, return unhealthy status if resources are critically low
             if cfg.is_production():
-                if memory_info.percent > 95 or cpu_percent > 95:
+                if mem_pct > 95 or cpu_percent > 95:
                     return JSONResponse(
                         status_code=503,
                         content={
@@ -510,10 +545,17 @@ def create_app() -> FastAPI:
         """Worker readiness check for Kubernetes readiness probes."""
         try:
             # Check database connectivity
-            with auth_service.db.get_session() as session:
-                from sqlalchemy import text
+            from sqlalchemy import text
 
-                session.execute(text("SELECT 1"))
+            async def _probe():
+                def _task():
+                    with auth_service.db.get_session() as session:
+                        session.execute(text("SELECT 1"))
+                    return True
+
+                return await run_blocking(_task)
+
+            await _probe()
 
             # Check if monitoring system is available
             try:

@@ -138,9 +138,7 @@ class DatabasePersistence:
 
                     # Otherwise, see if it exists in the database already
                     existing = (
-                        session.query(MemoryModel)
-                        .filter(MemoryModel.memory_id == mem_id)
-                        .first()
+                        session.query(MemoryModel).filter(MemoryModel.memory_id == mem_id).first()
                     )
 
                     if existing:

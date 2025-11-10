@@ -74,3 +74,5 @@ class JobQueueMessage(BaseModel):  # type: ignore[misc]
 
 
 AGENT_JOB_QUEUE = "agent.jobs"
+DEAD_LETTER_QUEUE = "agent.jobs.dlq"
+DEFAULT_JOB_RETRY_LIMIT = 3

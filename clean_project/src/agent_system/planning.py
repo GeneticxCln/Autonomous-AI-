@@ -4,7 +4,7 @@ import logging
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List
 
-from .models import Action, Goal, Plan, Context
+from .models import Action, Goal, Plan
 
 logger = logging.getLogger(__name__)
 

@@ -5,10 +5,11 @@ Production-ready API with comprehensive OpenAPI documentation
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from datetime import UTC, datetime
-from typing import Any, Optional, AsyncIterator, Callable, ParamSpec, TypeVar, cast
+from typing import Any, AsyncIterator, Callable, Optional, ParamSpec, TypeVar, cast
 
 from fastapi import APIRouter, Depends, Query, Request, status
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -44,6 +45,7 @@ from .api_security import (
     get_current_security_context,
     require_permission,
 )
+from .async_utils import run_blocking
 from .auth_models import (
     AccountLockedError,
     APITokenModel,
@@ -55,7 +57,15 @@ from .auth_models import (
 )
 from .auth_service import auth_service
 from .config_simple import settings
-from .database_models import ActionModel, AgentCapabilityModel, AgentModel, GoalModel
+from .database_models import (
+    ActionModel,
+    AgentCapabilityModel,
+    AgentModel,
+    GoalModel,
+)
+from .database_models import (
+    db_manager as app_db_manager,
+)
 from .distributed_message_queue import MessagePriority, distributed_message_queue
 from .job_definitions import (
     AGENT_JOB_QUEUE,
@@ -89,16 +99,21 @@ APIEnvelope = APIResponse
 # Typed decorator wrappers to satisfy mypy for FastAPI route decorators
 P = ParamSpec("P")
 R = TypeVar("R")
+T = TypeVar("T")
+
 
 def _typed_route(
-    decorator_factory: Callable[..., Callable[[Callable[P, R]], Callable[..., Any]]]
+    decorator_factory: Callable[..., Callable[[Callable[P, R]], Callable[..., Any]]],
 ) -> Callable[..., Callable[[Callable[P, R]], Callable[P, R]]]:
     def wrapper(*args: Any, **kwargs: Any) -> Callable[[Callable[P, R]], Callable[P, R]]:
         def inner(func: Callable[P, R]) -> Callable[P, R]:
             # FastAPI returns the function after registering the route; cast restores the original type
             return cast(Callable[P, R], decorator_factory(*args, **kwargs)(func))
+
         return inner
+
     return wrapper
+
 
 class TypedRouter:
     def __init__(self, router: APIRouter) -> None:
@@ -109,8 +124,30 @@ class TypedRouter:
         self.delete = _typed_route(router.delete)
         self.patch = _typed_route(router.patch)
 
+
 # Use typed wrappers for route decorators to avoid decorator-level ignores
 typed_router = TypedRouter(api_router)
+
+
+async def _with_app_session(func: Callable[[Any], T]) -> T:
+    """Execute database work for the app DB in a threadpool."""
+
+    def _run() -> T:
+        with app_db_manager.get_session() as session:
+            return func(session)
+
+    return await run_blocking(_run)
+
+
+async def _with_auth_session(func: Callable[[Any], T]) -> T:
+    """Execute database work for the auth DB in a threadpool."""
+
+    def _run() -> T:
+        with auth_service.db.get_session() as session:
+            return func(session)
+
+    return await run_blocking(_run)
+
 
 JOB_PRIORITY_TO_MESSAGE = {
     JobPriority.CRITICAL: MessagePriority.CRITICAL,
@@ -250,14 +287,14 @@ async def login(request: Request, login_data: LoginRequest) -> JSONResponse:
         cfg = get_config()
         if cfg.is_production():
             ip = request.client.host if request.client else "unknown"
-            if check_custom_rate_limit("login", f"{ip}:{login_data.username}", 5, 900):
+            if await check_custom_rate_limit("login", f"{ip}:{login_data.username}", 5, 900):
                 return create_error_response(
                     message="Too many login attempts. Please try again later.",
                     error_type="RATE_LIMIT_EXCEEDED",
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 )
         # Authenticate user with IP and user agent tracking
-        security_context = auth_service.authenticate_user(
+        security_context = await auth_service.authenticate_user_async(
             login_data.username,
             login_data.password,
             ip_address=request.client.host if request.client else None,
@@ -265,7 +302,7 @@ async def login(request: Request, login_data: LoginRequest) -> JSONResponse:
         )
 
         # Create user session with tracking
-        tokens = auth_service.create_user_session(
+        tokens = await auth_service.create_user_session_async(
             security_context.user.id,
             ip_address=request.client.host if request.client else None,
             user_agent=request.headers.get("user-agent"),
@@ -383,7 +420,7 @@ async def refresh_token(request: Request, refresh_data: TokenRefreshRequest) -> 
     ```
     """
     try:
-        tokens = auth_service.refresh_access_token(refresh_data.refresh_token)
+        tokens = await auth_service.refresh_access_token_async(refresh_data.refresh_token)
 
         # Build token data response
         token_data = TokenData(
@@ -427,7 +464,7 @@ async def logout(
 ) -> JSONResponse:
     """Logout user and invalidate session."""
     try:
-        auth_service.logout(security_context.user.id, security_context.session_id)
+        await auth_service.logout_async(security_context.user.id, security_context.session_id)
 
         logger.info(f"User {security_context.user.username} logged out successfully")
 
@@ -480,7 +517,7 @@ async def create_user(
 ) -> JSONResponse:
     """Create new user account (requires users.write permission)."""
     try:
-        user = auth_service.create_user(
+        user = await auth_service.create_user_async(
             username=user_data.username,
             email=user_data.email,
             password=user_data.password,
@@ -524,24 +561,27 @@ async def list_users(
 ) -> JSONResponse:
     """List users (requires users.read permission)."""
     try:
-        with auth_service.db.get_session() as session:
-            users = session.query(UserModel).offset(skip).limit(limit).all()
 
-            user_list = []
-            for user in users:
-                user_data = {
-                    "id": user.id,
-                    "username": user.username,
-                    "email": user.email,
-                    "full_name": user.full_name,
-                    "is_active": user.is_active,
-                    "roles": [role.name for role in user.roles],
-                    "created_at": user.created_at.isoformat(),
-                    "last_login": user.last_login.isoformat() if user.last_login else None,
-                }
-                user_list.append(user_data)
+        def _query(session):
+            records = session.query(UserModel).offset(skip).limit(limit).all()
+            result = []
+            for user in records:
+                result.append(
+                    {
+                        "id": user.id,
+                        "username": user.username,
+                        "email": user.email,
+                        "full_name": user.full_name,
+                        "is_active": user.is_active,
+                        "roles": [role.name for role in user.roles],
+                        "created_at": user.created_at.isoformat(),
+                        "last_login": user.last_login.isoformat() if user.last_login else None,
+                    }
+                )
+            return result
 
-            return create_api_response(data=user_list, message="Users retrieved successfully")
+        user_list = await _with_auth_session(_query)
+        return create_api_response(data=user_list, message="Users retrieved successfully")
 
     except Exception as e:
         logger.error(f"Failed to list users: {str(e)}")
@@ -558,8 +598,11 @@ async def create_api_token(
 ) -> JSONResponse:
     """Create API token for current user."""
     try:
-        api_token = auth_service.create_api_token(
-            security_context.user.id, token_data.name, token_data.scopes, token_data.expires_days
+        api_token = await auth_service.create_api_token_async(
+            security_context.user.id,
+            token_data.name,
+            token_data.scopes,
+            token_data.expires_days,
         )
 
         return create_api_response(
@@ -586,26 +629,30 @@ async def list_api_tokens(
 ) -> JSONResponse:
     """List user's API tokens."""
     try:
-        with auth_service.db.get_session() as session:
-            tokens = (
+
+        def _query(session):
+            records = (
                 session.query(APITokenModel)
                 .filter(APITokenModel.user_id == security_context.user.id)
                 .all()
             )
+            token_data = []
+            for token in records:
+                token_data.append(
+                    {
+                        "id": token.id,
+                        "name": token.name,
+                        "token_prefix": token.token_prefix,
+                        "scopes": token.scopes,
+                        "created_at": token.created_at.isoformat(),
+                        "expires_at": token.expires_at.isoformat() if token.expires_at else None,
+                        "last_used": token.last_used.isoformat() if token.last_used else None,
+                        "usage_count": token.usage_count,
+                    }
+                )
+            return token_data
 
-        token_list = []
-        for token in tokens:
-            token_data = {
-                "id": token.id,
-                "name": token.name,
-                "token_prefix": token.token_prefix,
-                "scopes": token.scopes,
-                "created_at": token.created_at.isoformat(),
-                "expires_at": token.expires_at.isoformat() if token.expires_at else None,
-                "last_used": token.last_used.isoformat() if token.last_used else None,
-                "usage_count": token.usage_count,
-            }
-            token_list.append(token_data)
+        token_list = await _with_auth_session(_query)
 
         return create_api_response(data=token_list, message="API tokens retrieved successfully")
 
@@ -632,10 +679,16 @@ async def create_agent(
             created_by=security_context.user.id,
         )
 
-        with auth_service.db.get_session() as session:
-            session.add(agent)
-            session.commit()
-            session.refresh(agent)
+        async def _persist():
+            def _op(session):
+                session.add(agent)
+                session.commit()
+                session.refresh(agent)
+                return agent
+
+            return await _with_app_session(_op)
+
+        agent = await _persist()
 
         agent_response = {
             "id": agent.id,
@@ -671,24 +724,28 @@ async def list_agents(
 ) -> JSONResponse:
     """List agents (requires agent.read permission)."""
     try:
-        with auth_service.db.get_session() as session:
-            agents = session.query(AgentModel).offset(skip).limit(limit).all()
 
+        def _query(session):
+            records = session.query(AgentModel).offset(skip).limit(limit).all()
             agent_list = []
-            for agent in agents:
-                agent_data = {
-                    "id": agent.id,
-                    "name": agent.name,
-                    "description": agent.description,
-                    "status": agent.status,
-                    "goals": agent.goals,
-                    "memory_usage": len(agent.memory) if agent.memory else 0,
-                    "created_at": agent.created_at.isoformat(),
-                    "updated_at": agent.updated_at.isoformat(),
-                }
-                agent_list.append(agent_data)
+            for agent in records:
+                agent_list.append(
+                    {
+                        "id": agent.id,
+                        "name": agent.name,
+                        "description": agent.description,
+                        "status": agent.status,
+                        "goals": agent.goals,
+                        "memory_usage": len(agent.memory) if agent.memory else 0,
+                        "created_at": agent.created_at.isoformat(),
+                        "updated_at": agent.updated_at.isoformat(),
+                    }
+                )
+            return agent_list
 
-            return create_api_response(data=agent_list, message="Agents retrieved successfully")
+        agent_list = await _with_app_session(_query)
+
+        return create_api_response(data=agent_list, message="Agents retrieved successfully")
 
     except Exception as e:
         logger.error(f"Failed to list agents: {str(e)}")
@@ -703,30 +760,31 @@ async def get_agent(
 ) -> JSONResponse:
     """Get specific agent details (requires agent.read permission)."""
     try:
-        with auth_service.db.get_session() as session:
-            agent = session.query(AgentModel).filter(AgentModel.id == agent_id).first()
-            if not agent:
-                return create_error_response(
-                    message="Agent not found",
-                    error_type="AGENT_NOT_FOUND",
-                    status_code=status.HTTP_404_NOT_FOUND,
-                )
 
-            agent_data = {
-                "id": agent.id,
-                "name": agent.name,
-                "description": agent.description,
-                "status": agent.status,
-                "goals": agent.goals,
-                "memory": agent.memory,
-                "memory_usage": len(agent.memory) if agent.memory else 0,
-                "created_at": agent.created_at.isoformat(),
-                "updated_at": agent.updated_at.isoformat(),
-            }
+        def _query(session):
+            return session.query(AgentModel).filter(AgentModel.id == agent_id).first()
 
-            return create_api_response(
-                data=agent_data, message="Agent details retrieved successfully"
+        agent = await _with_app_session(_query)
+        if not agent:
+            return create_error_response(
+                message="Agent not found",
+                error_type="AGENT_NOT_FOUND",
+                status_code=status.HTTP_404_NOT_FOUND,
             )
+
+        agent_data = {
+            "id": agent.id,
+            "name": agent.name,
+            "description": agent.description,
+            "status": agent.status,
+            "goals": agent.goals,
+            "memory": agent.memory,
+            "memory_usage": len(agent.memory) if agent.memory else 0,
+            "created_at": agent.created_at.isoformat(),
+            "updated_at": agent.updated_at.isoformat(),
+        }
+
+        return create_api_response(data=agent_data, message="Agent details retrieved successfully")
 
     except Exception as e:
         logger.error(f"Failed to get agent {agent_id}: {str(e)}")
@@ -742,15 +800,11 @@ async def execute_agent(
 ) -> JSONResponse:
     """Execute agent operations (requires agent.execute permission)."""
     try:
-        with auth_service.db.get_session() as session:
-            agent = session.query(AgentModel).filter(AgentModel.id == agent_id).first()
-            if not agent:
-                return create_error_response(
-                    message="Agent not found",
-                    error_type="AGENT_NOT_FOUND",
-                    status_code=status.HTTP_404_NOT_FOUND,
-                )
 
+        def _create_action(session):
+            record = session.query(AgentModel).filter(AgentModel.id == agent_id).first()
+            if not record:
+                return None, None
             action = ActionModel(
                 action_id=str(uuid.uuid4()),
                 agent_id=agent_id,
@@ -761,59 +815,69 @@ async def execute_agent(
             )
             session.add(action)
             session.commit()
+            session.refresh(action)
+            return record, action
 
-            payload = AgentExecutionPayload(
-                agent_id=agent_id,
-                max_cycles=getattr(settings, "MAX_CYCLES", 100),
-                max_concurrent_goals=getattr(settings, "MAX_CONCURRENT_GOALS", 1),
-                requested_by=security_context.user.username,
-                tenant_id=getattr(security_context.user, "tenant_id", None),
-                metadata={"action_id": action.id},
+        agent, action = await _with_app_session(_create_action)
+        if not agent:
+            return create_error_response(
+                message="Agent not found",
+                error_type="AGENT_NOT_FOUND",
+                status_code=status.HTTP_404_NOT_FOUND,
             )
 
-            job_record = job_store.create_job(
+        payload = AgentExecutionPayload(
+            agent_id=agent_id,
+            max_cycles=getattr(settings, "MAX_CYCLES", 100),
+            max_concurrent_goals=getattr(settings, "MAX_CONCURRENT_GOALS", 1),
+            requested_by=security_context.user.username,
+            tenant_id=getattr(security_context.user, "tenant_id", None),
+            metadata={"action_id": action.id},
+        )
+
+        job_record = await job_store.create_job(
+            job_type=JobType.AGENT_EXECUTION,
+            priority=JobPriority.HIGH,
+            queue_name=AGENT_JOB_QUEUE,
+            payload=payload.model_dump(),
+            requested_by=security_context.user.username,
+            tenant_id=getattr(security_context.user, "tenant_id", None),
+            agent_id=agent_id,
+        )
+
+        try:
+            await _enqueue_job(
+                job_record["id"],
                 job_type=JobType.AGENT_EXECUTION,
                 priority=JobPriority.HIGH,
-                queue_name=AGENT_JOB_QUEUE,
-                payload=payload.model_dump(),
-                requested_by=security_context.user.username,
-                tenant_id=getattr(security_context.user, "tenant_id", None),
-                agent_id=agent_id,
+            )
+        except Exception as queue_error:
+            logger.error("Failed to enqueue job %s: %s", job_record["id"], queue_error)
+            await job_store.mark_job_failed(job_record["id"], error=str(queue_error))
+            return create_error_response(
+                message="Failed to enqueue agent job",
+                error_type="AGENT_JOB_ENQUEUE_FAILED",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
-            try:
-                await _enqueue_job(
-                    job_record["id"],
-                    job_type=JobType.AGENT_EXECUTION,
-                    priority=JobPriority.HIGH,
-                )
-            except Exception as queue_error:
-                logger.error("Failed to enqueue job %s: %s", job_record["id"], queue_error)
-                job_store.mark_job_failed(job_record["id"], error=str(queue_error))
-                return create_error_response(
-                    message="Failed to enqueue agent job",
-                    error_type="AGENT_JOB_ENQUEUE_FAILED",
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                )
+        logger.info(
+            "Queued agent execution job %s for %s by %s",
+            job_record["id"],
+            agent.name,
+            security_context.user.username,
+        )
 
-            logger.info(
-                "Queued agent execution job %s for %s by %s",
-                job_record["id"],
-                agent.name,
-                security_context.user.username,
-            )
-
-            return create_api_response(
-                data={
-                    "job_id": job_record["id"],
-                    "agent_id": agent_id,
-                    "status": job_record["status"],
-                    "queue": job_record["queue_name"],
-                    "priority": job_record["priority"],
-                },
-                message="Agent execution queued",
-                status_code=status.HTTP_200_OK,
-            )
+        return create_api_response(
+            data={
+                "job_id": job_record["id"],
+                "agent_id": agent_id,
+                "status": job_record["status"],
+                "queue": job_record["queue_name"],
+                "priority": job_record["priority"],
+            },
+            message="Agent execution queued",
+            status_code=status.HTTP_200_OK,
+        )
 
     except Exception as e:
         logger.error(f"Agent execution failed for {agent_id}: {str(e)}")
@@ -829,7 +893,7 @@ async def get_job_status(
     security_context: SecurityContext = Depends(require_permission("agent", "read")),
 ) -> JSONResponse:
     """Retrieve background job status."""
-    job = job_store.get_job(job_id)
+    job = await job_store.get_job(job_id)
     if not job:
         return create_error_response(
             message="Job not found",
@@ -847,7 +911,7 @@ async def list_agent_jobs(
     security_context: SecurityContext = Depends(require_permission("agent", "read")),
 ) -> JSONResponse:
     """List recent jobs for an agent."""
-    jobs = job_store.list_jobs(agent_id=agent_id, limit=limit)
+    jobs = await job_store.list_jobs(agent_id=agent_id, limit=limit)
     return create_api_response(data=jobs, message="Agent jobs retrieved")
 
 
@@ -866,7 +930,7 @@ async def stream_job_status(
         deadline = asyncio.get_event_loop().time() + 300  # 5 minutes
         last_payload = None
         while asyncio.get_event_loop().time() < deadline:
-            job = job_store.get_job(job_id)
+            job = await job_store.get_job(job_id)
             if job is None:
                 yield "event: error\n" + f"data: {json.dumps({'error': 'JOB_NOT_FOUND'})}\n\n"
                 break
@@ -895,7 +959,8 @@ async def list_capabilities(
     security_context: SecurityContext = Depends(require_permission("agent", "read")),
 ) -> JSONResponse:
     try:
-        with auth_service.db.get_session() as session:
+
+        def _query(session):
             query = session.query(AgentCapabilityModel)
             if role:
                 query = query.filter(AgentCapabilityModel.role == role)
@@ -918,6 +983,9 @@ async def list_capabilities(
                         "updated_at": r.updated_at.isoformat() if r.updated_at else None,
                     }
                 )
+            return items
+
+        items = await _with_app_session(_query)
         return create_api_response(data=items, message="Capabilities retrieved")
     except Exception as e:
         logger.error(f"Failed to list capabilities: {e}")
@@ -932,7 +1000,8 @@ async def register_capability(
     security_context: SecurityContext = Depends(require_permission("agent", "write")),
 ) -> JSONResponse:
     try:
-        with auth_service.db.get_session() as session:
+
+        def _upsert(session):
             existing = (
                 session.query(AgentCapabilityModel)
                 .filter(AgentCapabilityModel.instance_id == spec.instance_id)
@@ -961,6 +1030,9 @@ async def register_capability(
                 )
                 session.add(rec)
             session.commit()
+            return True
+
+        await _with_app_session(_upsert)
         return create_api_response(message="Capability registered", data=True)
     except Exception as e:
         logger.error(f"Capability registration failed: {e}")
@@ -985,10 +1057,13 @@ async def create_goal(
             created_by=security_context.user.id,
         )
 
-        with auth_service.db.get_session() as session:
+        def _persist(session):
             session.add(goal)
             session.commit()
             session.refresh(goal)
+            return goal
+
+        goal = await _with_app_session(_persist)
 
         goal_response = {
             "id": goal.id,
@@ -1024,24 +1099,28 @@ async def list_goals(
 ) -> JSONResponse:
     """List goals (requires goals.read permission)."""
     try:
-        with auth_service.db.get_session() as session:
-            goals = session.query(GoalModel).offset(skip).limit(limit).all()
 
+        def _query(session):
+            records = session.query(GoalModel).offset(skip).limit(limit).all()
             goal_list = []
-            for goal in goals:
-                goal_data = {
-                    "id": goal.id,
-                    "title": goal.title,
-                    "description": goal.description,
-                    "status": goal.status,
-                    "priority": goal.priority,
-                    "progress": goal.progress,
-                    "created_at": goal.created_at.isoformat(),
-                    "target_date": goal.target_date.isoformat() if goal.target_date else None,
-                }
-                goal_list.append(goal_data)
+            for goal in records:
+                goal_list.append(
+                    {
+                        "id": goal.id,
+                        "title": goal.title,
+                        "description": goal.description,
+                        "status": goal.status,
+                        "priority": goal.priority,
+                        "progress": goal.progress,
+                        "created_at": goal.created_at.isoformat(),
+                        "target_date": goal.target_date.isoformat() if goal.target_date else None,
+                    }
+                )
+            return goal_list
 
-            return create_api_response(data=goal_list, message="Goals retrieved successfully")
+        goal_list = await _with_app_session(_query)
+
+        return create_api_response(data=goal_list, message="Goals retrieved successfully")
 
     except Exception as e:
         logger.error(f"Failed to list goals: {str(e)}")
@@ -1054,27 +1133,48 @@ async def list_goals(
 @typed_router.get("/system/health")
 async def system_health() -> JSONResponse:
     """System health check endpoint."""
-    try:
-        # Check database connection
-        with auth_service.db.get_session() as session:
-            session.execute(text("SELECT 1"))
 
-        health_data = {
-            "status": "healthy",
-            "database": "connected",
-            "timestamp": datetime.now(UTC).isoformat(),
-            "version": "1.0.0",
-        }
+    async def _probe_db(session_factory: Callable[[], Any]) -> bool:
+        try:
 
+            def _task():
+                with session_factory() as session:
+                    session.execute(text("SELECT 1"))
+                return True
+
+            return await run_blocking(_task)
+        except Exception as exc:  # pragma: no cover - diagnostics
+            logger.error("Database probe failed: %s", exc)
+            return False
+
+    auth_db_ok, app_db_ok = await asyncio.gather(
+        _probe_db(auth_service.db.get_session), _probe_db(app_db_manager.get_session)
+    )
+    overall_ok = auth_db_ok and app_db_ok
+
+    health_data = {
+        "status": "healthy" if overall_ok else "degraded",
+        "databases": {
+            "auth": "connected" if auth_db_ok else "error",
+            "application": "connected" if app_db_ok else "error",
+        },
+        "timestamp": datetime.now(UTC).isoformat(),
+        "version": "1.0.0",
+    }
+
+    if overall_ok:
         return create_api_response(data=health_data, message="System is healthy")
 
-    except Exception as e:
-        logger.error(f"Health check failed: {str(e)}")
-        return create_error_response(
-            message="System health check failed",
-            error_type="HEALTH_CHECK_FAILED",
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-        )
+    return JSONResponse(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        content={
+            "success": False,
+            "error": "HEALTH_CHECK_FAILED",
+            "message": "System health check failed",
+            "timestamp": datetime.now(UTC).timestamp(),
+            "data": health_data,
+        },
+    )
 
 
 @typed_router.get("/system/info")
@@ -1083,11 +1183,16 @@ async def system_info(
 ) -> JSONResponse:
     """Get system information (requires system.read permission)."""
     try:
-        with auth_service.db.get_session() as session:
-            user_count = session.query(UserModel).count()
-            agent_count = session.query(AgentModel).count()
-            goal_count = session.query(GoalModel).count()
-            action_count = session.query(ActionModel).count()
+        user_count = await _with_auth_session(lambda session: session.query(UserModel).count())
+
+        def _counts(session):
+            return (
+                session.query(AgentModel).count(),
+                session.query(GoalModel).count(),
+                session.query(ActionModel).count(),
+            )
+
+        agent_count, goal_count, action_count = await _with_app_session(_counts)
 
         system_data = {
             "users": user_count,

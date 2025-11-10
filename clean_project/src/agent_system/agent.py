@@ -11,7 +11,7 @@ from .ai_performance_monitor import ai_performance_monitor
 from .ai_planner import AIHierarchicalPlanner
 from .config_simple import settings
 from .cross_session_learning import cross_session_learning
-from .enhanced_persistence import get_storage_info, load_all, save_all
+from .enhanced_persistence import get_storage_info, load_all, save_all, save_all_async
 from .enhanced_tools import EnhancedToolRegistry
 from .goal_manager import GoalManager
 from .intelligent_action_selector import IntelligentActionSelector
@@ -92,7 +92,7 @@ class AutonomousAgent:
         # Prefer explicit environment setting; otherwise, enable by default.
         from .config_simple import get_api_key, settings
 
-        if hasattr(settings, "USE_REAL_TOOLS"):
+        if getattr(settings, "USE_REAL_TOOLS_CONFIGURED", False):
             return bool(settings.USE_REAL_TOOLS)
         return bool(get_api_key("serpapi") or get_api_key("bing") or get_api_key("google"))
 
@@ -231,7 +231,7 @@ class AutonomousAgent:
 
         if not context.plan or not context.plan.actions:
             logger.warning("No plan available for goal %s", context.goal.id)
-            self._finalize_goal(context, success=False)
+            await self._finalize_goal(context, success=False)
             return True
 
         available_actions = [
@@ -239,7 +239,7 @@ class AutonomousAgent:
         ]
 
         if not available_actions:
-            self._finalize_goal(context, success=True)
+            await self._finalize_goal(context, success=True)
             return True
 
         start_time = time.time() * 1000
@@ -283,7 +283,7 @@ class AutonomousAgent:
 
         if not selected_action:
             logger.warning("No suitable action found for goal %s", context.goal.id)
-            self._finalize_goal(context, success=False)
+            await self._finalize_goal(context, success=False)
             return True
 
         observation = await self.tool_registry.execute_action_async(selected_action)
@@ -349,7 +349,7 @@ class AutonomousAgent:
 
         return True
 
-    def _finalize_goal(self, context: GoalExecutionContext, success: bool):
+    async def _finalize_goal(self, context: GoalExecutionContext, success: bool):
         """Finalize a goal and persist learning signals."""
         goal = context.goal
 
@@ -395,7 +395,7 @@ class AutonomousAgent:
 
         logger.info("Goal %s: %s", final_status.value, goal.description)
 
-        save_all(self)
+        await save_all_async(self)
 
         self.goal_contexts.pop(goal.id, None)
 

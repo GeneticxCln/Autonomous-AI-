@@ -59,6 +59,7 @@ class PerformanceTracker:
         self.current_metrics: Dict[str, float] = {}
         self.start_time = datetime.now()
         self.performance_data = {}
+        self.memory_hotspots: deque = deque(maxlen=200)
 
     def track_response_time(self, operation: str, duration: float, success: bool = True):
         """Track response time for an operation."""
@@ -132,6 +133,29 @@ class PerformanceTracker:
                 {"task_type": task_type, "timestamp": time.time()},
                 "score",
             )
+
+    def track_memory_hotspot(
+        self,
+        label: str,
+        bytes_used: float,
+        duration_ms: float,
+        metadata: Optional[Dict[str, Any]] = None,
+    ):
+        """Record localized memory pressure information for hotspot analysis."""
+        hotspot = {
+            "label": label,
+            "bytes_used": bytes_used,
+            "duration_ms": duration_ms,
+            "metadata": metadata or {},
+            "timestamp": datetime.now().isoformat(),
+        }
+        self.memory_hotspots.append(hotspot)
+        self._record_metric(
+            f"memory_hotspot_{label}",
+            bytes_used,
+            {**hotspot["metadata"], "duration_ms": duration_ms},
+            "bytes",
+        )
 
     def track_user_satisfaction(self, rating: float, context: Dict[str, Any] = None):
         """Track user satisfaction ratings."""
@@ -406,6 +430,12 @@ class PerformanceTracker:
 
         return recommendations
 
+    def get_memory_hotspots(self, limit: int = 20) -> List[Dict[str, Any]]:
+        """Return recent memory hotspot records."""
+        if limit <= 0:
+            return []
+        return list(self.memory_hotspots)[-limit:]
+
 
 # Global performance tracker instance
 performance_tracker = PerformanceTracker()
@@ -433,3 +463,9 @@ def get_performance_health() -> Dict[str, Any]:
     """Get system performance health score."""
     tracker = get_performance_tracker()
     return tracker.get_performance_health_score()
+
+
+def get_recent_memory_hotspots(limit: int = 20) -> List[Dict[str, Any]]:
+    """Get recent memory hotspot telemetry."""
+    tracker = get_performance_tracker()
+    return tracker.get_memory_hotspots(limit)

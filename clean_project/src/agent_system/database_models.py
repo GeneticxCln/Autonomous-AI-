@@ -23,14 +23,9 @@ from sqlalchemy import (
     UniqueConstraint,
     create_engine,
 )
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import declarative_base, sessionmaker
 
-# Create a unified Base that includes both auth and database models
-from .auth_models import Base as AuthBase
-
-# Import auth models to ensure shared Base metadata
-
-Base = AuthBase
+Base = declarative_base()
 
 
 class ActionSelectorModel(Base):

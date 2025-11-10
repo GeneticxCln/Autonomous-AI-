@@ -8,7 +8,10 @@ services:
     environment:
       - ENVIRONMENT=production
       - API_DEBUG=false
-      - DATABASE_URL=sqlite:///./agent_enterprise.db
+      - POSTGRES_USER=${POSTGRES_USER:-agent}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-agentpass}
+      - POSTGRES_DB=${POSTGRES_DB:-agent_db}
+      - DATABASE_URL=${DATABASE_URL:-postgresql://${POSTGRES_USER:-agent}:${POSTGRES_PASSWORD:-agentpass}@db:5432/${POSTGRES_DB:-agent_db}}
       - REDIS_URL=redis://redis:6379/0
       - REDIS_HOST=redis
       - REDIS_PORT=6379
@@ -17,10 +20,11 @@ services:
       - ENABLE_TRACING=true
       - JAEGER_HOST=jaeger
       - JAEGER_PORT=14268
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-dev-secret-please-change}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY must be set to a strong value}
     ports:
       - "8000:8000"
     depends_on:
+      - db
       - redis
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8000/health"]
@@ -31,6 +35,24 @@ services:
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
+
+  db:
+    image: postgres:15-alpine
+    container_name: agent_db
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-agent}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-agentpass}
+      - POSTGRES_DB=${POSTGRES_DB:-agent_db}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
 
   # Redis Cache and Message Queue
   redis:
@@ -61,6 +83,10 @@ services:
     command: python -m agent_system.worker --queue agent.jobs
     environment:
       - ENVIRONMENT=production
+      - POSTGRES_USER=${POSTGRES_USER:-agent}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-agentpass}
+      - POSTGRES_DB=${POSTGRES_DB:-agent_db}
+      - DATABASE_URL=${DATABASE_URL:-postgresql://${POSTGRES_USER:-agent}:${POSTGRES_PASSWORD:-agentpass}@db:5432/${POSTGRES_DB:-agent_db}}
       - REDIS_URL=redis://redis:6379/0
       - REDIS_HOST=redis
       - REDIS_PORT=6379
@@ -69,6 +95,7 @@ services:
       - LOG_LEVEL=INFO
       - PYTHONPATH=/app
     depends_on:
+      - db
       - redis
     restart: unless-stopped
     volumes:
@@ -147,7 +174,7 @@ services:
     image: grafana/grafana:latest
     container_name: agent_grafana
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:?GRAFANA_PASSWORD must be set}
       - GF_USERS_ALLOW_SIGN_UP=false
       - GF_SECURITY_DISABLE_GRAVATAR=true
     ports:
@@ -219,6 +246,7 @@ services:
           memory: 64M
 
 volumes:
+  pg_data:
   redis_data:
     driver: local
   prometheus_data:
