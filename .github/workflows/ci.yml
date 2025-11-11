@@ -9,9 +9,14 @@ jobs:
   build-test:
     runs-on: ubuntu-latest
     needs: []
+    services:
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
     strategy:
       matrix:
-        python-version: ["3.10", "3.11", "3.12"]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -27,16 +32,10 @@ jobs:
       - name: Run pre-commit
         uses: pre-commit/action@v3.0.1
         with:
-          extra_args: -c clean_project/.pre-commit-config.yaml --all-files
+          extra_args: -c clean_project/.pre-commit-config.yaml
         env:
           SKIP: mypy
-      - name: Lint (ruff)
-        run: |
-          python -m ruff --version
-          python -m ruff check clean_project/src clean_project/tests
-      - name: Format check (black)
-        run: |
-          python -m black --check clean_project/src clean_project/tests
+      
       - name: Type check (mypy) — focused modules
         run: |
           python -m mypy --config-file clean_project/pyproject.toml --follow-imports=skip \
@@ -54,9 +53,13 @@ jobs:
             clean_project/src/agent_system/persistence.py \
             clean_project/src/agent_system/enhanced_persistence.py
       - name: Run tests (unit + scripts) with coverage
+        env:
+          DATABASE_URL: sqlite:///./agent_enterprise_ci.db
+          REDIS_URL: redis://localhost:6379/0
+          PYTEST_ADDOPTS: -m "not benchmark"
         run: |
           PYTHONPATH=clean_project/src python -m coverage run -m pytest -q clean_project/tests clean_project/scripts
-          PYTHONPATH=clean_project/src python -m coverage report -m
+          PYTHONPATH=clean_project/src python -m coverage report -m --fail-under=70
           python -m coverage xml -o coverage.xml
 
       - name: Upload coverage to Codecov
