@@ -11,7 +11,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from .config_simple import settings
 from .distributed_message_queue import MessagePriority, distributed_message_queue
@@ -181,12 +181,12 @@ class WorkflowStep:
 class AgentRegistry:
     """Registry of available agents and their capabilities."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.agents: Dict[str, AgentIdentity] = {}
         self.role_to_agents: Dict[AgentRole, List[str]] = {}
         self._initialize_default_agents()
 
-    def _initialize_default_agents(self):
+    def _initialize_default_agents(self) -> None:
         """Initialize with default agent profiles."""
         default_agents = [
             AgentIdentity(
@@ -272,7 +272,7 @@ class AgentRegistry:
         for agent in default_agents:
             self.register_agent(agent)
 
-    def register_agent(self, agent: AgentIdentity):
+    def register_agent(self, agent: AgentIdentity) -> None:
         """Register a new agent."""
         self.agents[agent.agent_id] = agent
         if agent.role not in self.role_to_agents:
@@ -293,8 +293,8 @@ class AgentRegistry:
         self, capability_needed: str, context: Dict[str, Any]
     ) -> Optional[AgentIdentity]:
         """Find the best agent for a specific capability."""
-        best_agent = None
-        best_score = 0
+        best_agent: Optional[AgentIdentity] = None
+        best_score: float = 0.0
 
         for agent in self.agents.values():
             score = self._calculate_agent_score(agent, capability_needed, context)
@@ -342,19 +342,19 @@ class MessageBus:
         *,
         use_distributed_backend: bool = False,
         cluster_queue_name: str = "multi-agent-messages",
-    ):
-        self.message_queue = asyncio.Queue()
-        self.subscribers: Dict[str, List[Callable]] = {}
-        self.running = False
+    ) -> None:
+        self.message_queue: asyncio.Queue[AgentMessage] = asyncio.Queue()
+        self.subscribers: Dict[str, List[Callable[[AgentMessage], Awaitable[None]]]] = {}
+        self.running: bool = False
         self.distributed_enabled = use_distributed_backend and getattr(
             settings, "DISTRIBUTED_ENABLED", False
         )
         self.cluster_queue_name = cluster_queue_name
         self.node_id = getattr(settings, "DISTRIBUTED_NODE_ID", "local-node")
-        self._distributed_consumer_task: Optional[asyncio.Task] = None
-        self._local_processor_task: Optional[asyncio.Task] = None
+        self._distributed_consumer_task: Optional[asyncio.Task[None]] = None
+        self._local_processor_task: Optional[asyncio.Task[None]] = None
 
-    async def start(self):
+    async def start(self) -> None:
         """Start the message bus."""
         self.running = True
         self._local_processor_task = asyncio.create_task(self._message_processor())
@@ -363,7 +363,7 @@ class MessageBus:
             self._distributed_consumer_task = asyncio.create_task(self._distributed_consumer())
         logger.info("Message bus started (distributed=%s)", self.distributed_enabled)
 
-    async def stop(self):
+    async def stop(self) -> None:
         """Stop the message bus."""
         self.running = False
 
@@ -383,7 +383,7 @@ class MessageBus:
 
         logger.info("Message bus stopped")
 
-    async def send_message(self, message: AgentMessage):
+    async def send_message(self, message: AgentMessage) -> None:
         """Send a message to the bus."""
         await self.message_queue.put(message)
 
@@ -405,13 +405,13 @@ class MessageBus:
             self.distributed_enabled,
         )
 
-    def subscribe(self, agent_id: str, callback: Callable):
+    def subscribe(self, agent_id: str, callback: Callable[[AgentMessage], Awaitable[None]]) -> None:
         """Subscribe to messages for an agent."""
         if agent_id not in self.subscribers:
             self.subscribers[agent_id] = []
         self.subscribers[agent_id].append(callback)
 
-    async def _message_processor(self):
+    async def _message_processor(self) -> None:
         """Process messages from the queue."""
         while self.running:
             try:
@@ -424,7 +424,7 @@ class MessageBus:
             except Exception as e:
                 logger.error(f"Error processing message: {e}")
 
-    async def _deliver_message(self, message: AgentMessage):
+    async def _deliver_message(self, message: AgentMessage) -> bool:
         """Deliver message to intended recipients."""
         delivered = False
         if message.to_agent and message.to_agent in self.subscribers:
@@ -445,7 +445,7 @@ class MessageBus:
             return MessagePriority.NORMAL
         return MessagePriority.LOW
 
-    async def _distributed_consumer(self):
+    async def _distributed_consumer(self) -> None:
         """Consume messages from the distributed queue."""
         try:
             while self.running:
@@ -487,14 +487,14 @@ class MessageBus:
 class MultiAgentOrchestrator:
     """Main orchestrator for multi-agent workflows."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.agent_registry = AgentRegistry()
         self.distributed_enabled = getattr(settings, "DISTRIBUTED_ENABLED", False)
         self.message_bus = MessageBus(use_distributed_backend=self.distributed_enabled)
         self.active_tasks: Dict[str, Task] = {}
         self.active_workflows: Dict[str, List[WorkflowStep]] = {}
-        self.task_queue = asyncio.Queue()
-        self.running = False
+        self.task_queue: asyncio.Queue[Task] = asyncio.Queue()
+        self.running: bool = False
         self.node_id = getattr(settings, "DISTRIBUTED_NODE_ID", "local-node")
 
         try:
@@ -502,7 +502,7 @@ class MultiAgentOrchestrator:
         except Exception:
             logger.debug("Distributed queue registration skipped (infrastructure not ready)")
 
-    async def start(self):
+    async def start(self) -> None:
         """Start the multi-agent system."""
         await self.message_bus.start()
         self.running = True
@@ -510,7 +510,7 @@ class MultiAgentOrchestrator:
         await self._persist_cluster_snapshot()
         logger.info("Multi-agent orchestrator started")
 
-    async def stop(self):
+    async def stop(self) -> None:
         """Stop the multi-agent system."""
         self.running = False
         await self.message_bus.stop()
@@ -565,7 +565,7 @@ class MultiAgentOrchestrator:
 
         return workflow_id
 
-    async def _execute_workflow(self, workflow_id: str):
+    async def _execute_workflow(self, workflow_id: str) -> None:
         """Execute a workflow."""
         try:
             steps = self.active_workflows[workflow_id]
@@ -573,7 +573,7 @@ class MultiAgentOrchestrator:
             await self._update_workflow_state(workflow_id, "in_progress")
 
             # Group steps for parallel execution
-            parallel_groups = {}
+            parallel_groups: Dict[int, List[WorkflowStep]] = {}
             for step in steps:
                 group = step.parallel_group if step.parallel_group is not None else step.order
                 if group not in parallel_groups:
@@ -599,7 +599,7 @@ class MultiAgentOrchestrator:
             logger.error(f"Workflow failed: {workflow_id}, error: {e}")
             await self._update_workflow_state(workflow_id, "failed")
 
-    async def _execute_step(self, step: WorkflowStep):
+    async def _execute_step(self, step: WorkflowStep) -> None:
         """Execute a single workflow step."""
         try:
             step.task.status = TaskStatus.IN_PROGRESS
@@ -629,7 +629,7 @@ class MultiAgentOrchestrator:
             step.task.feedback.append(f"Execution failed: {str(e)}")
             logger.error(f"Step execution failed: {step.step_name}, error: {e}")
 
-    async def _wait_for_task_completion(self, task_id: str, timeout: int = 300):
+    async def _wait_for_task_completion(self, task_id: str, timeout: int = 300) -> Task:
         """Wait for a task to complete."""
         start_time = datetime.now()
         while (datetime.now() - start_time).total_seconds() < timeout:
@@ -640,7 +640,7 @@ class MultiAgentOrchestrator:
             await asyncio.sleep(1)
         raise TimeoutError(f"Task {task_id} did not complete within {timeout} seconds")
 
-    async def _task_processor(self):
+    async def _task_processor(self) -> None:
         """Process tasks from the queue."""
         while self.running:
             try:
@@ -651,7 +651,7 @@ class MultiAgentOrchestrator:
             except Exception as e:
                 logger.error(f"Error processing task: {e}")
 
-    async def _process_task(self, task: Task):
+    async def _process_task(self, task: Task) -> None:
         """Process a single task."""
         try:
             task.status = TaskStatus.IN_PROGRESS
@@ -670,7 +670,7 @@ class MultiAgentOrchestrator:
             task.feedback.append(str(e))
             logger.error(f"Task processing failed: {task.task_id}, error: {e}")
 
-    async def _delegate_to_agent(self, task: Task, agent: AgentIdentity):
+    async def _delegate_to_agent(self, task: Task, agent: AgentIdentity) -> None:
         """Delegate task to a specific agent."""
         # This would integrate with actual LLM APIs in production
         # For now, simulate task execution
@@ -726,7 +726,7 @@ class MultiAgentOrchestrator:
             ],
         }
 
-    async def _persist_cluster_snapshot(self):
+    async def _persist_cluster_snapshot(self) -> None:
         """Store orchestrator status in distributed state."""
         if not self.distributed_enabled:
             return
@@ -741,7 +741,7 @@ class MultiAgentOrchestrator:
 
         await distributed_state_manager.set_state("multi_agent", self.node_id, snapshot, ttl=180)
 
-    async def _update_workflow_state(self, workflow_id: str, status: str):
+    async def _update_workflow_state(self, workflow_id: str, status: str) -> None:
         """Persist workflow state for distributed coordination."""
         if not self.distributed_enabled:
             return
@@ -790,12 +790,12 @@ class MultiAgentOrchestrator:
 orchestrator = MultiAgentOrchestrator()
 
 
-async def start_multi_agent_system():
+async def start_multi_agent_system() -> None:
     """Start the global multi-agent system."""
     await orchestrator.start()
 
 
-async def stop_multi_agent_system():
+async def stop_multi_agent_system() -> None:
     """Stop the global multi-agent system."""
     await orchestrator.stop()
 

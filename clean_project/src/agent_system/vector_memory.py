@@ -26,9 +26,9 @@ def _cosine(a: Dict[str, int], b: Dict[str, int]) -> float:
     if not a or not b:
         return 0.0
     common = set(a.keys()) & set(b.keys())
-    num = sum(a[t] * b[t] for t in common)
-    denom_a = sum(v * v for v in a.values()) ** 0.5
-    denom_b = sum(v * v for v in b.values()) ** 0.5
+    num = float(sum(a[t] * b[t] for t in common))
+    denom_a: float = sum(v * v for v in a.values()) ** 0.5
+    denom_b: float = sum(v * v for v in b.values()) ** 0.5
     if denom_a == 0 or denom_b == 0:
         return 0.0
     return num / (denom_a * denom_b)

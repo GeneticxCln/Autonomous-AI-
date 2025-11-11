@@ -9,6 +9,7 @@ import csv
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -21,14 +22,15 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-try:
-    from bs4 import BeautifulSoup
-except Exception:  # Optional dependency; fallback parser will be used
-    BeautifulSoup = None  # type: ignore
-import re
-
 from .config_simple import get_api_key, settings, validate_file_path
 from .models import ActionStatus
+from .unified_config import unified_config
+
+# Declare as Any so we can assign either the class or None at runtime for optional dependency
+try:
+    from bs4 import BeautifulSoup as BeautifulSoupClass
+except Exception:  # Optional dependency; fallback parser will be used
+    BeautifulSoupClass = None
 
 logger = logging.getLogger(__name__)
 
@@ -36,9 +38,9 @@ logger = logging.getLogger(__name__)
 class RealWebSearchTool:
     """Real web search tool using various search APIs."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.session = self._create_session()
-        self.cache = {}  # Simple in-memory cache
+        self.cache: Dict[str, Any] = {}  # Simple in-memory cache
 
     def _create_session(self) -> requests.Session:
         """Create a requests session with retries and timeouts."""
@@ -62,7 +64,7 @@ class RealWebSearchTool:
     def name(self) -> str:
         return "web_search"
 
-    def execute(self, **kwargs) -> tuple[ActionStatus, Any]:
+    def execute(self, **kwargs: Any) -> tuple[ActionStatus, Any]:
         """Execute a web search using available APIs."""
         query = kwargs.get("query", "").strip()
         search_type = kwargs.get("search_type", "general").lower()
@@ -73,17 +75,52 @@ class RealWebSearchTool:
         if not query:
             return ActionStatus.FAILURE, {"error": "Search query is required"}
 
+        # Enforce provider configuration: require at least one configured and enabled provider
+        configured = [
+            p
+            for p in ("serpapi", "bing", "google")
+            if get_api_key(p) is not None and p not in set(unified_config.api.disabled_search_providers)
+        ]
+        if not configured:
+            return (
+                ActionStatus.FAILURE,
+                {
+                    "error": "No enabled search providers configured",
+                    "remediation": "Set SERPAPI_KEY, BING_SEARCH_KEY, or GOOGLE_SEARCH_KEY and ensure provider not disabled",
+                },
+            )
+
         # Check cache first
         cache_key = f"{query}_{search_type}_{max_results}_{int(fetch)}_{fetch_limit}"
         if cache_key in self.cache:
             logger.info("Returning cached search results for query: %s", query)
             return ActionStatus.SUCCESS, self.cache[cache_key]
 
-        # Try different search APIs in order of preference
-        result = self._try_serpapi_search(query, max_results)
-        if not result:
-            # Fallback to DuckDuckGo (no API key required)
-            result = self._try_duckduckgo_search(query, max_results)
+        # Try different search APIs in configured order, skipping disabled providers
+        disabled = set(unified_config.api.disabled_search_providers or [])
+        order = [
+            p
+            for p in (unified_config.api.search_provider_order or ["serpapi", "bing", "google"])
+            if p in ("serpapi", "bing", "google") and p not in disabled
+        ]
+
+        first_success = None
+        for provider in order:
+            candidate = None
+            if provider == "serpapi" and get_api_key("serpapi"):
+                candidate = self._try_serpapi_search(query, max_results)
+            elif provider == "bing" and get_api_key("bing"):
+                candidate = self._try_bing_search(query, max_results)
+            elif provider == "google" and get_api_key("google"):
+                cx = os.getenv("GOOGLE_CSE_ID") or os.getenv("GOOGLE_SEARCH_CX")
+                if cx:
+                    candidate = self._try_google_cse_search(query, max_results, cx)
+                else:
+                    logger.warning("GOOGLE_SEARCH_KEY present but GOOGLE_CSE_ID/GOOGLE_SEARCH_CX not set")
+            if candidate and first_success is None:
+                first_success = candidate
+
+        result = first_success
 
         if result and fetch and result.get("results"):
             enriched = []
@@ -103,7 +140,8 @@ class RealWebSearchTool:
             return ActionStatus.SUCCESS, result
 
         return ActionStatus.FAILURE, {
-            "error": "No search APIs available. Please configure SERPAPI_KEY or use offline mode."
+            "error": "Search provider call failed or unsupported",
+            "remediation": "Ensure a supported provider (SERPAPI/BING/GOOGLE+CSE) is configured",
         }
 
     def _try_serpapi_search(self, query: str, max_results: int) -> Optional[Dict[str, Any]]:
@@ -113,7 +151,7 @@ class RealWebSearchTool:
             return None
 
         try:
-            params = {"engine": "google", "q": query, "num": max_results, "api_key": api_key}
+            params: Dict[str, Any] = {"engine": "google", "q": query, "num": max_results, "api_key": api_key}
 
             response = self.session.get(
                 "https://serpapi.com/search.json", params=params, timeout=settings.TOOL_TIMEOUT
@@ -152,7 +190,7 @@ class RealWebSearchTool:
     def _try_duckduckgo_search(self, query: str, max_results: int) -> Optional[Dict[str, Any]]:
         """Try search using DuckDuckGo instant answer API."""
         try:
-            params = {"q": query, "format": "json", "no_html": "1", "skip_disambig": "1"}
+            params: Dict[str, Any] = {"q": query, "format": "json", "no_html": "1", "skip_disambig": "1"}
 
             response = self.session.get(
                 "https://api.duckduckgo.com/", params=params, timeout=settings.TOOL_TIMEOUT
@@ -205,6 +243,86 @@ class RealWebSearchTool:
 
         return None
 
+    def _try_bing_search(self, query: str, max_results: int) -> Optional[Dict[str, Any]]:
+        """Try search using Bing Web Search API (v7)."""
+        api_key = get_api_key("bing")
+        if not api_key:
+            return None
+        try:
+            headers = {"Ocp-Apim-Subscription-Key": api_key}
+            params: Dict[str, Any] = {"q": query, "count": max_results}
+            resp = self.session.get(
+                "https://api.bing.microsoft.com/v7.0/search",
+                headers=headers,
+                params=params,
+                timeout=settings.TOOL_TIMEOUT,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            items = (data.get("webPages", {}) or {}).get("value", [])
+            results = []
+            for r in items[:max_results]:
+                results.append(
+                    {
+                        "title": r.get("name", ""),
+                        "link": r.get("url", ""),
+                        "snippet": r.get("snippet", ""),
+                        "display_link": r.get("displayUrl", ""),
+                        "source": "bing",
+                    }
+                )
+            if results:
+                return {
+                    "results": results,
+                    "count": len(results),
+                    "search_engine": "bing",
+                    "query": query,
+                    "timestamp": time.time(),
+                }
+        except requests.RequestException as e:
+            logger.warning("Bing search failed: %s", e)
+        return None
+
+    def _try_google_cse_search(self, query: str, max_results: int, cx: str) -> Optional[Dict[str, Any]]:
+        """Try search using Google Custom Search JSON API.
+        Requires GOOGLE_SEARCH_KEY and a CSE identifier (cx).
+        """
+        api_key = get_api_key("google")
+        if not api_key:
+            return None
+        try:
+            params: Dict[str, Any] = {"key": api_key, "cx": cx, "q": query, "num": min(max_results, 10)}
+            resp = self.session.get(
+                "https://www.googleapis.com/customsearch/v1",
+                params=params,
+                timeout=settings.TOOL_TIMEOUT,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            items = data.get("items", []) or []
+            results = []
+            for r in items[:max_results]:
+                results.append(
+                    {
+                        "title": r.get("title", ""),
+                        "link": r.get("link", ""),
+                        "snippet": r.get("snippet", ""),
+                        "display_link": r.get("displayLink", ""),
+                        "source": "google_cse",
+                    }
+                )
+            if results:
+                return {
+                    "results": results,
+                    "count": len(results),
+                    "search_engine": "google_cse",
+                    "query": query,
+                    "timestamp": time.time(),
+                }
+        except requests.RequestException as e:
+            logger.warning("Google CSE search failed: %s", e)
+        return None
+
     def _fetch_page(self, url: str) -> Optional[Dict[str, Any]]:
         """Fetch a web page and extract text summary and metadata."""
         try:
@@ -213,8 +331,8 @@ class RealWebSearchTool:
             html = resp.text
             title = ""
             text = ""
-            if BeautifulSoup is not None:
-                soup = BeautifulSoup(html, "html.parser")
+            if BeautifulSoupClass is not None:
+                soup = BeautifulSoupClass(html, "html.parser")
                 title = soup.title.string.strip() if soup.title and soup.title.string else ""
                 for tag in soup(["script", "style", "noscript"]):
                     tag.decompose()
@@ -266,7 +384,7 @@ class RealCodeExecutorTool:
     def name(self) -> str:
         return "code_executor"
 
-    def execute(self, **kwargs) -> tuple[ActionStatus, Any]:
+    def execute(self, **kwargs: Any) -> tuple[ActionStatus, Any]:
         """Execute code safely with restrictions."""
         code = kwargs.get("code", "").strip()
         language = kwargs.get("language", "python").lower()
@@ -337,18 +455,18 @@ class RealCodeExecutorTool:
         class Guard(ast.NodeVisitor):
             unsafe: tuple[bool, str | None] = (False, None)
 
-            def visit_Import(self, node: ast.Import):  # type: ignore[override]
+            def visit_Import(self, node: ast.Import) -> None:
                 self.unsafe = (True, "Imports are not allowed")
 
-            def visit_ImportFrom(self, node: ast.ImportFrom):  # type: ignore[override]
+            def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
                 self.unsafe = (True, "Imports are not allowed")
 
-            def visit_Attribute(self, node: ast.Attribute):  # type: ignore[override]
+            def visit_Attribute(self, node: ast.Attribute) -> None:
                 if node.attr.startswith("__"):
                     self.unsafe = (True, "Dunder attribute access is not allowed")
                 self.generic_visit(node)
 
-            def visit_Call(self, node: ast.Call):  # type: ignore[override]
+            def visit_Call(self, node: ast.Call) -> None:
                 # Block calls to banned names
                 func = node.func
                 if isinstance(func, ast.Name) and func.id in banned_calls:
@@ -362,11 +480,11 @@ class RealCodeExecutorTool:
                         self.unsafe = (True, f"Call to '{func.attr}' is not allowed")
                 self.generic_visit(node)
 
-            def visit_Global(self, node: ast.Global):  # type: ignore[override]
+            def visit_Global(self, node: ast.Global) -> None:
                 # Discourage global mutation patterns
                 self.unsafe = (True, "Global declarations are not allowed")
 
-            def visit_Nonlocal(self, node: ast.Nonlocal):  # type: ignore[override]
+            def visit_Nonlocal(self, node: ast.Nonlocal) -> None:
                 self.unsafe = (True, "Nonlocal declarations are not allowed")
 
         g = Guard()
@@ -402,7 +520,7 @@ class RealCodeExecutorTool:
             preexec = None
             if os.name == "posix":
 
-                def _limit_resources():
+                def _limit_resources() -> None:
                     try:
                         import resource
 
@@ -538,7 +656,7 @@ class RealCodeExecutorTool:
         preexec = None
         if os.name == "posix":
 
-            def _limit_resources():
+            def _limit_resources() -> None:
                 try:
                     import resource
 
@@ -634,7 +752,7 @@ class RealFileReaderTool:
     def name(self) -> str:
         return "file_reader"
 
-    def execute(self, **kwargs) -> tuple[ActionStatus, Any]:
+    def execute(self, **kwargs: Any) -> tuple[ActionStatus, Any]:
         filepath = kwargs.get("filepath")
         fmt = (kwargs.get("format") or "auto").lower()
         encoding = kwargs.get("encoding", "utf-8")
@@ -711,7 +829,7 @@ class RealFileWriterTool:
     def name(self) -> str:
         return "file_writer"
 
-    def execute(self, **kwargs) -> tuple[ActionStatus, Any]:
+    def execute(self, **kwargs: Any) -> tuple[ActionStatus, Any]:
         filepath = kwargs.get("filepath")
         content = kwargs.get("content")
         fmt = (kwargs.get("format") or "text").lower()

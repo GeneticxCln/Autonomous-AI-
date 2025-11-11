@@ -8,13 +8,13 @@ from __future__ import annotations
 import os
 import uuid
 from datetime import UTC, datetime
-from typing import Dict
+from typing import Any, Dict, Iterator, List, Optional
 
 from sqlalchemy import (
     JSON,
     Boolean,
-    Column,
     DateTime,
+    Engine,
     Float,
     Index,
     Integer,
@@ -23,9 +23,11 @@ from sqlalchemy import (
     UniqueConstraint,
     create_engine,
 )
-from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
-Base = declarative_base()
+
+class Base(DeclarativeBase):  # type: ignore[misc]
+    pass
 
 
 class ActionSelectorModel(Base):
@@ -33,19 +35,19 @@ class ActionSelectorModel(Base):
 
     __tablename__ = "action_selectors"
 
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    selector_type = Column(String(50), nullable=False, default="intelligent")
-    action_scores = Column(JSON, default=dict)
-    action_counts = Column(JSON, default=dict)
-    action_history = Column(JSON, default=dict)  # For IntelligentActionSelector
-    context_weights = Column(JSON, default=dict)
-    goal_patterns = Column(JSON, default=dict)
-    learning_rate = Column(Float, default=0.1)
-    epsilon = Column(Float, default=0.1)
-    last_updated = Column(
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    selector_type: Mapped[str] = mapped_column(String(50), nullable=False, default="intelligent")
+    action_scores: Mapped[Dict[str, float]] = mapped_column(JSON, default=dict)
+    action_counts: Mapped[Dict[str, int]] = mapped_column(JSON, default=dict)
+    action_history: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)  # For IntelligentActionSelector
+    context_weights: Mapped[Dict[str, float]] = mapped_column(JSON, default=dict)
+    goal_patterns: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    learning_rate: Mapped[float] = mapped_column(Float, default=0.1)
+    epsilon: Mapped[float] = mapped_column(Float, default=0.1)
+    last_updated: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
     )
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
     # Indexes for performance
     __table_args__ = (
@@ -59,16 +61,16 @@ class MemoryModel(Base):
 
     __tablename__ = "memories"
 
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    memory_id = Column(String(100), unique=True, nullable=False, index=True)
-    goal_id = Column(String(100), index=True)
-    memory_type = Column(String(20), default="working")  # 'working' or 'episodic'
-    action_data = Column(JSON)
-    observation_data = Column(JSON)
-    context_data = Column(JSON)
-    success_score = Column(Float, default=0.0)
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
-    accessed_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    memory_id: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
+    goal_id: Mapped[Optional[str]] = mapped_column(String(100), index=True)
+    memory_type: Mapped[str] = mapped_column(String(20), default="working")  # 'working' or 'episodic'
+    action_data: Mapped[Dict[str, Any]] = mapped_column(JSON)
+    observation_data: Mapped[Dict[str, Any]] = mapped_column(JSON)
+    context_data: Mapped[Dict[str, Any]] = mapped_column(JSON)
+    success_score: Mapped[float] = mapped_column(Float, default=0.0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    accessed_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
     # Indexes for performance
     __table_args__ = (
@@ -84,19 +86,19 @@ class LearningSystemModel(Base):
 
     __tablename__ = "learning_systems"
 
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    system_type = Column(String(50), nullable=False, default="default")
-    learned_strategies = Column(JSON, default=dict)
-    strategy_performance = Column(JSON, default=dict)  # For LearningSystem
-    strategy_scores = Column(JSON, default=dict)
-    pattern_library = Column(JSON, default=dict)  # For LearningSystem
-    total_episodes = Column(Integer, default=0)
-    learning_history = Column(JSON, default=list)
-    best_strategies = Column(JSON, default=dict)
-    last_updated = Column(
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    system_type: Mapped[str] = mapped_column(String(50), nullable=False, default="default")
+    learned_strategies: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    strategy_performance: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)  # For LearningSystem
+    strategy_scores: Mapped[Dict[str, float]] = mapped_column(JSON, default=dict)
+    pattern_library: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)  # For LearningSystem
+    total_episodes: Mapped[int] = mapped_column(Integer, default=0)
+    learning_history: Mapped[List[Dict[str, Any]]] = mapped_column(JSON, default=list)
+    best_strategies: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    last_updated: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
     )
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
     # Indexes
     __table_args__ = (
@@ -110,21 +112,21 @@ class GoalModel(Base):
 
     __tablename__ = "goals"
 
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    title = Column(String(200), nullable=False)
-    description = Column(Text, default="")
-    status = Column(
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(
         String(20), default="pending"
     )  # 'pending', 'in_progress', 'completed', 'failed'
-    priority = Column(Integer, default=1)  # 1-10 scale
-    progress = Column(Float, default=0.0)
-    target_date = Column(DateTime, nullable=True)
-    created_by = Column(String(100), nullable=True)  # Store user ID as string, no foreign key
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC), index=True)
-    updated_at = Column(
+    priority: Mapped[int] = mapped_column(Integer, default=1)  # 1-10 scale
+    progress: Mapped[float] = mapped_column(Float, default=0.0)
+    target_date: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    created_by: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)  # Store user ID as string, no foreign key
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC), index=True)
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
     )
-    completed_at = Column(DateTime, nullable=True)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
     # Indexes
     __table_args__ = (
@@ -140,21 +142,21 @@ class AgentModel(Base):
 
     __tablename__ = "agents"
 
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    name = Column(String(100), nullable=False)
-    description = Column(Text)
-    status = Column(String(20), default="idle")  # 'idle', 'running', 'executing', 'error'
-    goals = Column(JSON, default=list)
-    memory = Column(JSON, default=dict)  # Working and episodic memory
-    memory_capacity = Column(Integer, default=1000)
-    configuration = Column(JSON, default=dict)
-    performance_metrics = Column(JSON, default=dict)
-    created_by = Column(String(100), nullable=True)  # Store user ID as string, no foreign key
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC), index=True)
-    updated_at = Column(
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(20), default="idle")  # 'idle', 'running', 'executing', 'error'
+    goals: Mapped[List[Dict[str, Any]]] = mapped_column(JSON, default=list)
+    memory: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)  # Working and episodic memory
+    memory_capacity: Mapped[int] = mapped_column(Integer, default=1000)
+    configuration: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    performance_metrics: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_by: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)  # Store user ID as string, no foreign key
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC), index=True)
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
     )
-    last_execution = Column(DateTime, nullable=True)
+    last_execution: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
     # Indexes
     __table_args__ = (
@@ -170,20 +172,20 @@ class ActionModel(Base):
 
     __tablename__ = "actions"
 
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    action_id = Column(String(100), unique=True, nullable=False, index=True)
-    goal_id = Column(String(100), index=True)
-    agent_id = Column(String(36), index=True)  # Remove foreign key for now
-    action_type = Column(String(100), nullable=False)
-    description = Column(Text)
-    parameters = Column(JSON, default=dict)
-    status = Column(String(20), default="pending")  # 'pending', 'running', 'completed', 'failed'
-    result = Column(JSON)
-    success_score = Column(Float, default=0.0)
-    user_id = Column(String(100), nullable=True)  # Store user ID as string, no foreign key
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
-    started_at = Column(DateTime, nullable=True)
-    completed_at = Column(DateTime, nullable=True)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    action_id: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
+    goal_id: Mapped[Optional[str]] = mapped_column(String(100), index=True)
+    agent_id: Mapped[Optional[str]] = mapped_column(String(36), index=True)  # Remove foreign key for now
+    action_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    parameters: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    status: Mapped[str] = mapped_column(String(20), default="pending")  # 'pending', 'running', 'completed', 'failed'
+    result: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON)
+    success_score: Mapped[float] = mapped_column(Float, default=0.0)
+    user_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)  # Store user ID as string, no foreign key
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
     # Indexes
     __table_args__ = (
@@ -202,22 +204,22 @@ class AgentJobModel(Base):
 
     __tablename__ = "agent_jobs"
 
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    agent_id = Column(String(36), index=True, nullable=True)
-    job_type = Column(String(50), nullable=False)
-    status = Column(String(20), default="queued")
-    priority = Column(String(20), default="normal")
-    queue_name = Column(String(50), default="normal")
-    parameters = Column(JSON, default=dict)
-    result = Column(JSON, default=dict)
-    error = Column(Text, nullable=True)
-    requested_by = Column(String(100), nullable=True)
-    tenant_id = Column(String(100), nullable=True)
-    retries = Column(Integer, default=0)
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC), index=True)
-    started_at = Column(DateTime, nullable=True)
-    completed_at = Column(DateTime, nullable=True)
-    last_heartbeat = Column(DateTime, nullable=True)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    agent_id: Mapped[Optional[str]] = mapped_column(String(36), index=True, nullable=True)
+    job_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="queued")
+    priority: Mapped[str] = mapped_column(String(20), default="normal")
+    queue_name: Mapped[str] = mapped_column(String(50), default="normal")
+    parameters: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    result: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    requested_by: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    tenant_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    retries: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC), index=True)
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    last_heartbeat: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
     __table_args__ = (
         Index("idx_agent_jobs_agent_id", "agent_id"),
@@ -233,15 +235,15 @@ class ObservationModel(Base):
 
     __tablename__ = "observations"
 
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    observation_id = Column(String(100), unique=True, nullable=False, index=True)
-    action_id = Column(String(100), index=True)
-    goal_id = Column(String(100), index=True)
-    content = Column(Text, nullable=False)
-    observation_type = Column(String(50), default="result")
-    obs_metadata = Column("metadata", JSON, default=dict)
-    success = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    observation_id: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
+    action_id: Mapped[Optional[str]] = mapped_column(String(100), index=True)
+    goal_id: Mapped[Optional[str]] = mapped_column(String(100), index=True)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    observation_type: Mapped[str] = mapped_column(String(50), default="result")
+    obs_metadata: Mapped[Dict[str, Any]] = mapped_column("metadata", JSON, default=dict)
+    success: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     # Indexes
     __table_args__ = (
@@ -258,16 +260,16 @@ class CrossSessionPatternModel(Base):
 
     __tablename__ = "cross_session_patterns"
 
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    pattern_id = Column(String(100), unique=True, nullable=False, index=True)
-    pattern_type = Column(String(50), nullable=False)
-    pattern_data = Column(JSON, nullable=False)
-    confidence_score = Column(Float, default=0.0)
-    usage_count = Column(Integer, default=0)
-    success_rate = Column(Float, default=0.0)
-    last_used = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
-    updated_at = Column(
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    pattern_id: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
+    pattern_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    pattern_data: Mapped[Dict[str, Any]] = mapped_column(JSON, nullable=False)
+    confidence_score: Mapped[float] = mapped_column(Float, default=0.0)
+    usage_count: Mapped[int] = mapped_column(Integer, default=0)
+    success_rate: Mapped[float] = mapped_column(Float, default=0.0)
+    last_used: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
     )
 
@@ -286,16 +288,16 @@ class SessionModel(Base):
 
     __tablename__ = "sessions"
 
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    session_id = Column(String(100), unique=True, nullable=False, index=True)
-    session_type = Column(String(50), default="default")
-    start_time = Column(DateTime, default=lambda: datetime.now(UTC))
-    end_time = Column(DateTime, nullable=True)
-    goals_completed = Column(Integer, default=0)
-    total_goals = Column(Integer, default=0)
-    success_rate = Column(Float, default=0.0)
-    session_meta = Column("session_metadata", JSON, default=dict)
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    session_id: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
+    session_type: Mapped[str] = mapped_column(String(50), default="default")
+    start_time: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    end_time: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    goals_completed: Mapped[int] = mapped_column(Integer, default=0)
+    total_goals: Mapped[int] = mapped_column(Integer, default=0)
+    success_rate: Mapped[float] = mapped_column(Float, default=0.0)
+    session_meta: Mapped[Dict[str, Any]] = mapped_column("session_metadata", JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
     # Indexes
     __table_args__ = (
@@ -311,17 +313,17 @@ class DecisionModel(Base):
 
     __tablename__ = "decisions"
 
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    decision_id = Column(String(100), unique=True, nullable=False, index=True)
-    session_id = Column(String(100), index=True)
-    decision_type = Column(String(50), nullable=False)
-    context = Column(JSON, default=dict)
-    reasoning = Column(Text)
-    confidence = Column(Float, default=0.0)
-    action_taken = Column(String(100))
-    outcome = Column(String(20))  # 'success', 'failure', 'unknown'
-    execution_time_ms = Column(Float, default=0.0)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    decision_id: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
+    session_id: Mapped[Optional[str]] = mapped_column(String(100), index=True)
+    decision_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    context: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    reasoning: Mapped[Optional[str]] = mapped_column(Text)
+    confidence: Mapped[float] = mapped_column(Float, default=0.0)
+    action_taken: Mapped[Optional[str]] = mapped_column(String(100))
+    outcome: Mapped[Optional[str]] = mapped_column(String(20))  # 'success', 'failure', 'unknown'
+    execution_time_ms: Mapped[float] = mapped_column(Float, default=0.0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     # Indexes
     __table_args__ = (
@@ -338,13 +340,13 @@ class PerformanceMetricModel(Base):
 
     __tablename__ = "performance_metrics"
 
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    metric_name = Column(String(100), nullable=False, index=True)
-    metric_value = Column(Float, nullable=False)
-    metric_unit = Column(String(20), default="count")
-    component = Column(String(50))
-    metric_tags = Column("tags", JSON, default=dict)
-    timestamp = Column(DateTime, default=lambda: datetime.now(UTC), index=True)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    metric_name: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    metric_value: Mapped[float] = mapped_column(Float, nullable=False)
+    metric_unit: Mapped[str] = mapped_column(String(20), default="count")
+    component: Mapped[Optional[str]] = mapped_column(String(50))
+    metric_tags: Mapped[Dict[str, Any]] = mapped_column("tags", JSON, default=dict)
+    timestamp: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC), index=True)
 
     # Indexes
     __table_args__ = (
@@ -359,16 +361,16 @@ class SecurityAuditModel(Base):
 
     __tablename__ = "security_audits"
 
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    audit_id = Column(String(100), unique=True, nullable=False, index=True)
-    operation_type = Column(String(50), nullable=False)
-    target = Column(Text)
-    is_valid = Column(Boolean, default=True)
-    security_level = Column(String(20), default="low")  # 'low', 'medium', 'high', 'critical'
-    message = Column(Text)
-    suggestions = Column(JSON, default=list)
-    audit_metadata = Column("metadata", JSON, default=dict)
-    timestamp = Column(DateTime, default=lambda: datetime.now(UTC), index=True)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    audit_id: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
+    operation_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    target: Mapped[Optional[str]] = mapped_column(Text)
+    is_valid: Mapped[bool] = mapped_column(Boolean, default=True)
+    security_level: Mapped[str] = mapped_column(String(20), default="low")  # 'low', 'medium', 'high', 'critical'
+    message: Mapped[Optional[str]] = mapped_column(Text)
+    suggestions: Mapped[List[str]] = mapped_column(JSON, default=list)
+    audit_metadata: Mapped[Dict[str, Any]] = mapped_column("metadata", JSON, default=dict)
+    timestamp: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC), index=True)
 
     # Indexes
     __table_args__ = (
@@ -385,14 +387,14 @@ class ConfigurationModel(Base):
 
     __tablename__ = "configurations"
 
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    config_key = Column(String(100), unique=True, nullable=False, index=True)
-    config_value = Column(JSON, nullable=False)
-    config_type = Column(String(50), default="system")
-    description = Column(Text)
-    is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
-    updated_at = Column(
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    config_key: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
+    config_value: Mapped[Dict[str, Any]] = mapped_column(JSON, nullable=False)
+    config_type: Mapped[str] = mapped_column(String(50), default="system")
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
     )
 
@@ -409,18 +411,18 @@ class AgentCapabilityModel(Base):
 
     __tablename__ = "agent_capabilities"
 
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    instance_id = Column(String(100), unique=True, nullable=False, index=True)
-    agent_name = Column(String(100), nullable=False)
-    role = Column(String(50), nullable=False)  # planner/executor/checker/etc
-    capabilities = Column(JSON, default=list)  # list of capability descriptors
-    expertise_domains = Column(JSON, default=list)
-    capacity = Column(Integer, default=1)  # concurrent tasks supported
-    tool_scopes = Column(JSON, default=list)
-    capability_metadata = Column("metadata", JSON, default=dict)
-    heartbeat_at = Column(DateTime, default=lambda: datetime.now(UTC), index=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC), index=True)
-    updated_at = Column(
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    instance_id: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
+    agent_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    role: Mapped[str] = mapped_column(String(50), nullable=False)  # planner/executor/checker/etc
+    capabilities: Mapped[List[Dict[str, Any]]] = mapped_column(JSON, default=list)  # list of capability descriptors
+    expertise_domains: Mapped[List[str]] = mapped_column(JSON, default=list)
+    capacity: Mapped[int] = mapped_column(Integer, default=1)  # concurrent tasks supported
+    tool_scopes: Mapped[List[str]] = mapped_column(JSON, default=list)
+    capability_metadata: Mapped[Dict[str, Any]] = mapped_column("metadata", JSON, default=dict)
+    heartbeat_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC), index=True)
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
     )
 
@@ -445,23 +447,41 @@ class DatabaseManager:
         pool_recycle: int | None = None,
     ):
         self.database_url = database_url
-        self.engine = None
-        self.SessionLocal = None
+        self.engine: Optional[Engine] = None
+        self.SessionLocal: Optional[sessionmaker[Session]] = None
         self.pool_size = (
-            pool_size if pool_size is not None else int(os.getenv("DB_POOL_SIZE", "10"))
+            pool_size if pool_size is not None else int(os.getenv("DB_POOL_SIZE", "20"))
         )
         self.max_overflow = (
-            max_overflow if max_overflow is not None else int(os.getenv("DB_MAX_OVERFLOW", "20"))
+            max_overflow if max_overflow is not None else int(os.getenv("DB_MAX_OVERFLOW", "30"))
         )
         self.pool_timeout = (
-            pool_timeout if pool_timeout is not None else int(os.getenv("DB_POOL_TIMEOUT", "30"))
+            pool_timeout if pool_timeout is not None else int(os.getenv("DB_POOL_TIMEOUT", "60"))
         )
         self.pool_recycle = (
-            pool_recycle if pool_recycle is not None else int(os.getenv("DB_POOL_RECYCLE", "300"))
+            pool_recycle if pool_recycle is not None else int(os.getenv("DB_POOL_RECYCLE", "1800"))
         )
 
-    def _engine_kwargs(self) -> Dict[str, object]:
-        kwargs: Dict[str, object] = {
+    def configure_pool(
+        self,
+        *,
+        pool_size: Optional[int] = None,
+        max_overflow: Optional[int] = None,
+        pool_timeout: Optional[int] = None,
+        pool_recycle: Optional[int] = None,
+    ) -> None:
+        """Allow runtime updates of pooling configuration prior to initialization."""
+        if pool_size is not None:
+            self.pool_size = pool_size
+        if max_overflow is not None:
+            self.max_overflow = max_overflow
+        if pool_timeout is not None:
+            self.pool_timeout = pool_timeout
+        if pool_recycle is not None:
+            self.pool_recycle = pool_recycle
+
+    def _engine_kwargs(self) -> Dict[str, Any]:
+        kwargs: Dict[str, Any] = {
             "pool_pre_ping": True,
             "pool_recycle": self.pool_recycle,
             "echo": False,
@@ -474,10 +494,12 @@ class DatabaseManager:
             kwargs["pool_timeout"] = self.pool_timeout
         if self.database_url.startswith("sqlite"):
             kwargs.setdefault("connect_args", {})
-            kwargs["connect_args"].update({"check_same_thread": False})
+            # Explicitly type connect_args as Dict[str, Any] before calling update
+            connect_args: Dict[str, Any] = kwargs["connect_args"]
+            connect_args.update({"check_same_thread": False})
         return kwargs
 
-    def initialize(self):
+    def initialize(self) -> None:
         """Initialize database connection and create tables."""
         try:
             engine_kwargs = self._engine_kwargs()
@@ -489,6 +511,7 @@ class DatabaseManager:
             )
 
             # Create all tables
+            assert self.engine is not None  # Ensure engine is initialized
             Base.metadata.create_all(bind=self.engine)
 
             print(f"✅ Database initialized successfully: {self._mask_db_url(self.database_url)}")
@@ -497,13 +520,13 @@ class DatabaseManager:
             print(f"❌ Database initialization failed: {e}")
             raise
 
-    def get_session(self):
+    def get_session(self) -> Session:
         """Get a database session."""
         if not self.SessionLocal:
             raise RuntimeError("Database not initialized. Call initialize() first.")
         return self.SessionLocal()
 
-    def close(self):
+    def close(self) -> None:
         """Close database connections."""
         if self.engine:
             self.engine.dispose()
@@ -530,7 +553,7 @@ class DatabaseManager:
 db_manager = DatabaseManager()
 
 
-def get_db_session():
+def get_db_session() -> Iterator[Session]:
     """Dependency function for FastAPI or context managers."""
     session = db_manager.get_session()
     try:

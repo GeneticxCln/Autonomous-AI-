@@ -52,12 +52,11 @@ def demo_real_tools():
 
     if not has_api_keys:
         print("\nNo search API keys found in environment.")
-        print("To test real tools, set one of:")
+        print("To run the real tools demo, set one of:")
         print("  - SERPAPI_KEY")
         print("  - BING_SEARCH_KEY")
         print("  - GOOGLE_SEARCH_KEY")
-        print("\nFalling back to mock tools demo...")
-        return demo_mock_tools()
+        raise SystemExit(1)
 
     agent = AutonomousAgent()
     agent.tool_registry.enable_real_tools()

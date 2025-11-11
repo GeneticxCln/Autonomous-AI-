@@ -7,8 +7,9 @@ from __future__ import annotations
 
 import logging
 import os
+import secrets
 from datetime import UTC, datetime, timedelta
-from typing import Any, Dict, List, Optional, Set, cast
+from typing import Any, Dict, Iterable, List, Optional, Set, cast
 
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -41,24 +42,62 @@ from .auth_models import (
 logger = logging.getLogger(__name__)
 
 _cfg: Any | None = None
-# JWT Configuration from production_config (fallbacks provided)
+
+
+def _runtime_environment() -> str:
+    """Best-effort detection of the current runtime environment."""
+    if _cfg is not None:
+        return str(getattr(_cfg, "environment", "development")).lower()
+    return os.getenv("ENVIRONMENT", "development").lower()
+
+
+def _load_jwt_settings_from_env() -> tuple[str, str, int, int]:
+    """Load JWT settings directly from the environment with validation."""
+    env = _runtime_environment()
+    secret = os.getenv("JWT_SECRET_KEY")
+    if not secret:
+        if env == "production":
+            raise RuntimeError("JWT_SECRET_KEY must be set and rotated in production")
+        secret = secrets.token_urlsafe(32)
+        logger.warning("Generated ephemeral JWT secret for %s mode; set JWT_SECRET_KEY.", env)
+    elif len(secret) < 32:
+        raise RuntimeError("JWT_SECRET_KEY must be at least 32 characters long")
+
+    algorithm = os.getenv("JWT_ALGORITHM", "HS256")
+    access_expire = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
+    refresh_expire = int(os.getenv("JWT_REFRESH_TOKEN_EXPIRE_DAYS", "30"))
+    return secret, algorithm, access_expire, refresh_expire
+
+
+# Prefer production_config when available; fall back to environment variables otherwise.
 try:
     from .production_config import get_config
 
-    _cfg = get_config()
+    try:
+        _cfg = get_config()
+    except Exception as exc:  # pragma: no cover - defensive logging
+        logger.warning("Production config failed to load; using environment vars (%s)", exc)
+        _cfg = None
+except Exception as exc:  # pragma: no cover - defensive logging
+    logger.warning("production_config unavailable; using environment vars (%s)", exc)
+    _cfg = None
+
+if _cfg is not None:
     JWT_SECRET_KEY = _cfg.jwt_secret_key
     JWT_ALGORITHM = _cfg.jwt_algorithm
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES = _cfg.jwt_access_token_expire_minutes
     JWT_REFRESH_TOKEN_EXPIRE_DAYS = _cfg.jwt_refresh_token_expire_days
-except Exception:
-    JWT_SECRET_KEY = "your-super-secret-jwt-key-change-in-production"
-    JWT_ALGORITHM = "HS256"
-    JWT_ACCESS_TOKEN_EXPIRE_MINUTES = 30
-    JWT_REFRESH_TOKEN_EXPIRE_DAYS = 30
+else:
+    (
+        JWT_SECRET_KEY,
+        JWT_ALGORITHM,
+        JWT_ACCESS_TOKEN_EXPIRE_MINUTES,
+        JWT_REFRESH_TOKEN_EXPIRE_DAYS,
+    ) = _load_jwt_settings_from_env()
 
 # Password hashing: argon2 in production; faster sha256_crypt in non-prod for tests
 try:
-    env = getattr(_cfg, "environment", "development") if _cfg is not None else "development"
+    env = _runtime_environment()
     if env == "production":
         pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
     else:
@@ -123,7 +162,7 @@ class AuthService:
         # Create permissions first
         permissions_map = {}
         for perm_data in DEFAULT_PERMISSIONS:
-            permission = PermissionModel(**perm_data)
+            permission = cast(Any, PermissionModel)(**perm_data)
             session.add(permission)
             session.flush()
             permissions_map[perm_data["name"]] = permission
@@ -131,7 +170,7 @@ class AuthService:
         # Create roles
         roles_map = {}
         for role_data in DEFAULT_ROLES:
-            role = RoleModel(**role_data)
+            role = cast(Any, RoleModel)(**role_data)
             session.add(role)
             session.flush()
             roles_map[role_data["name"]] = role
@@ -141,7 +180,7 @@ class AuthService:
             role = roles_map[role_name]
             for perm_name in permission_names:
                 if perm_name in permissions_map:
-                    role.permissions.append(permissions_map[perm_name])
+                    cast(Any, role.permissions).append(permissions_map[perm_name])
 
         session.commit()
 
@@ -153,14 +192,19 @@ class AuthService:
             env = getattr(_cfg, "environment", "development") if _cfg is not None else "development"
             is_production = env == "production"
 
+            if default_password:
+                sanitized = default_password.strip()
+                self._validate_admin_password(sanitized)
+                default_password = sanitized
+
             admin_user = (
                 session.query(UserModel).filter(UserModel.username == default_username).first()
             )
             if admin_user:
                 if default_password:
                     admin_user.hashed_password = pwd_context.hash(default_password)
-                    admin_user.failed_login_attempts = 0  # type: ignore[assignment]
-                    admin_user.last_login_attempt = None  # type: ignore[assignment]
+                    cast(Any, admin_user).failed_login_attempts = 0
+                    cast(Any, admin_user).last_login_attempt = None
                     session.commit()
                     logger.info("Updated admin credentials from DEFAULT_ADMIN_PASSWORD")
                 return
@@ -187,13 +231,33 @@ class AuthService:
             )
             admin_role = session.query(RoleModel).filter(RoleModel.name == "admin").first()
             if admin_role:
-                admin_user.roles.append(admin_role)
+                cast(Any, admin_user.roles).append(admin_role)
 
             session.add(admin_user)
             session.commit()
             logger.info("Default admin user created (username: %s)", default_username)
         except Exception as e:
             logger.error(f"Failed to ensure default admin user: {e}")
+
+    @staticmethod
+    def _validate_admin_password(password: str) -> None:
+        """Ensure supplied bootstrap passwords are not trivially weak."""
+        normalized = password.strip()
+        if len(normalized) < 12:
+            raise RuntimeError("DEFAULT_ADMIN_PASSWORD must be at least 12 characters long")
+        weak_tokens = {
+            "password",
+            "passw0rd",
+            "admin",
+            "admin123",
+            "letmein",
+            "changeme",
+            "default",
+            "123456",
+            "123456789",
+        }
+        if normalized.lower() in weak_tokens:
+            raise RuntimeError("DEFAULT_ADMIN_PASSWORD is too weak and must be rotated")
 
     def authenticate_user(
         self,
@@ -205,7 +269,7 @@ class AuthService:
         """Authenticate user and return security context."""
         self._ensure_initialized()
         try:
-            with self.db.get_session() as session:  # type: ignore[no-untyped-call]
+            with self.db.get_session() as session:
                 # Find user by username or email
                 user = (
                     session.query(UserModel)
@@ -302,12 +366,13 @@ class AuthService:
 
     def _is_account_locked(self, user: UserModel) -> bool:
         """Check if user account is locked due to failed attempts."""
-        if user.failed_login_attempts >= 5:  # Max 5 attempts
+        count = int(getattr(user, "failed_login_attempts", 0) or 0)
+        if count >= 5:  # Max 5 attempts
             # Check if lockout period has expired (30 minutes)
-            if user.last_login_attempt:
+            last_attempt = getattr(user, "last_login_attempt", None)
+            if last_attempt is not None:
                 lockout_duration = timedelta(minutes=30)
-                last_attempt = user.last_login_attempt
-                if last_attempt.tzinfo is None:
+                if getattr(last_attempt, "tzinfo", None) is None:
                     last_attempt = last_attempt.replace(tzinfo=UTC)
                 if datetime.now(UTC) - last_attempt < lockout_duration:
                     return True
@@ -318,8 +383,8 @@ class AuthService:
     ) -> None:
         """Handle failed login attempt."""
         count = int(getattr(user, "failed_login_attempts", 0) or 0)
-        user.failed_login_attempts = count + 1  # type: ignore[assignment]
-        user.last_login_attempt = datetime.now(UTC)  # type: ignore[assignment]
+        user.failed_login_attempts = count + 1
+        user.last_login_attempt = datetime.now(UTC)
         session.commit()
 
         # Log failed login
@@ -348,8 +413,10 @@ class AuthService:
     def _get_user_permissions(self, user: UserModel) -> List[str]:
         """Get all permissions for a user."""
         permissions: Set[str] = set()
-        for role in user.roles:
-            for permission in role.permissions:
+        roles_iter = cast(Iterable[Any], user.roles)
+        for role in roles_iter:
+            perms_iter = cast(Iterable[Any], role.permissions)
+            for permission in perms_iter:
                 permissions.add(permission.name)
         return list(permissions)
 
@@ -369,7 +436,7 @@ class AuthService:
         }
         if session_id:
             to_encode["session_id"] = session_id
-        return cast(str, jwt.encode(to_encode, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM))
+        return str(jwt.encode(to_encode, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM))
 
     def create_refresh_token(self, user_id: str, session_id: Optional[str] = None) -> str:
         """Create JWT refresh token."""
@@ -377,7 +444,7 @@ class AuthService:
         to_encode = {"sub": user_id, "exp": expire, "iat": datetime.now(UTC), "type": "refresh"}
         if session_id:
             to_encode["session_id"] = session_id
-        return cast(str, jwt.encode(to_encode, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM))
+        return str(jwt.encode(to_encode, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM))
 
     def verify_token(self, token: str, token_type: str = "access") -> SecurityContext:
         """Verify JWT token and return security context."""
@@ -405,7 +472,7 @@ class AuthService:
                     raise TokenExpiredError("Token has expired")
 
             # Get user from database
-            with self.db.get_session() as session:  # type: ignore[no-untyped-call]
+            with self.db.get_session() as session:
                 user = session.query(UserModel).filter(UserModel.id == user_id).first()
                 if not user or not user.is_active:
                     raise UserNotFoundError("User not found or inactive")
@@ -434,7 +501,7 @@ class AuthService:
         self, user_id: str, ip_address: Optional[str] = None, user_agent: Optional[str] = None
     ) -> Dict[str, Any]:
         """Create user session and return tokens."""
-        with self.db.get_session() as session:  # type: ignore[no-untyped-call]
+        with self.db.get_session() as session:
             user = session.query(UserModel).filter(UserModel.id == user_id).first()
             if not user:
                 raise UserNotFoundError("User not found")
@@ -472,11 +539,14 @@ class AuthService:
         self, user_id: str, ip_address: Optional[str] = None, user_agent: Optional[str] = None
     ) -> Dict[str, Any]:
         """Async wrapper for create_user_session."""
-        return await run_blocking(
-            self.create_user_session,
-            user_id,
-            ip_address=ip_address,
-            user_agent=user_agent,
+        return cast(
+            Dict[str, Any],
+            await run_blocking(
+                self.create_user_session,
+                user_id,
+                ip_address=ip_address,
+                user_agent=user_agent,
+            ),
         )
 
     def refresh_access_token(self, refresh_token: str) -> Dict[str, Any]:
@@ -490,7 +560,7 @@ class AuthService:
                 raise AuthenticationError("Invalid refresh token")
 
             # Verify session exists and is valid
-            with self.db.get_session() as session:  # type: ignore[no-untyped-call]
+            with self.db.get_session() as session:
                 session_record = (
                     session.query(UserSessionModel)
                     .filter(
@@ -528,11 +598,11 @@ class AuthService:
 
     async def refresh_access_token_async(self, refresh_token: str) -> Dict[str, Any]:
         """Async wrapper for refresh_access_token."""
-        return await run_blocking(self.refresh_access_token, refresh_token)
+        return cast(Dict[str, Any], await run_blocking(self.refresh_access_token, refresh_token))
 
     def logout(self, user_id: str, session_id: Optional[str] = None) -> None:
         """Logout user and invalidate session."""
-        with self.db.get_session() as session:  # type: ignore[no-untyped-call]
+        with self.db.get_session() as session:
             # Invalidate session
             if session_id:
                 session_record = (
@@ -553,12 +623,13 @@ class AuthService:
     async def logout_async(self, user_id: str, session_id: Optional[str] = None) -> None:
         """Async wrapper for logout."""
         await run_blocking(self.logout, user_id, session_id=session_id)
+        return None
 
     def create_user(
-        self, username: str, email: str, password: str, full_name: str, role_names: List[str] = None
+        self, username: str, email: str, password: str, full_name: str, role_names: Optional[List[str]] = None
     ) -> UserModel:
         """Create new user account."""
-        with self.db.get_session() as session:  # type: ignore[no-untyped-call]
+        with self.db.get_session() as session:
             # Check if user already exists
             existing_user = (
                 session.query(UserModel)
@@ -584,7 +655,7 @@ class AuthService:
             # Assign roles
             if role_names:
                 roles = session.query(RoleModel).filter(RoleModel.name.in_(role_names)).all()
-                user.roles.extend(roles)
+                cast(Any, user.roles).extend(roles)
 
             session.add(user)
             session.commit()
@@ -597,7 +668,7 @@ class AuthService:
             return user
 
     async def create_user_async(
-        self, username: str, email: str, password: str, full_name: str, role_names: List[str] = None
+        self, username: str, email: str, password: str, full_name: str, role_names: Optional[List[str]] = None
     ) -> UserModel:
         """Async wrapper for create_user."""
         return await run_blocking(
@@ -613,13 +684,13 @@ class AuthService:
         self, user_id: str, name: str, scopes: List[str], expires_days: int = 30
     ) -> str:
         """Create API token for user."""
-        with self.db.get_session() as session:  # type: ignore[no-untyped-call]
+        with self.db.get_session() as session:
             user = session.query(UserModel).filter(UserModel.id == user_id).first()
             if not user:
                 raise UserNotFoundError("User not found")
 
             # Generate token
-            token = generate_secure_token(32)
+            token: str = generate_secure_token(32)
             token_hash = hash_token(token)
             token_prefix = token[:8]
             expires_at = datetime.now(UTC) + timedelta(days=expires_days) if expires_days else None
@@ -643,19 +714,22 @@ class AuthService:
         self, user_id: str, name: str, scopes: List[str], expires_days: int = 30
     ) -> str:
         """Async wrapper for create_api_token."""
-        return await run_blocking(
-            self.create_api_token,
-            user_id=user_id,
-            name=name,
-            scopes=scopes,
-            expires_days=expires_days,
+        return cast(
+            str,
+            await run_blocking(
+                self.create_api_token,
+                user_id=user_id,
+                name=name,
+                scopes=scopes,
+                expires_days=expires_days,
+            ),
         )
 
     def verify_api_token(self, token: str) -> SecurityContext:
         """Verify API token and return security context."""
         token_hash = hash_token(token)
 
-        with self.db.get_session() as session:  # type: ignore[no-untyped-call]
+        with self.db.get_session() as session:
             api_token = (
                 session.query(APITokenModel)
                 .filter(
@@ -691,7 +765,7 @@ class AuthService:
 
     async def verify_api_token_async(self, token: str) -> SecurityContext:
         """Async wrapper for verify_api_token."""
-        return await run_blocking(self.verify_api_token, token)
+        return cast(SecurityContext, await run_blocking(self.verify_api_token, token))
 
     def _build_permissions_from_scopes(self, scopes: List[str]) -> List[str]:
         """Build full permission names from API scopes."""
@@ -742,7 +816,7 @@ class AuthService:
 
     def require_admin(self, security_context: SecurityContext) -> None:
         """Require admin privileges."""
-        security_context.require_admin()  # type: ignore[no-untyped-call]
+        security_context.require_admin()
 
 
 # Global auth service instance

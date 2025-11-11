@@ -6,27 +6,47 @@ Supports session caching, data caching, and distributed caching
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
 import logging
 import pickle
 import time
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Dict, Optional, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union, cast
+
+# Ensure the redis module reference is Optional-typed for mypy when import fails
+redis: Any | None = None
 
 try:
-    import redis.asyncio as redis  # type: ignore
-    from redis.asyncio import Redis  # type: ignore
-except Exception:  # ModuleNotFoundError or other import issues
-    redis = None  # type: ignore
+    import redis.asyncio as _redis_asyncio
+    from redis.asyncio import ConnectionPool, Redis
+    REDIS_IMPORT_ERROR: Optional[Exception] = None
+except Exception as _exc:  # ModuleNotFoundError or other import issues
+    REDIS_IMPORT_ERROR = _exc
     if TYPE_CHECKING:  # for type checkers only
+        from redis.asyncio import ConnectionPool as ConnectionPool  # pragma: no cover
         from redis.asyncio import Redis as Redis  # pragma: no cover
     else:
+        Redis = Any  # type: ignore
+        ConnectionPool = Any  # type: ignore
 
-        class Redis:  # minimal placeholder for runtime annotations
-            pass
+# Assign imported module to the Optional-typed name used by this module
+if '_redis_asyncio' in globals():
+    # The name check above is defensive; assign if available
+    try:
+        redis = _redis_asyncio
+    except NameError:
+        pass
 
 
 logger = logging.getLogger(__name__)
+
+
+async def _await_if_awaitable(value: Any) -> Any:
+    """Await the value if it's awaitable, otherwise return it unchanged."""
+    if inspect.isawaitable(value):
+        return await value
+    return value
 
 
 @dataclass
@@ -44,7 +64,7 @@ class CacheConfig:
     socket_connect_timeout: int = 5
     socket_timeout: int = 5
     socket_keepalive: bool = True
-    socket_keepalive_options: Optional[Dict] = None
+    socket_keepalive_options: Optional[Dict[str, Any]] = None
     health_check_interval: int = 30
     retry_on_timeout: bool = True
     encoding: str = "utf-8"
@@ -64,65 +84,61 @@ class CacheManager:
     def __init__(self, config: Optional[CacheConfig] = None):
         self.config = config or CacheConfig()
         self.redis_client: Optional[Redis] = None
-        self.connection_pool = None
+        self.connection_pool: Optional[ConnectionPool] = None
         self._is_connected = False
         self._cache_stats = {"hits": 0, "misses": 0, "sets": 0, "deletes": 0, "errors": 0}
         self._monitoring_system = None
-        self._monitoring_checked = False
 
     async def connect(self) -> bool:
         """Connect to Redis server."""
-        try:
-            if redis is None:
-                logger.warning("Redis package not available; cache disabled")
-                self._is_connected = False
-                return False
-            if self._is_connected and self.redis_client:
-                return True
+        if redis is None:
+            detail = f": {REDIS_IMPORT_ERROR}" if REDIS_IMPORT_ERROR else ""
+            raise RuntimeError(
+                "Redis package not available. Install 'redis[async]>=5' to enable caching" + detail
+            )
 
-            # Create connection pool
-            self.connection_pool = redis.ConnectionPool(
-                host=self.config.host,
-                port=self.config.port,
-                db=self.config.db,
-                password=self.config.password,
-                ssl=self.config.ssl,
+        if self._is_connected and self.redis_client:
+            return True
+
+        try:
+            # Build URL and create async Redis client via from_url to avoid incompatible kwargs
+            scheme = "rediss" if self.config.ssl else "redis"
+            auth = f":{self.config.password}@" if self.config.password else ""
+            url = f"{scheme}://{auth}{self.config.host}:{self.config.port}/{self.config.db}"
+
+            # Use from_url which configures an internal pool; keep args minimal for compatibility
+            self.redis_client = redis.from_url(
+                url,
                 decode_responses=self.config.decode_responses,
                 max_connections=self.config.max_connections,
-                socket_connect_timeout=self.config.socket_connect_timeout,
-                socket_timeout=self.config.socket_timeout,
-                socket_keepalive=self.config.socket_keepalive,
-                socket_keepalive_options=self.config.socket_keepalive_options,
-                health_check_interval=self.config.health_check_interval,
-                retry_on_timeout=self.config.retry_on_timeout,
-                encoding=self.config.encoding,
-                encoding_errors=self.config.encoding_errors,
             )
 
-            # Create Redis client
-            self.redis_client = redis.Redis(
-                connection_pool=self.connection_pool, decode_responses=self.config.decode_responses
-            )
+            # Connection pool reference (optional)
+            try:
+                self.connection_pool = getattr(self.redis_client, "connection_pool", None)
+            except Exception:
+                self.connection_pool = None
 
-            # Test connection
-            await self.redis_client.ping()
+            if self.redis_client is None:
+                raise RuntimeError("Failed to create Redis client")
+
+            await _await_if_awaitable(self.redis_client.ping())
             self._is_connected = True
 
             logger.info(f"✅ Redis cache connected: {self.config.host}:{self.config.port}")
             return True
 
         except Exception as e:
-            logger.error(f"❌ Redis cache connection failed: {e}")
             self._is_connected = False
-            return False
+            raise RuntimeError(f"Redis cache connection failed: {e}") from e
 
-    async def disconnect(self):
+    async def disconnect(self) -> None:
         """Disconnect from Redis server."""
         try:
             if self.redis_client:
-                await self.redis_client.close()
+                await _await_if_awaitable(self.redis_client.close())
             if self.connection_pool:
-                await self.connection_pool.disconnect()
+                await _await_if_awaitable(self.connection_pool.disconnect())
             self._is_connected = False
             logger.info("✅ Redis cache disconnected")
         except Exception as e:
@@ -130,17 +146,18 @@ class CacheManager:
 
     async def is_healthy(self) -> bool:
         """Check if Redis connection is healthy."""
-        if not self._is_connected or not self.redis_client:
+        client = self.redis_client
+        if not self._is_connected or client is None:
             return False
 
         try:
-            await self.redis_client.ping()
+            await _await_if_awaitable(client.ping())
             return True
         except Exception:
             self._is_connected = False
             return False
 
-    def _make_key(self, namespace: str, key: str, *args) -> str:
+    def _make_key(self, namespace: str, key: str, *args: object) -> str:
         """Create a namespaced cache key."""
         if args:
             key_parts = [key] + [str(arg) for arg in args]
@@ -158,8 +175,10 @@ class CacheManager:
 
     def _serialize(self, value: Any) -> Union[str, bytes]:
         """Serialize value for Redis storage."""
-        if isinstance(value, (str, int, float)):
+        if isinstance(value, str):
             return value
+        elif isinstance(value, (int, float)):
+            return str(value)
         elif isinstance(value, (dict, list, tuple)):
             return json.dumps(value, default=str)
         elif value is None:
@@ -191,24 +210,12 @@ class CacheManager:
             logger.warning(f"Could not deserialize value: {type(value)}")
             return str(value)
 
-    def _get_monitoring_system(self):
-        """Lazy-load monitoring system to avoid circular imports."""
-        if self._monitoring_checked:
-            return self._monitoring_system
+    def register_monitoring_system(self, monitoring_system: Any) -> None:
+        """Allow the monitoring layer to register itself without circular imports."""
+        self._monitoring_system = monitoring_system
 
-        try:
-            from .advanced_monitoring import monitoring_system
-
-            self._monitoring_system = monitoring_system
-        except Exception as exc:
-            logger.debug(f"Monitoring system unavailable: {exc}")
-            self._monitoring_system = None
-
-        self._monitoring_checked = True
-        return self._monitoring_system
-
-    def _record_cache_metric(self, operation: str, status: str, start_time: Optional[float] = None):
-        monitoring = self._get_monitoring_system()
+    def _record_cache_metric(self, operation: str, status: str, start_time: Optional[float] = None) -> None:
+        monitoring = self._monitoring_system
         if monitoring is None:
             return
 
@@ -222,7 +229,7 @@ class CacheManager:
             logger.debug(f"Failed to record cache metric: {exc}")
 
     async def set(
-        self, namespace: str, key: str, value: Any, ttl: Optional[int] = None, *args
+        self, namespace: str, key: str, value: Any, ttl: Optional[int] = None, *args: object
     ) -> bool:
         """Set a value in cache with optional TTL."""
         if not self._is_connected:
@@ -236,10 +243,13 @@ class CacheManager:
             redis_key = self._make_key(namespace, key, *args)
             serialized_value = self._serialize(value)
 
+            client = self.redis_client
+            if client is None:
+                return False
             if ttl:
-                await self.redis_client.setex(redis_key, ttl, serialized_value)
+                await client.setex(redis_key, ttl, serialized_value)
             else:
-                await self.redis_client.set(redis_key, serialized_value)
+                await client.set(redis_key, serialized_value)
 
             self._cache_stats["sets"] += 1
             logger.debug(f"Cache SET: {redis_key} (TTL: {ttl}s)")
@@ -252,7 +262,7 @@ class CacheManager:
             self._record_cache_metric("set", "error", start_time)
             return False
 
-    async def get(self, namespace: str, key: str, default: Any = None, *args) -> Any:
+    async def get(self, namespace: str, key: str, default: Any = None, *args: object) -> Any:
         """Get a value from cache."""
         if not self._is_connected:
             await self.connect()
@@ -263,7 +273,10 @@ class CacheManager:
         start_time = time.perf_counter()
         try:
             redis_key = self._make_key(namespace, key, *args)
-            value = await self.redis_client.get(redis_key)
+            client = self.redis_client
+            if client is None:
+                return default
+            value = await client.get(redis_key)
 
             if value is None:
                 self._cache_stats["misses"] += 1
@@ -283,7 +296,7 @@ class CacheManager:
             self._record_cache_metric("get", "error", start_time)
             return default
 
-    async def delete(self, namespace: str, key: str, *args) -> bool:
+    async def delete(self, namespace: str, key: str, *args: object) -> bool:
         """Delete a value from cache."""
         if not self._is_connected:
             await self.connect()
@@ -294,7 +307,10 @@ class CacheManager:
         start_time = time.perf_counter()
         try:
             redis_key = self._make_key(namespace, key, *args)
-            result = await self.redis_client.delete(redis_key)
+            client = self.redis_client
+            if client is None:
+                return False
+            result = await client.delete(redis_key)
 
             if result:
                 self._cache_stats["deletes"] += 1
@@ -321,10 +337,14 @@ class CacheManager:
         start_time = time.perf_counter()
         try:
             redis_pattern = self._make_key(namespace, pattern)
-            keys = await self.redis_client.keys(redis_pattern)
+            client = self.redis_client
+            if client is None:
+                return 0
+            keys = await client.keys(redis_pattern)
 
             if keys:
-                deleted_count = await self.redis_client.delete(*keys)
+                deleted_count_val = await client.delete(*keys)
+                deleted_count = int(deleted_count_val)
                 self._cache_stats["deletes"] += deleted_count
                 logger.debug(f"Cache DELETE PATTERN: {redis_pattern} ({deleted_count} keys)")
                 status = "success" if deleted_count else "miss"
@@ -339,7 +359,45 @@ class CacheManager:
             self._record_cache_metric("delete", "error", start_time)
             return 0
 
-    async def exists(self, namespace: str, key: str, *args) -> bool:
+    async def scan_namespace(self, namespace: str, pattern: str = "*") -> List[str]:
+        """Return all keys within a namespace matching the pattern."""
+        if not self._is_connected:
+            await self.connect()
+
+        if not self._is_connected:
+            return []
+
+        try:
+            client = self.redis_client
+            if client is None:
+                return []
+
+            redis_pattern = self._make_key(namespace, pattern)
+            cursor = 0
+            results: List[str] = []
+
+            while True:
+                cursor, keys = await client.scan(cursor=cursor, match=redis_pattern, count=100)
+                for key in keys:
+                    key_str = key.decode() if isinstance(key, bytes) else str(key)
+                    results.append(key_str)
+                if cursor == 0:
+                    break
+
+            prefix = self._make_key(namespace, "")
+            relative_keys = []
+            for key in results:
+                if key.startswith(prefix):
+                    relative_keys.append(key[len(prefix):])
+                else:
+                    relative_keys.append(key)
+            return relative_keys
+
+        except Exception as exc:
+            logger.error(f"Cache SCAN error for namespace {namespace}: {exc}")
+            return []
+
+    async def exists(self, namespace: str, key: str, *args: object) -> bool:
         """Check if a key exists in cache."""
         if not self._is_connected:
             await self.connect()
@@ -349,7 +407,10 @@ class CacheManager:
 
         try:
             redis_key = self._make_key(namespace, key, *args)
-            exists = await self.redis_client.exists(redis_key)
+            client = self.redis_client
+            if client is None:
+                return False
+            exists = await client.exists(redis_key)
             return bool(exists)
 
         except Exception as e:
@@ -367,16 +428,19 @@ class CacheManager:
 
         try:
             redis_key = self._make_key(namespace, key)
-            result = await self.redis_client.incrby(redis_key, amount)
+            client = self.redis_client
+            if client is None:
+                return None
+            result = await client.incrby(redis_key, amount)
             logger.debug(f"Cache INCREMENT: {redis_key} (+{amount}) = {result}")
-            return result
+            return int(result)
 
         except Exception as e:
             self._cache_stats["errors"] += 1
             logger.error(f"Cache INCREMENT error for {key}: {e}")
             return None
 
-    async def get_ttl(self, namespace: str, key: str, *args) -> Optional[int]:
+    async def get_ttl(self, namespace: str, key: str, *args: object) -> Optional[int]:
         """Get TTL (time to live) for a key."""
         if not self._is_connected:
             await self.connect()
@@ -386,8 +450,11 @@ class CacheManager:
 
         try:
             redis_key = self._make_key(namespace, key, *args)
-            ttl = await self.redis_client.ttl(redis_key)
-            return ttl
+            client = self.redis_client
+            if client is None:
+                return None
+            ttl = await client.ttl(redis_key)
+            return int(ttl) if ttl is not None else None
 
         except Exception as e:
             self._cache_stats["errors"] += 1
@@ -404,10 +471,14 @@ class CacheManager:
 
         try:
             pattern = self._make_key(namespace, "*")
-            keys = await self.redis_client.keys(pattern)
+            client = self.redis_client
+            if client is None:
+                return 0
+            keys = await client.keys(pattern)
 
             if keys:
-                deleted_count = await self.redis_client.delete(*keys)
+                deleted_count_val = await client.delete(*keys)
+                deleted_count = int(deleted_count_val)
                 self._cache_stats["deletes"] += deleted_count
                 logger.info(f"Cache CLEAR NAMESPACE: {namespace} ({deleted_count} keys)")
                 return deleted_count
@@ -428,10 +499,13 @@ class CacheManager:
             return {"status": "disconnected", "stats": self._cache_stats}
 
         try:
-            info = await self.redis_client.info()
-            db_size = await self.redis_client.dbsize()
+            client = self.redis_client
+            if client is None:
+                return {"status": "disconnected", "stats": self._cache_stats}
+            info = await client.info()
+            db_size = await client.dbsize()
 
-            hit_rate = 0
+            hit_rate: float = 0.0
             total_requests = self._cache_stats["hits"] + self._cache_stats["misses"]
             if total_requests > 0:
                 hit_rate = (self._cache_stats["hits"] / total_requests) * 100
@@ -475,7 +549,8 @@ class CacheManager:
 
     async def get_session(self, session_id: str) -> Optional[Dict[str, Any]]:
         """Get user session data."""
-        return await self.get("sessions", session_id)
+        val = await self.get("sessions", session_id)
+        return cast(Optional[Dict[str, Any]], val)
 
     async def delete_session(self, session_id: str) -> bool:
         """Delete user session."""
@@ -485,6 +560,35 @@ class CacheManager:
         """Clear all sessions for a user."""
         pattern = f"{user_id}:*"
         return await self.delete_pattern("sessions", pattern)
+
+    async def increment_counter(
+        self, namespace: str, key: str, window_seconds: Optional[int] = None, *args: object
+    ) -> Optional[int]:
+        """Atomically increment a counter with optional TTL."""
+        if not self._is_connected:
+            await self.connect()
+
+        if not self._is_connected or not self.redis_client:
+            return None
+
+        start_time = time.perf_counter()
+        try:
+            redis_key = self._make_key(namespace, key, *args)
+            client = self.redis_client
+            if client is None:
+                return None
+            value = await client.incr(redis_key)
+            if window_seconds and value == 1:
+                # Only set the expiration the first time the key is seen.
+                await client.expire(redis_key, window_seconds)
+
+            self._record_cache_metric("incr", "success", start_time)
+            return int(value)
+        except Exception as exc:
+            self._cache_stats["errors"] += 1
+            logger.error(f"Cache counter increment error for {key}: {exc}")
+            self._record_cache_metric("incr", "error", start_time)
+            return None
 
     # API response caching
     async def cache_api_response(
@@ -501,7 +605,8 @@ class CacheManager:
     async def get_cached_api_response(self, endpoint: str, params: Dict[str, Any]) -> Optional[Any]:
         """Get cached API response."""
         cache_key = f"{endpoint}:{hashlib.md5(str(sorted(params.items())).encode()).hexdigest()}"
-        return await self.get("api_responses", cache_key)
+        val = await self.get("api_responses", cache_key)
+        return cast(Optional[Any], val)
 
     # Performance optimization methods
     async def cache_expensive_operation(

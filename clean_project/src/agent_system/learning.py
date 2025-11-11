@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 class LearningSystem:
     """Learns from experience and adapts strategies."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.strategy_performance: Dict[str, List[float]] = defaultdict(list)
         self.pattern_library: Dict[str, List[Tuple[str, float]]] = defaultdict(list)
 
@@ -22,7 +22,7 @@ class LearningSystem:
         actions: List[Action],
         observations: List[Observation],
         final_success: bool,
-    ):
+    ) -> None:
         """Learn from a completed episode (goal attempt)."""
         strategy_key = self._identify_strategy(actions)
         success_score = 1.0 if final_success else 0.0

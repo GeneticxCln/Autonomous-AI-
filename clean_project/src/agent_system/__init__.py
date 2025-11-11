@@ -6,6 +6,7 @@ import importlib
 import json
 import logging
 import os
+import secrets
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
 
@@ -17,7 +18,24 @@ if TYPE_CHECKING:  # pragma: no cover - import-time hints only
     from .fastapi_app import app as app
 
 # Version information
-__version__ = "1.0.0"
+__version__ = "0.1.0"
+
+
+_bootstrap_logger = logging.getLogger(__name__)
+
+
+def _load_cli_jwt_secret() -> str:
+    """Provide a strongly random JWT secret outside the FastAPI stack."""
+    env = os.getenv("ENVIRONMENT", "development").lower()
+    secret = os.getenv("JWT_SECRET_KEY")
+    if not secret:
+        if env == "production":
+            raise RuntimeError("JWT_SECRET_KEY must be configured for production runtime")
+        secret = secrets.token_urlsafe(32)
+        _bootstrap_logger.warning("Generated ephemeral JWT secret for %s mode; set JWT_SECRET_KEY.", env)
+    elif len(secret) < 32:
+        raise RuntimeError("JWT_SECRET_KEY must be at least 32 characters long")
+    return secret
 
 
 # System configuration
@@ -25,9 +43,7 @@ class Config:
     """Application configuration."""
 
     DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./agent_enterprise.db")
-    JWT_SECRET_KEY: str = os.getenv(
-        "JWT_SECRET_KEY", "your-super-secret-jwt-key-change-in-production"
-    )
+    JWT_SECRET_KEY: str = _load_cli_jwt_secret()
     JWT_ALGORITHM: str = "HS256"
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 30
@@ -39,7 +55,7 @@ class Config:
     API_PORT: int = int(os.getenv("API_PORT", "8000"))
     API_WORKERS: int = int(os.getenv("API_WORKERS", "1"))
     API_DEBUG: bool = os.getenv("API_DEBUG", "false").lower() == "true"
-    CORS_ORIGINS: list = os.getenv("CORS_ORIGINS", "*").split(",")
+    CORS_ORIGINS: list[str] = os.getenv("CORS_ORIGINS", "*").split(",")
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
 
 
@@ -99,7 +115,7 @@ _LAZY_EXPORTS = {
 }
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> Any:
     """Provide lazy access to heavy modules to keep base import lightweight."""
     if name in _LAZY_EXPORTS:
         module_path, attr = _LAZY_EXPORTS[name].rsplit(".", 1)

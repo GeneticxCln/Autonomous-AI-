@@ -9,9 +9,9 @@ import asyncio
 import functools
 import logging
 import time
-from contextlib import asynccontextmanager, nullcontext
+from contextlib import asynccontextmanager, contextmanager, nullcontext
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Callable, ContextManager, Dict, Iterator, Optional, cast
 
 # OpenTelemetry imports
 from opentelemetry import trace
@@ -43,9 +43,9 @@ class DistributedTracingManager:
     - Error tracking
     """
 
-    def __init__(self):
-        self.tracer = None
-        self.meter = None
+    def __init__(self) -> None:
+        self.tracer: Optional[Any] = None
+        self.meter: Optional[Any] = None
         self.is_initialized = False
         self.service_name = "autonomous-agent-system"
         self.service_version = "1.0.0"
@@ -85,7 +85,7 @@ class DistributedTracingManager:
             # Create trace provider
             trace_provider = TracerProvider(
                 resource=resource,
-                sampler=sampling.ALWAYS_ON_SAMPLER,  # Sample all traces for development
+                sampler=sampling.ALWAYS_ON,  # Sample all traces for development
             )
 
             # Configure Jaeger exporter
@@ -127,7 +127,7 @@ class DistributedTracingManager:
         operation_name: str,
         attributes: Optional[Dict[str, Any]] = None,
         kind: str = "internal",
-    ):
+    ) -> ContextManager[Any]:
         """
         Create a custom span for tracing operations.
 
@@ -150,17 +150,23 @@ class DistributedTracingManager:
 
         span_kind = kind_map.get(kind, trace.SpanKind.INTERNAL)
 
-        # Create span
-        span = self.tracer.start_span(operation_name, kind=span_kind)
+        # Create span via a context manager that yields the span and applies attributes
+        tracer = self.tracer
+        if tracer is None:
+            return nullcontext()
 
-        # Add attributes
-        if attributes:
-            for key, value in attributes.items():
-                span.set_attribute(key, str(value))
+        @contextmanager
+        def _span_cm() -> Iterator[Any]:
+            tracer_any = cast(Any, tracer)
+            with tracer_any.start_as_current_span(operation_name, kind=span_kind) as span:
+                if attributes:
+                    for key, value in attributes.items():
+                        span.set_attribute(key, str(value))
+                yield span
 
-        return span
+        return _span_cm()
 
-    def trace_function(self, operation_name: str, attributes: Optional[Dict[str, Any]] = None):
+    def trace_function(self, operation_name: str, attributes: Optional[Dict[str, Any]] = None) -> Callable[..., Any]:
         """
         Decorator to automatically trace function execution.
 
@@ -169,9 +175,9 @@ class DistributedTracingManager:
             attributes: Additional span attributes
         """
 
-        def decorator(func):
+        def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
             @functools.wraps(func)
-            async def async_wrapper(*args, **kwargs):
+            async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
                 with self.create_span(operation_name, attributes) as span:
                     # Add function info
                     span.set_attribute("function.name", func.__name__)
@@ -193,7 +199,7 @@ class DistributedTracingManager:
                         raise
 
             @functools.wraps(func)
-            def sync_wrapper(*args, **kwargs):
+            def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
                 with self.create_span(operation_name, attributes) as span:
                     # Add function info
                     span.set_attribute("function.name", func.__name__)
@@ -214,7 +220,7 @@ class DistributedTracingManager:
 
         return decorator
 
-    def trace_async_context(self, operation_name: str, attributes: Optional[Dict[str, Any]] = None):
+    def trace_async_context(self, operation_name: str, attributes: Optional[Dict[str, Any]] = None) -> Any:
         """
         Create an async context manager for tracing.
 
@@ -224,7 +230,7 @@ class DistributedTracingManager:
         """
 
         @asynccontextmanager
-        async def tracing_context():
+        async def tracing_context() -> Any:
             with self.create_span(operation_name, attributes) as span:
                 start_time = time.time()
                 try:
@@ -235,7 +241,7 @@ class DistributedTracingManager:
 
         return tracing_context()
 
-    def add_span_attribute(self, key: str, value: Any):
+    def add_span_attribute(self, key: str, value: Any) -> None:
         """Add attribute to current span."""
         if not self.is_initialized:
             return
@@ -244,7 +250,7 @@ class DistributedTracingManager:
         if current_span:
             current_span.set_attribute(key, str(value))
 
-    def add_span_event(self, event_name: str, attributes: Optional[Dict[str, Any]] = None):
+    def add_span_event(self, event_name: str, attributes: Optional[Dict[str, Any]] = None) -> None:
         """Add event to current span."""
         if not self.is_initialized:
             return
@@ -253,7 +259,7 @@ class DistributedTracingManager:
         if current_span:
             current_span.add_event(event_name, attributes or {})
 
-    def trace_error(self, error: Exception, context: Optional[Dict[str, Any]] = None):
+    def trace_error(self, error: Exception, context: Optional[Dict[str, Any]] = None) -> None:
         """Trace an error with full context."""
         if not self.is_initialized:
             return
@@ -316,7 +322,7 @@ class DistributedTracingManager:
 
     def record_metric(
         self, metric_name: str, value: float, labels: Optional[Dict[str, str]] = None
-    ):
+    ) -> None:
         """Record a custom metric value."""
         if not self.is_initialized:
             return
@@ -326,7 +332,7 @@ class DistributedTracingManager:
         labels_str = f" (labels: {labels})" if labels else ""
         logger.debug(f"📊 Metric: {metric_name} = {value}{labels_str}")
 
-    def instrument_fastapi(self, app):
+    def instrument_fastapi(self, app: Any) -> None:
         """Instrument FastAPI application for tracing."""
         if not self.is_initialized:
             return
@@ -335,13 +341,13 @@ class DistributedTracingManager:
             FastAPIInstrumentor.instrument_app(
                 app,
                 tracer_provider=trace.get_tracer_provider(),
-                excluded_urls=["/health", "/metrics", "/favicon.ico"],
+                excluded_urls="/health|/metrics|/favicon.ico",
             )
             logger.info("✅ FastAPI instrumented for tracing")
         except Exception as e:
             logger.error(f"❌ FastAPI instrumentation failed: {e}")
 
-    def instrument_redis(self):
+    def instrument_redis(self) -> None:
         """Instrument Redis for tracing."""
         if not self.is_initialized:
             return
@@ -352,7 +358,7 @@ class DistributedTracingManager:
         except Exception as e:
             logger.error(f"❌ Redis instrumentation failed: {e}")
 
-    def instrument_requests(self):
+    def instrument_requests(self) -> None:
         """Instrument HTTP requests for tracing."""
         if not self.is_initialized:
             return
@@ -363,7 +369,7 @@ class DistributedTracingManager:
         except Exception as e:
             logger.error(f"❌ HTTP requests instrumentation failed: {e}")
 
-    def instrument_sqlalchemy(self, engine):
+    def instrument_sqlalchemy(self, engine: Any) -> None:
         """Instrument SQLAlchemy for tracing."""
         if not self.is_initialized:
             return
@@ -410,12 +416,12 @@ def get_tracer(operation_name: str) -> Any:
     return tracing_manager.create_span(operation_name)
 
 
-def trace_function(operation_name: str, attributes: Optional[Dict[str, Any]] = None):
+def trace_function(operation_name: str, attributes: Optional[Dict[str, Any]] = None) -> Callable[..., Any]:
     """Decorator for automatic function tracing."""
     return tracing_manager.trace_function(operation_name, attributes)
 
 
-def trace_async(operation_name: str, attributes: Optional[Dict[str, Any]] = None):
+def trace_async(operation_name: str, attributes: Optional[Dict[str, Any]] = None) -> Any:
     """Create async context manager for tracing."""
     return tracing_manager.trace_async_context(operation_name, attributes)
 

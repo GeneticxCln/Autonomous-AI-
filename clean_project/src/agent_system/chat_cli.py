@@ -7,7 +7,7 @@ import logging
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 from .config_simple import settings, validate_file_path
 from .enhanced_tools import EnhancedToolRegistry
@@ -75,13 +75,13 @@ class ChatState:
     last_plan: Optional[List[Dict[str, Any]]] = None
     aliases: Dict[str, Any] = field(default_factory=dict)
 
-    def add_system(self, content: str):
+    def add_system(self, content: str) -> None:
         self.messages.append({"role": "system", "content": content})
 
-    def add_user(self, content: str):
+    def add_user(self, content: str) -> None:
         self.messages.append({"role": "user", "content": content})
 
-    def add_assistant(self, content: str):
+    def add_assistant(self, content: str) -> None:
         self.messages.append({"role": "assistant", "content": content})
 
 
@@ -174,12 +174,12 @@ def sanitize_tool_call(data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
             except Exception:
                 out["n"] = 10
         if cmd == "diff":
-            rng = args.get("range")
-            path = args.get("path")
-            if isinstance(rng, str):
-                out["range"] = rng
-            if isinstance(path, str):
-                out["path"] = path
+            rng_val = args.get("range")
+            path_val = args.get("path")
+            if isinstance(rng_val, str):
+                out["range"] = rng_val
+            if isinstance(path_val, str):
+                out["path"] = path_val
         args = out
     data["args"] = args
     return data
@@ -279,7 +279,7 @@ def parse_tool_call(text: str) -> Optional[Dict[str, Any]]:
     return None
 
 
-async def run_chat(provider: str = "local", stream: bool = True):
+async def run_chat(provider: str = "local", stream: bool = True) -> None:
     logging.basicConfig(level=getattr(logging, settings.LOG_LEVEL), format=LOG_FORMAT)
     state = ChatState(provider=provider)
     memory = SimpleVectorMemory()
@@ -347,8 +347,8 @@ async def run_chat(provider: str = "local", stream: bool = True):
                 state.messages = []
                 state.add_system(SYSTEM_PROMPT)
                 # re-apply pinned
-                for p in state.pinned:
-                    state.add_system(p)
+                for pin_text in state.pinned:
+                    state.add_system(pin_text)
                 print("reset")
                 continue
             if cmd == "context":
@@ -385,8 +385,8 @@ async def run_chat(provider: str = "local", stream: bool = True):
                     continue
                 if tool.get("type") == "tool_batch":
                     for call in tool.get("calls", []):
-                        tool_name = call.get("tool")
-                        args = call.get("args", {})
+                        tool_name = cast(str, call.get("tool", ""))
+                        args = cast(Dict[str, Any], call.get("args", {}))
                         action = Action(
                             id="manual_tool",
                             name=tool_name,
@@ -407,8 +407,8 @@ async def run_chat(provider: str = "local", stream: bool = True):
                             )
                         )
                 else:
-                    tool_name = tool.get("tool")
-                    args = tool.get("args", {})
+                    tool_name = cast(str, tool.get("tool", ""))
+                    args = cast(Dict[str, Any], tool.get("args", {}))
                     action = Action(
                         id="manual_tool",
                         name=tool_name,
@@ -465,8 +465,8 @@ async def run_chat(provider: str = "local", stream: bool = True):
                 # Reuse manual execution path
                 if tool.get("type") == "tool_batch":
                     for call in tool.get("calls", []):
-                        tool_name = call.get("tool")
-                        args = call.get("args", {})
+                        tool_name = cast(str, call.get("tool", ""))
+                        args = cast(Dict[str, Any], call.get("args", {}))
                         action = Action(
                             id="alias_tool",
                             name=tool_name,
@@ -487,8 +487,8 @@ async def run_chat(provider: str = "local", stream: bool = True):
                             )
                         )
                 else:
-                    tool_name = tool.get("tool")
-                    args = tool.get("args", {})
+                    tool_name = cast(str, tool.get("tool", ""))
+                    args = cast(Dict[str, Any], tool.get("args", {}))
                     action = Action(
                         id="alias_tool",
                         name=tool_name,
@@ -528,8 +528,8 @@ async def run_chat(provider: str = "local", stream: bool = True):
                     print("no last plan")
                     continue
                 for call in state.last_plan[:5]:
-                    tool_name = call.get("tool")
-                    args = call.get("args", {})
+                    tool_name = cast(str, call.get("tool", ""))
+                    args = cast(Dict[str, Any], call.get("args", {}))
                     action = Action(
                         id="runplan_tool",
                         name=tool_name,
@@ -725,13 +725,13 @@ async def run_chat(provider: str = "local", stream: bool = True):
                             n = 10
                     params = {"cmd": "log", "n": n}
                 elif sub == "diff":
-                    pth = rest[1] if len(rest) > 1 else None
-                    rng = rest[2] if len(rest) > 2 else None
+                    diff_path = rest[1] if len(rest) > 1 else None
+                    diff_range = rest[2] if len(rest) > 2 else None
                     params = {"cmd": "diff"}
-                    if pth:
-                        params["path"] = pth
-                    if rng:
-                        params["range"] = rng
+                    if diff_path is not None:
+                        params["path"] = diff_path
+                    if diff_range is not None:
+                        params["range"] = diff_range
                 else:
                     print("unknown git subcmd")
                     continue
@@ -747,14 +747,14 @@ async def run_chat(provider: str = "local", stream: bool = True):
                 print(json.dumps({"status": obs.status.value, "result": obs.result}, indent=2))
                 continue
             if cmd == "tests":
-                params: Dict[str, Any] = {"path": "tests", "pattern": "test*.py"}
+                test_params: Dict[str, Any] = {"path": "tests", "pattern": "test*.py"}
                 if rest:
-                    params["path"] = rest[0]
+                    test_params["path"] = rest[0]
                 action = Action(
                     id="run_tests",
                     name="tests",
                     tool_name="tests",
-                    parameters=params,
+                    parameters=test_params,
                     expected_outcome="tests_ok",
                     cost=0.1,
                 )
@@ -816,12 +816,12 @@ async def run_chat(provider: str = "local", stream: bool = True):
                 from pathlib import Path as P
 
                 bdir = P(".agent_state/backups")
-                items = sorted(
+                backup_items = sorted(
                     bdir.glob("*.meta.json"), key=lambda p: p.stat().st_mtime, reverse=True
                 )[:20]
                 print("backups:")
-                for it in items:
-                    print("-", it)
+                for bp in backup_items:
+                    print("-", bp)
                 continue
             if cmd == "todo" and rest:
                 sub = rest[0].lower()
@@ -840,8 +840,8 @@ async def run_chat(provider: str = "local", stream: bool = True):
                     print(f"todo added #{item.id}")
                     continue
                 if sub == "ls":
-                    items = todos.list(include_done=True)
-                    for t in items:
+                    todo_items = todos.list(include_done=True)
+                    for t in todo_items:
                         print(
                             f"({t.id}) [{'x' if t.status=='done' else ' '}] p{t.priority} {t.title}"
                         )
@@ -893,8 +893,8 @@ async def run_chat(provider: str = "local", stream: bool = True):
                     print("expecting {type: 'tool_batch', calls: [...]}")
                     continue
                 for call in tool.get("calls", []):
-                    tool_name = call.get("tool")
-                    args = call.get("args", {})
+                    tool_name = cast(str, call.get("tool", ""))
+                    args = cast(Dict[str, Any], call.get("args", {}))
                     action = Action(
                         id="batch_tool",
                         name=tool_name,
@@ -975,8 +975,8 @@ async def run_chat(provider: str = "local", stream: bool = True):
                 batch: List[Dict[str, Any]] = tool.get("calls", [])
                 batch_results: List[Dict[str, Any]] = []
                 for idx, call in enumerate(batch, 1):
-                    tool_name = call.get("tool")
-                    args = call.get("args", {})
+                    tool_name = cast(str, call.get("tool", ""))
+                    args = cast(Dict[str, Any], call.get("args", {}))
                     action = Action(
                         id=f"chat_tool_{tool_loops}_{idx}",
                         name=tool_name,
@@ -1004,8 +1004,8 @@ async def run_chat(provider: str = "local", stream: bool = True):
                 tool_loops += 1
                 continue
             else:
-                tool_name = tool.get("tool")
-                args = tool.get("args", {})
+                tool_name = cast(str, tool.get("tool", ""))
+                args = cast(Dict[str, Any], tool.get("args", {}))
                 action = Action(
                     id=f"chat_tool_{tool_loops}",
                     name=tool_name,
@@ -1037,10 +1037,9 @@ async def run_chat(provider: str = "local", stream: bool = True):
         save_session(state)
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(prog="chat_agent")
     parser.add_argument("--provider", choices=["openai", "anthropic", "local"], default="local")
     parser.add_argument("--no-stream", action="store_true")
     args = parser.parse_args()
-    asyncio.run(run_chat(provider=args.provider, stream=not args.no_stream))
     asyncio.run(run_chat(provider=args.provider, stream=not args.no_stream))

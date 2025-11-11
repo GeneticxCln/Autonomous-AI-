@@ -13,10 +13,10 @@ import re
 import secrets
 import threading
 import time
-from typing import Any, Dict, Tuple
+from typing import Any, Awaitable, Callable, Dict, Optional, Tuple
 from urllib.parse import urlparse
 
-from fastapi import HTTPException, Request, status
+from fastapi import HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
 
 logger = logging.getLogger(__name__)
@@ -25,11 +25,11 @@ logger = logging.getLogger(__name__)
 class SecurityHardening:
     """Advanced security hardening features."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         # Rate limiting with sliding window
-        self.rate_limit_storage = {}
-        self.failed_attempts = {}
-        self.blocked_ips = {}
+        self.rate_limit_storage: Dict[str, list[float]] = {}
+        self.failed_attempts: Dict[str, list[float]] = {}
+        self.blocked_ips: Dict[str, float] = {}
         self.csrf_token_ttl = 900  # seconds
         self._csrf_tokens: Dict[str, Tuple[str, float]] = {}
         self._csrf_lock = threading.Lock()
@@ -180,7 +180,7 @@ class SecurityHardening:
         domain_pattern = r"^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$"
         return bool(re.match(domain_pattern, domain))
 
-    def _is_private_ip(self, hostname: str) -> bool:
+    def _is_private_ip(self, hostname: Optional[str]) -> bool:
         """Check if hostname is a private IP."""
         if not hostname:
             return False
@@ -304,20 +304,20 @@ class SecurityHardening:
         # Check for forwarded headers
         forwarded_for = request.headers.get("x-forwarded-for")
         if forwarded_for:
-            return forwarded_for.split(",")[0].strip()
+            return str(forwarded_for).split(",")[0].strip()
 
         real_ip = request.headers.get("x-real-ip")
         if real_ip:
-            return real_ip
+            return str(real_ip)
 
         # Fallback to client.host
-        return request.client.host if request.client else "unknown"
+        return str(request.client.host) if request.client and request.client.host else "unknown"
 
     def generate_secure_token(self, length: int = 32) -> str:
         """Generate cryptographically secure token."""
         return secrets.token_urlsafe(length)
 
-    def hash_sensitive_data(self, data: str, salt: str = None) -> tuple[str, str]:
+    def hash_sensitive_data(self, data: str, salt: Optional[str] = None) -> tuple[str, str]:
         """Hash sensitive data with salt."""
         if salt is None:
             salt = secrets.token_hex(16)
@@ -368,7 +368,9 @@ class SecurityHardening:
 security_hardening = SecurityHardening()
 
 
-def security_middleware(request: Request, call_next):
+async def security_middleware(
+    request: Request, call_next: Callable[[Request], Awaitable[Any]]
+) -> Response | JSONResponse:
     """Security middleware for FastAPI."""
     try:
         # Detect suspicious activity
@@ -396,7 +398,7 @@ def security_middleware(request: Request, call_next):
             )
 
         # Process request
-        response = call_next(request)
+        response = await call_next(request)
 
         # Add security headers
         response.headers["X-Content-Type-Options"] = "nosniff"
@@ -416,11 +418,11 @@ def security_middleware(request: Request, call_next):
         )
 
 
-def require_input_validation(**field_validators):
+def require_input_validation(**field_validators: Callable[[Any], bool]) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Decorator for input validation."""
 
-    def decorator(func):
-        def wrapper(*args, **kwargs):
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             # Apply validation to function arguments
             for field, validator in field_validators.items():
                 if field in kwargs:

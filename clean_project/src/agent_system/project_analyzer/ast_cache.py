@@ -10,8 +10,8 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional
 
-from .memory_guard import MemoryGuard, MemoryGuardContext, memory_guard
 from ..unified_config import unified_config
+from .memory_guard import MemoryGuard, MemoryGuardContext, memory_guard
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +46,7 @@ class ASTCacheEntry:
     def is_expired(self, ttl_seconds: int) -> bool:
         return ttl_seconds > 0 and (time.time() - self.created_at) > ttl_seconds
 
-    def touch(self):
+    def touch(self) -> None:
         self.accessed_at = time.time()
 
 
@@ -158,7 +158,7 @@ class ASTCache:
             self._current_bytes += entry_size
             return True
 
-    def invalidate(self, project_id: str, file_path: Optional[str] = None):
+    def invalidate(self, project_id: str, file_path: Optional[str] = None) -> None:
         """Invalidate cache entries for a project or a specific file."""
         with self._lock:
             keys = list(self._entries.keys())
@@ -179,12 +179,12 @@ class ASTCache:
                 "max_bytes": self.config.max_bytes,
             }
 
-    def _evict_lru_locked(self, count: int):
+    def _evict_lru_locked(self, count: int) -> None:
         for _ in range(min(count, len(self._entries))):
             key, _ = self._entries.popitem(last=False)
             self.guard.release_allocation(key)
 
-    def _evict_entry_locked(self, key: str):
+    def _evict_entry_locked(self, key: str) -> None:
         entry = self._entries.pop(key, None)
         if entry:
             self._current_bytes -= entry.size_bytes
@@ -196,7 +196,7 @@ class ASTCache:
         max_entries: Optional[int] = None,
         max_bytes: Optional[int] = None,
         ttl_seconds: Optional[int] = None,
-    ):
+    ) -> None:
         """Adjust cache parameters at runtime."""
         with self._lock:
             if max_entries:
@@ -210,7 +210,7 @@ class ASTCache:
             if ttl_seconds:
                 self.config.ttl_seconds = ttl_seconds
 
-    def _evict_until_locked(self, reclaim_bytes: int):
+    def _evict_until_locked(self, reclaim_bytes: int) -> None:
         reclaimed = 0
         while self._entries and reclaimed < reclaim_bytes:
             key, entry = self._entries.popitem(last=False)

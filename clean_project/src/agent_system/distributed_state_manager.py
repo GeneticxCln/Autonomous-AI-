@@ -11,7 +11,7 @@ import logging
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, cast
 
 from .cache_manager import cache_manager
 from .config_simple import settings
@@ -69,12 +69,12 @@ class DistributedStateManager:
         config: Optional[StateManagerConfig] = None,
         *,
         force_fallback: bool = False,
-    ):
+    ) -> None:
         self.config = config or StateManagerConfig()
         self.force_fallback = force_fallback
         self._is_initialized = False
         self._using_fallback = force_fallback
-        self._redis = None
+        self._redis: Any = None
 
         # Fallback storage
         self._state: Dict[str, Dict[str, StateRecord]] = {}
@@ -125,8 +125,9 @@ class DistributedStateManager:
         """Store state for a namespace/key."""
         await self.initialize()
 
-        owner_id = owner or getattr(settings, "DISTRIBUTED_NODE_ID", "local-node")
-        record = StateRecord(namespace=namespace, key=key, value=value, owner=owner_id)
+        owner_default = cast(str, getattr(settings, "DISTRIBUTED_NODE_ID", "local-node"))
+        owner_val: str = owner if owner is not None else owner_default
+        record = StateRecord(namespace=namespace, key=key, value=value, owner=owner_val)
 
         if self._using_fallback:
             async with self._lock:
@@ -283,7 +284,7 @@ class DistributedStateManager:
     def _decode(value: Any) -> str:
         if isinstance(value, bytes):
             return value.decode("utf-8")
-        return value
+        return str(value)
 
 
 # Global state manager

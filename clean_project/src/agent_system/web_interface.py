@@ -32,13 +32,13 @@ agent_lock = asyncio.Lock()
 
 
 # Pydantic models for API
-class GoalRequest(BaseModel):
+class GoalRequest(BaseModel):  # type: ignore[misc]
     description: str = Field(..., description="Goal description")
     priority: float = Field(0.5, ge=0.0, le=1.0, description="Goal priority (0.0-1.0)")
     constraints: Optional[Dict[str, Any]] = Field(default=None, description="Goal constraints")
 
 
-class AgentStatusResponse(BaseModel):
+class AgentStatusResponse(BaseModel):  # type: ignore[misc]
     current_goal: Optional[str]
     active_goals: List[Dict[str, Any]] = Field(default_factory=list)
     goals: Dict[str, Any]
@@ -49,7 +49,7 @@ class AgentStatusResponse(BaseModel):
     llm_providers: List[str]
 
 
-class ActionRequest(BaseModel):
+class ActionRequest(BaseModel):  # type: ignore[misc]
     action: str = Field(..., description="Action to perform")
     parameters: Dict[str, Any] = Field(default_factory=dict, description="Action parameters")
 
@@ -59,8 +59,8 @@ if Path("static").exists():
     app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
-@app.get("/", response_class=HTMLResponse)
-async def root():
+@app.get("/", response_class=HTMLResponse)  # type: ignore[misc]
+async def root() -> HTMLResponse:
     """Serve the main dashboard page."""
     html_content = """
 <!DOCTYPE html>
@@ -278,8 +278,8 @@ async def root():
     return HTMLResponse(content=html_content)
 
 
-@app.get("/api/status", response_model=AgentStatusResponse)
-async def get_status():
+@app.get("/api/status", response_model=AgentStatusResponse)  # type: ignore[misc]
+async def get_status() -> AgentStatusResponse:
     """Get current agent status."""
     async with agent_lock:
         if agent is None:
@@ -294,8 +294,8 @@ async def get_status():
             raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/api/start")
-async def start_agent(background_tasks: BackgroundTasks, max_cycles: int = 10):
+@app.post("/api/start")  # type: ignore[misc]
+async def start_agent(background_tasks: BackgroundTasks, max_cycles: int = 10) -> JSONResponse:
     """Start the agent."""
     async with agent_lock:
         global agent
@@ -310,8 +310,8 @@ async def start_agent(background_tasks: BackgroundTasks, max_cycles: int = 10):
         return JSONResponse(content={"message": "Agent started"}, status_code=200)
 
 
-@app.post("/api/stop")
-async def stop_agent():
+@app.post("/api/stop")  # type: ignore[misc]
+async def stop_agent() -> JSONResponse:
     """Stop the agent."""
     async with agent_lock:
         global agent
@@ -325,8 +325,8 @@ async def stop_agent():
         return JSONResponse(content={"message": "Agent stopped"}, status_code=200)
 
 
-@app.post("/api/goals")
-async def add_goal_api(goal_request: GoalRequest):
+@app.post("/api/goals")  # type: ignore[misc]
+async def add_goal_api(goal_request: GoalRequest) -> JSONResponse:
     """Add a new goal."""
     async with agent_lock:
         global agent
@@ -352,8 +352,8 @@ async def add_goal_api(goal_request: GoalRequest):
             raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/api/goals")
-async def get_goals():
+@app.get("/api/goals")  # type: ignore[misc]
+async def get_goals() -> JSONResponse:
     """Get all goals."""
     async with agent_lock:
         if agent is None:
@@ -367,8 +367,8 @@ async def get_goals():
             raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/api/tools/{tool_name}/execute")
-async def execute_tool(tool_name: str, action_request: ActionRequest):
+@app.post("/api/tools/{tool_name}/execute")  # type: ignore[misc]
+async def execute_tool(tool_name: str, action_request: ActionRequest) -> JSONResponse:
     """Execute a specific tool."""
     async with agent_lock:
         if agent is None:
@@ -389,8 +389,8 @@ async def execute_tool(tool_name: str, action_request: ActionRequest):
             raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/api/llm/providers")
-async def get_llm_providers():
+@app.get("/api/llm/providers")  # type: ignore[misc]
+async def get_llm_providers() -> JSONResponse:
     """Get available LLM providers."""
     return JSONResponse(
         content={
@@ -401,7 +401,7 @@ async def get_llm_providers():
     )
 
 
-async def run_agent_background(agent_instance: AutonomousAgent, max_cycles: int):
+async def run_agent_background(agent_instance: AutonomousAgent, max_cycles: int) -> None:
     """Run agent in background task."""
     try:
         logger.info(f"Starting agent background task with {max_cycles} cycles")
@@ -411,8 +411,8 @@ async def run_agent_background(agent_instance: AutonomousAgent, max_cycles: int)
         logger.error(f"Agent background task failed: {e}")
 
 
-@app.get("/health")
-async def health_check():
+@app.get("/health")  # type: ignore[misc]
+async def health_check() -> JSONResponse:
     """Health check endpoint."""
     return JSONResponse(
         content={

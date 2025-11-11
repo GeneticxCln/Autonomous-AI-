@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import List
 
-from ..multi_agent_system import AgentCapability, AgentIdentity, AgentRole, AgentRegistry
+from ..multi_agent_system import AgentCapability, AgentIdentity, AgentRegistry, AgentRole
 from .specialization import SpecializationPlan
 
 SPECIALIZED_AGENT_SUFFIX = "specialist"

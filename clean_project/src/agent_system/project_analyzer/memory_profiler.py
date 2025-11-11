@@ -6,15 +6,18 @@ import contextlib
 import logging
 import time
 from dataclasses import dataclass
-from typing import Dict, Optional
-
-try:
-    import psutil
-except Exception:  # pragma: no cover - optional dependency guard
-    psutil = None
+from typing import Any, Dict, Iterator, Optional, cast
 
 from ..performance_tracker import get_performance_tracker
 from ..unified_config import unified_config
+
+# Optional psutil import with typing-friendly fallback
+psutil: Any | None = None
+try:
+    import psutil as _psutil
+    psutil = _psutil
+except Exception:  # pragma: no cover - optional dependency guard
+    psutil = None
 
 logger = logging.getLogger(__name__)
 
@@ -32,10 +35,10 @@ class MemoryProfiler:
         self.config = config or MemoryProfilerConfig()
         self._enabled = self.config.enabled and psutil is not None
         self._tracker = get_performance_tracker()
-        self._process = psutil.Process() if self._enabled else None
+        self._process = _psutil.Process() if self._enabled and _psutil is not None else None
 
     @contextlib.contextmanager
-    def profile(self, label: str, metadata: Optional[Dict[str, object]] = None):
+    def profile(self, label: str, metadata: Optional[Dict[str, object]] = None) -> Iterator[None]:
         """Track RSS delta for the enclosed scope."""
         if not self._enabled or self._process is None:
             yield
@@ -71,7 +74,7 @@ class MemoryProfiler:
         if not self._enabled or self._process is None:
             return 0
         try:
-            return self._process.memory_info().rss
+            return cast(int, self._process.memory_info().rss)
         except Exception as exc:  # pragma: no cover - defensive
             logger.debug("Failed to read RSS: %s", exc)
             return 0

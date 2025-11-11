@@ -15,7 +15,7 @@ class GoalManager:
     Manages goals with priorities, dependencies, and dynamic updates.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.goals: Dict[str, Goal] = {}
         self.active_goals: List[Tuple[float, str]] = []
         self.goal_dependencies: Dict[str, List[str]] = defaultdict(list)
@@ -70,7 +70,7 @@ class GoalManager:
 
         return None
 
-    def update_goal_status(self, goal_id: str, status: GoalStatus, progress: float | None = None):
+    def update_goal_status(self, goal_id: str, status: GoalStatus, progress: float | None = None) -> None:
         """Update goal status and progress."""
         if goal_id not in self.goals:
             return
@@ -87,7 +87,7 @@ class GoalManager:
         if status == GoalStatus.COMPLETED:
             self._unblock_dependent_goals(goal_id)
 
-    def add_dependency(self, goal_id: str, depends_on: str):
+    def add_dependency(self, goal_id: str, depends_on: str) -> None:
         """Add a dependency between goals."""
         self.goal_dependencies[goal_id].append(depends_on)
 
@@ -120,7 +120,7 @@ class GoalManager:
             if dep_id in self.goals
         )
 
-    def _update_parent_progress(self, parent_id: str):
+    def _update_parent_progress(self, parent_id: str) -> None:
         """Update parent goal progress based on subgoals."""
         if parent_id not in self.goals:
             return
@@ -137,7 +137,7 @@ class GoalManager:
         if parent.progress >= 1.0:
             parent.status = GoalStatus.COMPLETED
 
-    def _unblock_dependent_goals(self, completed_goal_id: str):
+    def _unblock_dependent_goals(self, completed_goal_id: str) -> None:
         """Unblock goals that were waiting for this goal."""
         for goal_id, dependencies in self.goal_dependencies.items():
             if completed_goal_id in dependencies:

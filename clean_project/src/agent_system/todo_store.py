@@ -27,7 +27,7 @@ class SimpleTodoStore:
         self._load()
         self._next_id = max([t.id for t in self.items], default=0) + 1
 
-    def _load(self):
+    def _load(self) -> None:
         if not self.path.exists():
             self.items = []
             return
@@ -37,7 +37,7 @@ class SimpleTodoStore:
         except Exception:
             self.items = []
 
-    def _save(self):
+    def _save(self) -> None:
         data = [asdict(t) for t in self.items]
         self.path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 

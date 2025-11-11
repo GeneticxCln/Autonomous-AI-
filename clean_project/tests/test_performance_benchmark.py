@@ -3,14 +3,18 @@ Performance benchmarking suite for the agent system.
 Tests throughput, latency, concurrency, and resource usage.
 """
 
+import asyncio
 import statistics
 import time
 from dataclasses import dataclass
 from typing import Dict, List
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from agent_system.advanced_monitoring import AdvancedMonitoringSystem, MetricType
 from agent_system.agent import AutonomousAgent
+from agent_system.cache_manager import cache_manager
 from agent_system.distributed_message_queue import DistributedMessageQueue, MessagePriority
 from agent_system.tools import ToolRegistry
 
@@ -308,3 +312,44 @@ async def test_benchmark_tool_execution():
     )
     PerformanceBenchmark.print_results([result])
     assert result.operations > 0
+
+
+class TestAdvancedMonitoringSystem:
+    """Tests for business metric handling in the monitoring system."""
+
+    @pytest.mark.asyncio
+    async def test_business_metrics_cache_roundtrip(self):
+        monitoring = AdvancedMonitoringSystem()
+        cached_payload = {
+            "name": "pipeline",
+            "type": MetricType.COUNTER.value,
+            "description": "Pipeline throughput",
+            "value": 100.0,
+            "labels": {"region": "us"},
+            "metadata": {"source": "cache"},
+            "timestamp": "2099-01-01T00:00:00",
+        }
+
+        with patch.object(cache_manager, "set", AsyncMock()) as mock_set, patch.object(
+            cache_manager, "scan_namespace", AsyncMock(return_value=["metrics:business:pipeline"])
+        ) as mock_scan, patch.object(
+            cache_manager, "get", AsyncMock(return_value=cached_payload)
+        ) as mock_get:
+            monitoring.add_business_metric(
+                name="pipeline",
+                metric_type=MetricType.COUNTER,
+                description="Pipeline throughput",
+                value=42.0,
+                labels={"region": "us"},
+                metadata={"source": "live"},
+            )
+            await asyncio.sleep(0)
+            mock_set.assert_awaited()
+
+            metrics = await monitoring.get_business_metrics()
+
+        mock_scan.assert_awaited()
+        mock_get.assert_awaited()
+        assert "pipeline" in metrics
+        assert metrics["pipeline"]["value"] == cached_payload["value"]
+        assert metrics["pipeline"]["metadata"]["source"] == "cache"

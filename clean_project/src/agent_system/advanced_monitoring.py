@@ -13,7 +13,7 @@ from datetime import datetime
 from enum import Enum
 from functools import wraps
 from types import TracebackType
-from typing import Any, Callable, Dict, List, Optional, ParamSpec, Type, TypeVar
+from typing import Any, Callable, Dict, List, Optional, ParamSpec, Type, TypeVar, cast
 
 import psutil
 from prometheus_client import (
@@ -72,7 +72,7 @@ class AdvancedMonitoringSystem:
         self.metrics: Dict[str, Any] = {}
         self.business_metrics: Dict[str, BusinessMetric] = {}
         self.alert_rules: List[Dict[str, Any]] = []
-        self.sla_thresholds: Dict[str, float] = {}
+        self.sla_thresholds: Dict[str, Dict[str, Any]] = {}
         self.is_initialized: bool = False
         self.start_time: datetime = datetime.now()
         self.cache_state: Dict[str, int] = {"hit": 0, "miss": 0}
@@ -685,22 +685,28 @@ class AdvancedMonitoringSystem:
                 labels=list(labels.keys()) if labels else [],
             )
 
-            # Store in cache for persistence
             cache_key = f"metrics:business:{name}"
-            cache_manager.set(
-                "metrics",
-                cache_key,
-                {
-                    "name": name,
-                    "type": metric_type.value,
-                    "description": description,
-                    "value": value,
-                    "labels": labels or {},
-                    "metadata": metadata or {},
-                    "timestamp": datetime.now().isoformat(),
-                },
-                ttl=3600,
-            )
+            payload = {
+                "name": name,
+                "type": metric_type.value,
+                "description": description,
+                "value": value,
+                "labels": labels or {},
+                "metadata": metadata or {},
+                "timestamp": datetime.now().isoformat(),
+            }
+
+            async def _persist() -> None:
+                try:
+                    await cache_manager.set("metrics", cache_key, payload, ttl=3600)
+                except Exception as exc:
+                    logger.debug("Failed to persist business metric %s: %s", name, exc)
+
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(_persist())
+            except RuntimeError:
+                asyncio.run(_persist())
 
             logger.debug(f"Business metric '{name}' recorded: {value}")
 
@@ -710,15 +716,9 @@ class AdvancedMonitoringSystem:
     async def get_business_metrics(self) -> Dict[str, Any]:
         """Get all business metrics."""
         try:
-            # Load from cache (placeholder for future implementation)
-            _cached_metrics = {}
-            # Note: Pattern matching would need to be implemented in cache_manager
-            # for key in await cache_manager.get("metrics", "business:*"):
-            #     pass
-
-            # Get from memory
-            return {
+            metrics: Dict[str, Any] = {
                 name: {
+                    "name": metric.name,
                     "type": metric.metric_type.value,
                     "description": metric.description,
                     "value": metric.value,
@@ -728,6 +728,29 @@ class AdvancedMonitoringSystem:
                 }
                 for name, metric in self.business_metrics.items()
             }
+
+            try:
+                cached_keys = await cache_manager.scan_namespace("metrics", "metrics:business:*")
+                for cache_key in cached_keys:
+                    cached_metric = await cache_manager.get("metrics", cache_key)
+                    if not cached_metric:
+                        continue
+
+                    metric_name = cached_metric.get("name") or cache_key.split("metrics:business:")[-1]
+                    cached_metric.setdefault("name", metric_name)
+                    cached_ts = cached_metric.get("timestamp")
+
+                    existing = metrics.get(metric_name)
+                    if existing:
+                        existing_ts = existing.get("timestamp")
+                        if existing_ts and cached_ts and str(cached_ts) <= str(existing_ts):
+                            continue
+
+                    metrics[metric_name] = cached_metric
+            except Exception as cache_error:
+                logger.debug("Failed to load cached business metrics: %s", cache_error)
+
+            return metrics
         except Exception as e:
             logger.error(f"Error getting business metrics: {e}")
             return {}
@@ -742,8 +765,8 @@ class AdvancedMonitoringSystem:
 
     def check_sla_compliance(self) -> Dict[str, Any]:
         """Check SLA compliance against thresholds."""
-        violations = []
-        compliant = []
+        violations: list[dict[str, Any]] = []
+        compliant: list[str] = []
 
         for metric_name, threshold_info in self.sla_thresholds.items():
             # This would be implemented with actual metric values
@@ -802,7 +825,7 @@ class AdvancedMonitoringSystem:
     def get_metricsExposition(self) -> bytes:
         """Get Prometheus metrics for exposition."""
         try:
-            return generate_latest(self.registry)
+            return cast(bytes, generate_latest(self.registry))
         except Exception as e:
             logger.error(f"Error generating metrics exposition: {e}")
             return b"# No metrics available"
@@ -821,6 +844,7 @@ class AdvancedMonitoringSystem:
 
 # Global monitoring instance
 monitoring_system = AdvancedMonitoringSystem(REGISTRY)
+cache_manager.register_monitoring_system(monitoring_system)
 
 
 def _register_performance_alert_callback() -> None:

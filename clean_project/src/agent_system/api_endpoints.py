@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import uuid
 from datetime import UTC, datetime
 from typing import Any, AsyncIterator, Callable, Optional, ParamSpec, TypeVar, cast
@@ -32,6 +33,8 @@ from .api_schemas import (
     GoalCreate,
     LoginRequest,
     LoginResponse,
+    SearchProviderConfig,
+    SearchProviderStatus,
     TokenData,
     TokenRefreshRequest,
     # User Management
@@ -56,7 +59,7 @@ from .auth_models import (
     UserNotFoundError,
 )
 from .auth_service import auth_service
-from .config_simple import settings
+from .config_simple import get_api_key, settings
 from .database_models import (
     ActionModel,
     AgentCapabilityModel,
@@ -76,6 +79,7 @@ from .job_definitions import (
 )
 from .job_manager import job_store
 from .production_config import get_config
+from .unified_config import unified_config
 
 logger = logging.getLogger(__name__)
 
@@ -136,7 +140,7 @@ async def _with_app_session(func: Callable[[Any], T]) -> T:
         with app_db_manager.get_session() as session:
             return func(session)
 
-    return await run_blocking(_run)
+    return cast(T, await run_blocking(_run))
 
 
 async def _with_auth_session(func: Callable[[Any], T]) -> T:
@@ -146,7 +150,7 @@ async def _with_auth_session(func: Callable[[Any], T]) -> T:
         with auth_service.db.get_session() as session:
             return func(session)
 
-    return await run_blocking(_run)
+    return cast(T, await run_blocking(_run))
 
 
 JOB_PRIORITY_TO_MESSAGE = {
@@ -331,8 +335,9 @@ async def login(request: Request, login_data: LoginRequest) -> JSONResponse:
             user=user_info,
         )
 
+        client_host = request.client.host if request.client else "unknown"
         logger.info(
-            f"✅ User {security_context.user.username} logged in successfully from {request.client.host}"
+            f"✅ User {security_context.user.username} logged in successfully from {client_host}"
         )
 
         return JSONResponse(
@@ -468,7 +473,7 @@ async def logout(
 
         logger.info(f"User {security_context.user.username} logged out successfully")
 
-        return create_api_response(message="Logged out successfully")
+        return create_api_response(data=True, message="Logged out successfully")
 
     except Exception as e:
         logger.error(f"Logout failed for user {security_context.user.username}: {str(e)}")
@@ -562,9 +567,9 @@ async def list_users(
     """List users (requires users.read permission)."""
     try:
 
-        def _query(session):
+        def _query(session: Any) -> list[dict[str, Any]]:
             records = session.query(UserModel).offset(skip).limit(limit).all()
-            result = []
+            result: list[dict[str, Any]] = []
             for user in records:
                 result.append(
                     {
@@ -602,7 +607,7 @@ async def create_api_token(
             security_context.user.id,
             token_data.name,
             token_data.scopes,
-            token_data.expires_days,
+            int(token_data.expires_days or 30),
         )
 
         return create_api_response(
@@ -630,7 +635,7 @@ async def list_api_tokens(
     """List user's API tokens."""
     try:
 
-        def _query(session):
+        def _query(session: Any) -> list[dict[str, Any]]:
             records = (
                 session.query(APITokenModel)
                 .filter(APITokenModel.user_id == security_context.user.id)
@@ -679,8 +684,8 @@ async def create_agent(
             created_by=security_context.user.id,
         )
 
-        async def _persist():
-            def _op(session):
+        async def _persist() -> AgentModel:
+            def _op(session: Any) -> AgentModel:
                 session.add(agent)
                 session.commit()
                 session.refresh(agent)
@@ -725,9 +730,9 @@ async def list_agents(
     """List agents (requires agent.read permission)."""
     try:
 
-        def _query(session):
+        def _query(session: Any) -> list[dict[str, Any]]:
             records = session.query(AgentModel).offset(skip).limit(limit).all()
-            agent_list = []
+            agent_list: list[dict[str, Any]] = []
             for agent in records:
                 agent_list.append(
                     {
@@ -761,8 +766,8 @@ async def get_agent(
     """Get specific agent details (requires agent.read permission)."""
     try:
 
-        def _query(session):
-            return session.query(AgentModel).filter(AgentModel.id == agent_id).first()
+        def _query(session: Any) -> Optional[AgentModel]:
+            return cast(Optional[AgentModel], session.query(AgentModel).filter(AgentModel.id == agent_id).first())
 
         agent = await _with_app_session(_query)
         if not agent:
@@ -801,7 +806,7 @@ async def execute_agent(
     """Execute agent operations (requires agent.execute permission)."""
     try:
 
-        def _create_action(session):
+        def _create_action(session: Any) -> tuple[Optional[AgentModel], Optional[ActionModel]]:
             record = session.query(AgentModel).filter(AgentModel.id == agent_id).first()
             if not record:
                 return None, None
@@ -825,6 +830,8 @@ async def execute_agent(
                 error_type="AGENT_NOT_FOUND",
                 status_code=status.HTTP_404_NOT_FOUND,
             )
+
+        assert action is not None
 
         payload = AgentExecutionPayload(
             agent_id=agent_id,
@@ -960,7 +967,7 @@ async def list_capabilities(
 ) -> JSONResponse:
     try:
 
-        def _query(session):
+        def _query(session: Any) -> list[dict[str, Any]]:
             query = session.query(AgentCapabilityModel)
             if role:
                 query = query.filter(AgentCapabilityModel.role == role)
@@ -1001,7 +1008,7 @@ async def register_capability(
 ) -> JSONResponse:
     try:
 
-        def _upsert(session):
+        def _upsert(session: Any) -> bool:
             existing = (
                 session.query(AgentCapabilityModel)
                 .filter(AgentCapabilityModel.instance_id == spec.instance_id)
@@ -1057,7 +1064,7 @@ async def create_goal(
             created_by=security_context.user.id,
         )
 
-        def _persist(session):
+        def _persist(session: Any) -> GoalModel:
             session.add(goal)
             session.commit()
             session.refresh(goal)
@@ -1100,9 +1107,9 @@ async def list_goals(
     """List goals (requires goals.read permission)."""
     try:
 
-        def _query(session):
+        def _query(session: Any) -> list[dict[str, Any]]:
             records = session.query(GoalModel).offset(skip).limit(limit).all()
-            goal_list = []
+            goal_list: list[dict[str, Any]] = []
             for goal in records:
                 goal_list.append(
                     {
@@ -1137,12 +1144,12 @@ async def system_health() -> JSONResponse:
     async def _probe_db(session_factory: Callable[[], Any]) -> bool:
         try:
 
-            def _task():
+            def _task() -> bool:
                 with session_factory() as session:
                     session.execute(text("SELECT 1"))
                 return True
 
-            return await run_blocking(_task)
+            return cast(bool, await run_blocking(_task))
         except Exception as exc:  # pragma: no cover - diagnostics
             logger.error("Database probe failed: %s", exc)
             return False
@@ -1152,14 +1159,47 @@ async def system_health() -> JSONResponse:
     )
     overall_ok = auth_db_ok and app_db_ok
 
+    # Provider readiness details
+    try:
+        from .config_simple import get_api_key as _get_key
+        from .unified_config import unified_config as _uc
+        providers = _uc.get_configured_providers()
+        order = list(_uc.api.search_provider_order or ["serpapi", "bing", "google"])
+        disabled = list(_uc.api.disabled_search_providers or [])
+        keys_present = {p: bool(_get_key(p)) for p in ("serpapi", "bing", "google")}
+        google_cse_configured = bool(
+            (os.getenv("GOOGLE_CSE_ID") or os.getenv("GOOGLE_SEARCH_CX") or "").strip()
+        )
+        hints = []
+        if keys_present.get("google") and not google_cse_configured:
+            hints.append("Set GOOGLE_CSE_ID or GOOGLE_SEARCH_CX for Google Custom Search")
+        enabled = [p for p in providers if p not in disabled and p in ("serpapi", "bing", "google")]
+        if not enabled:
+            hints.append(
+                "Configure SERPAPI_KEY, BING_SEARCH_KEY, or GOOGLE_SEARCH_KEY to enable web search"
+            )
+    except Exception:
+        providers = []
+        order = ["serpapi", "bing", "google"]
+        disabled = []
+        keys_present = {p: False for p in ("serpapi", "bing", "google")}
+        google_cse_configured = False
+        hints = []
+
     health_data = {
         "status": "healthy" if overall_ok else "degraded",
         "databases": {
             "auth": "connected" if auth_db_ok else "error",
             "application": "connected" if app_db_ok else "error",
         },
+        "providers": providers,
+        "provider_order": order,
+        "providers_disabled": disabled,
+        "provider_keys_present": keys_present,
+        "google_cse_configured": google_cse_configured,
         "timestamp": datetime.now(UTC).isoformat(),
         "version": "1.0.0",
+        "hints": hints,
     }
 
     if overall_ok:
@@ -1185,7 +1225,7 @@ async def system_info(
     try:
         user_count = await _with_auth_session(lambda session: session.query(UserModel).count())
 
-        def _counts(session):
+        def _counts(session: Any) -> tuple[int, int, int]:
             return (
                 session.query(AgentModel).count(),
                 session.query(GoalModel).count(),
@@ -1268,4 +1308,69 @@ async def alertmanager_webhook(request: Request) -> JSONResponse:
     return JSONResponse(
         status_code=status.HTTP_202_ACCEPTED,
         content={"success": True, "alerts_processed": processed},
+    )
+
+
+# Provider configuration endpoints
+@typed_router.get("/system/providers/search-config", summary="Get search provider configuration")
+async def get_search_provider_config(
+    security_context: SecurityContext = Depends(require_permission("system", "read")),
+) -> JSONResponse:
+    """Return current search provider order/disabled and runtime status."""
+    order = list(unified_config.api.search_provider_order or ["serpapi", "bing", "google"])
+    disabled = list(unified_config.api.disabled_search_providers or [])
+    configured = unified_config.get_configured_providers()
+    enabled = [p for p in configured if p not in disabled and p in ("serpapi", "bing", "google")]
+    keys_present = {p: bool(get_api_key(p)) for p in ("serpapi", "bing", "google")}
+    google_cse_configured = bool(
+        (os.getenv("GOOGLE_CSE_ID") or os.getenv("GOOGLE_SEARCH_CX") or "").strip()
+    )
+    status_model = SearchProviderStatus(
+        order=order,
+        disabled=disabled,
+        configured=configured,
+        enabled=enabled,
+        keys_present=keys_present,
+        google_cse_configured=google_cse_configured,
+    )
+    return create_api_response(status_model.model_dump(), message="Search provider status")
+
+
+@typed_router.put(
+    "/system/providers/search-config",
+    summary="Update search provider configuration",
+)
+async def update_search_provider_config(
+    payload: SearchProviderConfig,
+    security_context: SecurityContext = Depends(require_permission("system", "write")),
+) -> JSONResponse:
+    """Update provider order and disabled lists; persists to config file."""
+    allowed = {"serpapi", "bing", "google"}
+    new_order = [p for p in payload.order if p in allowed]
+    new_disabled = [p for p in payload.disabled if p in allowed]
+
+    unified_config.api.search_provider_order = new_order
+    unified_config.api.disabled_search_providers = new_disabled
+    try:
+        unified_config.save_to_file()
+    except Exception:
+        # Continue even if persistence fails; runtime still updated
+        logger.warning("Failed to persist provider configuration", exc_info=True)
+
+    configured = unified_config.get_configured_providers()
+    enabled = [p for p in configured if p not in new_disabled and p in allowed]
+    keys_present = {p: bool(get_api_key(p)) for p in allowed}
+    google_cse_configured = bool(
+        (os.getenv("GOOGLE_CSE_ID") or os.getenv("GOOGLE_SEARCH_CX") or "").strip()
+    )
+    status_model = SearchProviderStatus(
+        order=new_order,
+        disabled=new_disabled,
+        configured=configured,
+        enabled=enabled,
+        keys_present=keys_present,
+        google_cse_configured=google_cse_configured,
+    )
+    return create_api_response(
+        status_model.model_dump(), message="Search provider configuration updated"
     )

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import time
 from collections import defaultdict, deque
 from dataclasses import asdict, dataclass, field
@@ -17,24 +18,29 @@ from typing import Any, Callable, Dict, List, Optional
 # Try to import numpy for performance calculations
 NUMPY_AVAILABLE = False
 try:
-    import numpy as np
-
+    import numpy as _np
+    np = _np  # alias to avoid duplicate symbol definitions
     NUMPY_AVAILABLE = True
 except ImportError:
     NUMPY_AVAILABLE = False
 
     # Create a minimal numpy-like fallback for basic operations
-    class np:
+    class _NP:
+        """Minimal numpy-like fallback with typed returns."""
         @staticmethod
-        def mean(arr):
-            return sum(arr) / len(arr) if arr else 0
+        def mean(arr: list[float]) -> float:
+            return (sum(arr, 0.0) / len(arr)) if arr else 0.0
 
         @staticmethod
-        def std(arr):
+        def std(arr: list[float]) -> float:
             if not arr:
-                return 0
-            mean_val = sum(arr) / len(arr)
-            return (sum((x - mean_val) ** 2 for x in arr) / len(arr)) ** 0.5
+                return 0.0
+            mean_val: float = sum(arr) / len(arr)
+            total_sq: float = sum(((x - mean_val) ** 2 for x in arr), 0.0)
+            variance: float = total_sq / len(arr)
+            return math.sqrt(variance)
+
+    np = _NP  # type: ignore[assignment]
 
 
 logger = logging.getLogger(__name__)
@@ -128,14 +134,14 @@ class AIPerformanceMonitor:
         self.monitor_dir.mkdir(exist_ok=True)
 
         # Time series data storage
-        self.metrics_history: Dict[str, deque] = defaultdict(lambda: deque(maxlen=1000))
+        self.metrics_history: Dict[str, deque[Any]] = defaultdict(lambda: deque(maxlen=1000))
         self.current_metrics: Dict[str, float] = {}
 
         # Performance tracking
-        self.decision_times = deque(maxlen=100)
-        self.accuracy_scores = deque(maxlen=100)
-        self.goal_completion_rates = deque(maxlen=50)
-        self.learning_progress = deque(maxlen=100)
+        self.decision_times: deque[float] = deque(maxlen=100)
+        self.accuracy_scores: deque[float] = deque(maxlen=100)
+        self.goal_completion_rates: deque[float] = deque(maxlen=50)
+        self.learning_progress: deque[float] = deque(maxlen=100)
 
         # Alert system
         self.active_alerts: List[PerformanceAlert] = []
@@ -217,12 +223,12 @@ class AIPerformanceMonitor:
             ),
         }
 
-    def _start_monitoring(self):
+    def _start_monitoring(self) -> None:
         """Start background monitoring tasks."""
         # Export data periodically
         self._schedule_next_export()
 
-    def _schedule_next_export(self):
+    def _schedule_next_export(self) -> None:
         """Schedule next data export."""
         self.last_export = time.time()
 
@@ -232,8 +238,8 @@ class AIPerformanceMonitor:
         execution_time_ms: float,
         confidence: float,
         success: bool,
-        metadata: Dict[str, Any] = None,
-    ):
+        metadata: Dict[str, Any] | None = None,
+    ) -> None:
         """Record metrics for an AI decision."""
         # timestamp intentionally omitted; each metric point stores its own timestamp
 
@@ -261,7 +267,7 @@ class AIPerformanceMonitor:
             {"decision_type": decision_type, "execution_time": execution_time_ms},
         )
 
-    def record_goal_metrics(self, goal_completed: bool, total_goals: int, completed_goals: int):
+    def record_goal_metrics(self, goal_completed: bool, total_goals: int, completed_goals: int) -> None:
         """Record goal completion metrics."""
         completion_rate = completed_goals / total_goals if total_goals > 0 else 0.0
         self.goal_completion_rates.append(completion_rate)
@@ -281,7 +287,7 @@ class AIPerformanceMonitor:
 
     def record_learning_metrics(
         self, patterns_learned: int, knowledge_base_size: int, confidence_scores: List[float]
-    ):
+    ) -> None:
         """Record learning system performance metrics."""
         # timestamp intentionally omitted; each metric point stores its own timestamp
 
@@ -310,7 +316,7 @@ class AIPerformanceMonitor:
 
     def record_semantic_similarity_metrics(
         self, similarity_scores: List[float], match_quality: float
-    ):
+    ) -> None:
         """Record semantic similarity performance metrics."""
         if similarity_scores:
             avg_similarity = sum(similarity_scores) / len(similarity_scores)
@@ -327,7 +333,7 @@ class AIPerformanceMonitor:
 
     def record_planning_metrics(
         self, plan_confidence: float, action_count: int, execution_success_rate: float
-    ):
+    ) -> None:
         """Record planning system performance metrics."""
         self._record_metric(
             "planning_confidence",
@@ -337,7 +343,7 @@ class AIPerformanceMonitor:
 
     def record_cross_session_metrics(
         self, knowledge_retention_rate: float, pattern_reuse_success: float
-    ):
+    ) -> None:
         """Record cross-session learning performance metrics."""
         self._record_metric(
             "cross_session_knowledge_retention",
@@ -345,7 +351,7 @@ class AIPerformanceMonitor:
             {"pattern_reuse_success": pattern_reuse_success},
         )
 
-    def _record_metric(self, metric_name: str, value: float, metadata: Dict[str, Any] = None):
+    def _record_metric(self, metric_name: str, value: float, metadata: Dict[str, Any] | None = None) -> None:
         """Record a metric data point."""
         timestamp = datetime.now()
         metric_point = MetricPoint(timestamp=timestamp, value=value, metadata=metadata or {})
@@ -359,7 +365,7 @@ class AIPerformanceMonitor:
         # Check thresholds
         self._check_thresholds(metric_name, value)
 
-    def _check_thresholds(self, metric_name: str, current_value: float):
+    def _check_thresholds(self, metric_name: str, current_value: float) -> None:
         """Check if metric value triggers any alerts."""
         if metric_name not in self.thresholds:
             return
@@ -453,7 +459,7 @@ class AIPerformanceMonitor:
 
         return message, suggestions
 
-    def _trigger_alert(self, alert: PerformanceAlert):
+    def _trigger_alert(self, alert: PerformanceAlert) -> None:
         """Trigger a performance alert."""
         self.active_alerts.append(alert)
         self.alert_history.append(alert)
@@ -468,16 +474,17 @@ class AIPerformanceMonitor:
         # Log the alert
         logger.warning(f"Performance Alert [{alert.severity.value}]: {alert.message}")
 
-    def add_alert_callback(self, callback: Callable[[PerformanceAlert], None]):
+    def add_alert_callback(self, callback: Callable[[PerformanceAlert], None]) -> None:
         """Add a callback function for alerts."""
         self.alert_callbacks.append(callback)
 
     def get_current_performance(self) -> Dict[str, Any]:
         """Get current performance metrics."""
-        performance_data = {
+        performance_levels: Dict[str, Any] = {}
+        performance_data: Dict[str, Any] = {
             "timestamp": datetime.now().isoformat(),
             "current_metrics": dict(self.current_metrics),
-            "performance_levels": {},
+            "performance_levels": performance_levels,
             "active_alerts": [asdict(alert) for alert in self.active_alerts],
             "summary": self._generate_performance_summary(),
         }
@@ -486,7 +493,7 @@ class AIPerformanceMonitor:
         for metric_name, value in self.current_metrics.items():
             if metric_name in self.thresholds:
                 level = self.thresholds[metric_name].evaluate(value)
-                performance_data["performance_levels"][metric_name] = {
+                performance_levels[metric_name] = {
                     "level": level.value,
                     "value": value,
                     "target": self._get_metric_target(metric_name),
@@ -640,11 +647,15 @@ class AIPerformanceMonitor:
 
         return insights
 
-    def export_performance_data(self, filepath: str = None) -> str:
+    def export_performance_data(self, filepath: str | "Path" | None = None) -> str:
         """Export all performance data to file."""
-        if not filepath:
+        if filepath is None:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filepath = self.monitor_dir / f"performance_export_{timestamp}.json"
+            out_path = self.monitor_dir / f"performance_export_{timestamp}.json"
+        else:
+            from pathlib import Path as _Path
+
+            out_path = _Path(filepath)
 
         export_data = {
             "export_timestamp": datetime.now().isoformat(),
@@ -661,11 +672,11 @@ class AIPerformanceMonitor:
             },
         }
 
-        with open(filepath, "w") as f:
+        with open(out_path, "w") as f:
             json.dump(export_data, f, indent=2, default=str)
 
-        logger.info(f"Performance data exported to {filepath}")
-        return str(filepath)
+        logger.info(f"Performance data exported to {out_path}")
+        return str(out_path)
 
     def get_optimization_suggestions(self) -> List[Dict[str, Any]]:
         """Generate AI optimization suggestions based on performance data."""

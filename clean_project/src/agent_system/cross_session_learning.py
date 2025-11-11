@@ -9,7 +9,7 @@ import json
 import logging
 from collections import defaultdict
 from dataclasses import asdict, dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -80,13 +80,16 @@ class LearningSession:
 class CrossSessionLearningSystem:
     """Manages learning and knowledge transfer between agent sessions."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.knowledge_patterns: Dict[str, KnowledgePattern] = {}
         self.session_history: List[LearningSession] = []
         self.current_session: Optional[LearningSession] = None
         self.knowledge_decay_rate = 0.05  # Knowledge loses value over time
         self.max_patterns = 1000  # Maximum patterns to store
         self.confidence_threshold = 0.6  # Minimum confidence for pattern adoption
+        self.max_session_history = 500  # Prevent unbounded session growth
+        self.max_action_sequence = 20  # Cap stored action sequences per pattern
+        self.pattern_retention_days = 90
 
         # Load existing knowledge
         self._load_knowledge_base()
@@ -161,20 +164,21 @@ class CrossSessionLearningSystem:
         if self.current_session:
             self.current_session.end_time = datetime.now()
             self.session_history.append(self.current_session)
+            self._prune_session_history()
             self._save_knowledge_base()
             logger.info(
                 f"Ended session {self.current_session.session_id} with {self.current_session.knowledge_gained} patterns learned"
             )
 
     def learn_from_goal(
-        self, goal_description: str, actions: List[Dict], success_score: float
+        self, goal_description: str, actions: List[Dict[str, Any]], success_score: float
     ) -> str:
         """Learn a new pattern from goal completion."""
         pattern_data = {
             "goal_description": goal_description,
             "action_sequence": [
                 action.get("name", action.get("id", str(action))) for action in actions
-            ],
+            ][: self.max_action_sequence],
             "success_score": success_score,
             "timestamp": datetime.now().isoformat(),
         }
@@ -210,7 +214,8 @@ class CrossSessionLearningSystem:
         # Apply knowledge decay
         self._apply_knowledge_decay(pattern)
 
-        # Clean up old patterns if we have too many
+        # Clean up old patterns to prevent leaks
+        self._remove_stale_patterns()
         self._cleanup_old_patterns()
 
         # Update session stats
@@ -250,6 +255,24 @@ class CrossSessionLearningSystem:
 
         for _, pattern_id in pattern_values[:patterns_to_remove]:
             del self.knowledge_patterns[pattern_id]
+
+    def _remove_stale_patterns(self) -> None:
+        """Drop patterns that have not been used for a prolonged period."""
+        cutoff = datetime.now() - timedelta(days=self.pattern_retention_days)
+        stale_ids = [
+            pattern_id
+            for pattern_id, pattern in self.knowledge_patterns.items()
+            if pattern.last_used < cutoff
+        ]
+        for pattern_id in stale_ids:
+            self.knowledge_patterns.pop(pattern_id, None)
+
+    def _prune_session_history(self) -> None:
+        """Keep the session history capped to avoid unbounded memory use."""
+        if len(self.session_history) <= self.max_session_history:
+            return
+        excess = len(self.session_history) - self.max_session_history
+        self.session_history = self.session_history[excess:]
 
     def find_similar_patterns(
         self, goal_description: str, limit: int = 5
@@ -293,7 +316,11 @@ class CrossSessionLearningSystem:
             pattern = similar_patterns[0][0]
             if self.current_session:
                 self.current_session.knowledge_used += 1
-            return pattern.parameters.get("action_sequence", [])
+            seq_val = pattern.parameters.get("action_sequence", [])
+            seq: List[str] = seq_val if isinstance(seq_val, list) else []
+            # Best effort filter to ensure str list
+            seq = [str(x) for x in seq]
+            return seq
 
         return None
 

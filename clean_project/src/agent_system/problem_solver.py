@@ -326,7 +326,7 @@ PROBLEM_SOLUTIONS = {
 class ProblemSolutionEngine:
     """Engine for identifying and solving business problems."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.problem_database = PROBLEM_SOLUTIONS
         self.industry_mappings = self._build_industry_mappings()
 

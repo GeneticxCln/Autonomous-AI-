@@ -83,6 +83,50 @@ class APIError(BaseModel):  # type: ignore[misc]
     timestamp: float = Field(..., description="Unix timestamp of error")
 
 
+# Provider configuration schemas
+class SearchProviderConfig(BaseModel):  # type: ignore[misc]
+    """Search provider configuration (order and disabled lists)."""
+
+    order: List[str] = Field(
+        default_factory=lambda: ["serpapi", "bing", "google"],
+        description="Ordered list of providers to try",
+        examples=[["serpapi", "bing", "google"]],
+    )
+    disabled: List[str] = Field(
+        default_factory=list,
+        description="Providers to disable",
+        examples=[["google"]],
+    )
+
+    @field_validator("order")  # type: ignore[misc]
+    @classmethod
+    def validate_order(cls, v: List[str]) -> List[str]:
+        allowed = {"serpapi", "bing", "google"}
+        filtered = []
+        for p in v:
+            p = p.strip().lower()
+            if p in allowed and p not in filtered:
+                filtered.append(p)
+        return filtered or ["serpapi", "bing", "google"]
+
+    @field_validator("disabled")  # type: ignore[misc]
+    @classmethod
+    def validate_disabled(cls, v: List[str]) -> List[str]:
+        allowed = {"serpapi", "bing", "google"}
+        return [p.strip().lower() for p in v if p.strip().lower() in allowed]
+
+
+class SearchProviderStatus(BaseModel):  # type: ignore[misc]
+    """Runtime status for search providers."""
+
+    order: List[str] = Field(..., description="Effective provider order")
+    disabled: List[str] = Field(default_factory=list, description="Disabled providers")
+    configured: List[str] = Field(default_factory=list, description="Providers with keys configured")
+    enabled: List[str] = Field(default_factory=list, description="Configured and not disabled")
+    keys_present: Dict[str, bool] = Field(default_factory=dict, description="Key presence per provider")
+    google_cse_configured: bool = Field(False, description="Whether Google CSE ID/CX is set")
+
+
 # Authentication Schemas
 class LoginRequest(BaseModel):  # type: ignore[misc]
     """User login request."""

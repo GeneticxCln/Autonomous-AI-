@@ -8,7 +8,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional, cast
 
 from .cache_manager import CacheConfig, cache_manager
 from .config_simple import settings
@@ -30,9 +30,9 @@ class InfrastructureManager:
     - Integration with main agent system
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.is_initialized = False
-        self.startup_time = None
+        self.startup_time: Optional[datetime] = None
         self.health_status = {
             "cache": False,
             "queue": False,
@@ -40,11 +40,11 @@ class InfrastructureManager:
             "overall": False,
         }
         self.service_instance: Optional[ServiceInstance] = None
-        self._service_heartbeat_task: Optional[asyncio.Task] = None
-        self._queue_rescue_task: Optional[asyncio.Task] = None
+        self._service_heartbeat_task: Optional[asyncio.Task[None]] = None
+        self._queue_rescue_task: Optional[asyncio.Task[None]] = None
         self._distributed_enabled = getattr(settings, "DISTRIBUTED_ENABLED", False)
         self.cluster_event_queue = AGENT_JOB_QUEUE
-        self._managed_queues = {self.cluster_event_queue}
+        self._managed_queues: set[str] = {self.cluster_event_queue}
 
     async def initialize(
         self,
@@ -80,10 +80,7 @@ class InfrastructureManager:
             cache_manager.config = cache_config
 
             logger.info("🔗 Connecting to Redis cache...")
-            cache_connected = await cache_manager.connect()
-            if not cache_connected:
-                logger.error("❌ Failed to connect to Redis cache")
-                return False
+            await cache_manager.connect()
 
             self.health_status["cache"] = True
             logger.info("✅ Cache manager initialized")
@@ -97,10 +94,7 @@ class InfrastructureManager:
             task_queue_manager.config = task_config
 
             logger.info("📋 Initializing task queue manager...")
-            queue_initialized = task_queue_manager.initialize()
-            if not queue_initialized:
-                logger.error("❌ Failed to initialize task queue")
-                return False
+            task_queue_manager.initialize()
 
             self.health_status["queue"] = True
             logger.info("✅ Task queue manager initialized")
@@ -126,13 +120,13 @@ class InfrastructureManager:
             logger.info("📊 Infrastructure Summary:")
             logger.info(f"   🗄️  Cache: Connected to {redis_host}:{redis_port}")
             logger.info(f"   📋 Queue: {len(task_queue_manager.queues)} priority queues")
-            logger.info(f"   ⏰ Startup: {self.startup_time.isoformat()}")
+            logger.info(f"   ⏰ Startup: {(self.startup_time.isoformat() if self.startup_time else '')}")
 
             return True
 
         except Exception as e:
             logger.error(f"❌ Infrastructure initialization failed: {e}")
-            return False
+            raise
 
     async def _initialize_distributed_components(
         self,
@@ -140,7 +134,7 @@ class InfrastructureManager:
         service_host: Optional[str],
         service_port: Optional[int],
         service_metadata: Optional[Dict[str, Any]],
-    ):
+    ) -> None:
         """Initialize distributed architecture components."""
         try:
             await distributed_message_queue.initialize()
@@ -177,7 +171,7 @@ class InfrastructureManager:
             self.health_status["distributed"] = False
             logger.warning("Distributed component initialization failed: %s", exc)
 
-    async def _heartbeat_loop(self):
+    async def _heartbeat_loop(self) -> None:
         """Send periodic heartbeats to the service registry."""
         interval = max(1, getattr(settings, "DISTRIBUTED_HEARTBEAT_INTERVAL", 15))
         try:
@@ -191,7 +185,7 @@ class InfrastructureManager:
         except Exception as exc:
             logger.debug("Service heartbeat failed: %s", exc)
 
-    async def _queue_rescue_loop(self):
+    async def _queue_rescue_loop(self) -> None:
         """Return stalled messages to their queues."""
         interval = max(5, getattr(settings, "DISTRIBUTED_QUEUE_POLL_INTERVAL", 1))
         try:
@@ -209,7 +203,7 @@ class InfrastructureManager:
         """Track a distributed queue for housekeeping."""
         self._managed_queues.add(queue_name)
 
-    async def _stop_distributed_components(self):
+    async def _stop_distributed_components(self) -> None:
         """Stop distributed background tasks and deregister services."""
         for task in (self._service_heartbeat_task, self._queue_rescue_task):
             if task:
@@ -256,18 +250,20 @@ class InfrastructureManager:
             "timestamp": datetime.now().isoformat(),
         }
 
-        return await distributed_message_queue.publish(
+        published = await distributed_message_queue.publish(
             self.cluster_event_queue,
             event_payload,
             priority=queue_priority,
         )
+        return cast(Optional[str], published)
 
-    async def _setup_monitoring(self):
+    async def _setup_monitoring(self) -> None:
         """Set up infrastructure monitoring."""
         try:
             # Cache health monitoring
             await cache_manager.set(
-                "infrastructure:health",
+                "infrastructure",
+                "health",
                 {
                     "status": "healthy",
                     "cache": True,
@@ -285,14 +281,15 @@ class InfrastructureManager:
         except Exception as e:
             logger.warning(f"⚠️ Infrastructure monitoring setup failed: {e}")
 
-    async def _cache_queue_stats(self):
+    async def _cache_queue_stats(self) -> None:
         """Cache queue statistics for monitoring."""
         try:
             if task_queue_manager._is_initialized:
                 stats = task_queue_manager.get_overall_stats()
 
                 await cache_manager.set(
-                    "infrastructure:queue_stats",
+                    "infrastructure",
+                    "queue_stats",
                     {**stats, "timestamp": datetime.now().isoformat()},
                     ttl=300,  # 5 minutes
                 )
@@ -376,9 +373,10 @@ class InfrastructureManager:
             }
 
             # Calculate derived metrics
-            if "cache_stats" in metrics["cache"]:
-                cache_stats = metrics["cache"]["cache_stats"]
-                metrics["cache"]["hit_rate_percent"] = cache_stats.get("hit_rate", 0)
+            cache_info = cast(Dict[str, Any], metrics["cache"])
+            if "cache_stats" in cache_info:
+                cache_stats = cast(Dict[str, Any], cache_info["cache_stats"])
+                cache_info["hit_rate_percent"] = cache_stats.get("hit_rate", 0)
 
             return metrics
 
@@ -391,7 +389,8 @@ class InfrastructureManager:
     ) -> bool:
         """Cache API response for improved performance."""
         try:
-            return await cache_manager.cache_api_response(endpoint, params, response, ttl)
+            result = await cache_manager.cache_api_response(endpoint, params, response, ttl)
+            return bool(result)
         except Exception as e:
             logger.error(f"API response caching failed: {e}")
             return False
@@ -399,14 +398,15 @@ class InfrastructureManager:
     async def get_cached_api_response(self, endpoint: str, params: Dict[str, Any]) -> Optional[Any]:
         """Get cached API response."""
         try:
-            return await cache_manager.get_cached_api_response(endpoint, params)
+            result = await cache_manager.get_cached_api_response(endpoint, params)
+            return result
         except Exception as e:
             logger.error(f"API response retrieval failed: {e}")
             return None
 
     async def enqueue_background_task(
-        self, func, *args, priority: str = "normal", timeout: int = 1800, **kwargs
-    ):
+        self, func: Callable[..., Any], *args: Any, priority: str = "normal", timeout: int = 1800, **kwargs: Any
+    ) -> Any:
         """Enqueue a background task."""
         try:
             from .task_queue import QueuePriority
@@ -430,8 +430,8 @@ class InfrastructureManager:
             return None
 
     async def schedule_recurring_task(
-        self, func, interval_seconds: int, *args, priority: str = "normal", **kwargs
-    ):
+        self, func: Callable[..., Any], interval_seconds: int, *args: Any, priority: str = "normal", **kwargs: Any
+    ) -> Any:
         """Schedule a recurring background task."""
         try:
             from .task_queue import QueuePriority
@@ -456,7 +456,8 @@ class InfrastructureManager:
     async def invalidate_cache_pattern(self, namespace: str, pattern: str) -> int:
         """Invalidate cache entries matching a pattern."""
         try:
-            return await cache_manager.delete_pattern(namespace, pattern)
+            result = await cache_manager.delete_pattern(namespace, pattern)
+            return int(result)
         except Exception as e:
             logger.error(f"Cache invalidation failed: {e}")
             return 0
@@ -464,7 +465,8 @@ class InfrastructureManager:
     async def clear_cache_namespace(self, namespace: str) -> int:
         """Clear all cache entries in a namespace."""
         try:
-            return await cache_manager.clear_namespace(namespace)
+            result = await cache_manager.clear_namespace(namespace)
+            return int(result)
         except Exception as e:
             logger.error(f"Cache namespace clearing failed: {e}")
             return 0
@@ -472,7 +474,8 @@ class InfrastructureManager:
     async def get_cache_stats(self) -> Dict[str, Any]:
         """Get detailed cache statistics."""
         try:
-            return await cache_manager.get_cache_info()
+            info = await cache_manager.get_cache_info()
+            return info
         except Exception as e:
             logger.error(f"Cache stats retrieval failed: {e}")
             return {"error": str(e)}
@@ -480,12 +483,13 @@ class InfrastructureManager:
     async def get_queue_stats(self) -> Dict[str, Any]:
         """Get detailed queue statistics."""
         try:
-            return task_queue_manager.get_overall_stats()
+            stats = task_queue_manager.get_overall_stats()
+            return stats
         except Exception as e:
             logger.error(f"Queue stats retrieval failed: {e}")
             return {"error": str(e)}
 
-    async def cleanup_infrastructure(self) -> Dict[str, int]:
+    async def cleanup_infrastructure(self) -> Dict[str, Any]:
         """Clean up infrastructure resources."""
         try:
             cleanup_results = {}
@@ -510,7 +514,7 @@ class InfrastructureManager:
             logger.error(f"Infrastructure cleanup failed: {e}")
             return {"error": str(e)}
 
-    async def shutdown(self):
+    async def shutdown(self) -> None:
         """Gracefully shutdown infrastructure components."""
         try:
             logger.info("🔄 Shutting down infrastructure components...")
@@ -582,12 +586,12 @@ async def get_cached_response(endpoint: str, params: Dict[str, Any]) -> Optional
     return await infrastructure_manager.get_cached_api_response(endpoint, params)
 
 
-async def enqueue_task(func, *args, **kwargs):
+async def enqueue_task(func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
     """Enqueue background task."""
     return await infrastructure_manager.enqueue_background_task(func, *args, **kwargs)
 
 
-async def schedule_task(func, interval_seconds: int, *args, **kwargs):
+async def schedule_task(func: Callable[..., Any], interval_seconds: int, *args: Any, **kwargs: Any) -> Any:
     """Schedule recurring task."""
     return await infrastructure_manager.schedule_recurring_task(
         func, interval_seconds, *args, **kwargs
@@ -600,41 +604,36 @@ async def get_performance_stats() -> Dict[str, Any]:
 
 
 # Integration with main agent
-async def agent_startup_integration():
+async def agent_startup_integration() -> bool:
     """Integration hook for agent startup."""
-    try:
-        # Use Redis config from settings if available
-        redis_host = getattr(settings, "REDIS_HOST", "localhost")
-        redis_port = getattr(settings, "REDIS_PORT", 6379)
-        redis_db = getattr(settings, "REDIS_DB", 0)
-        redis_password = getattr(settings, "REDIS_PASSWORD", None)
-        service_host = getattr(settings, "API_HOST", "127.0.0.1")
-        service_port = getattr(settings, "API_PORT", 8000)
-        metadata = {
-            "role": "api_gateway",
-            "node_id": getattr(settings, "DISTRIBUTED_NODE_ID", "local-node"),
-        }
-        metadata["cluster"] = getattr(settings, "DISTRIBUTED_CLUSTER_NAME", "agent-cluster")
+    # Use Redis config from settings if available
+    redis_host = getattr(settings, "REDIS_HOST", "localhost")
+    redis_port = getattr(settings, "REDIS_PORT", 6379)
+    redis_db = getattr(settings, "REDIS_DB", 0)
+    redis_password = getattr(settings, "REDIS_PASSWORD", None)
+    service_host = getattr(settings, "API_HOST", "127.0.0.1")
+    service_port = getattr(settings, "API_PORT", 8000)
+    metadata = {
+        "role": "api_gateway",
+        "node_id": getattr(settings, "DISTRIBUTED_NODE_ID", "local-node"),
+    }
+    metadata["cluster"] = getattr(settings, "DISTRIBUTED_CLUSTER_NAME", "agent-cluster")
 
-        await initialize_infrastructure(
-            redis_host=redis_host,
-            redis_port=redis_port,
-            redis_db=redis_db,
-            redis_password=redis_password,
-            service_name="agent-api",
-            service_host=service_host,
-            service_port=service_port,
-            service_metadata=metadata,
-        )
+    await initialize_infrastructure(
+        redis_host=redis_host,
+        redis_port=redis_port,
+        redis_db=redis_db,
+        redis_password=redis_password,
+        service_name="agent-api",
+        service_host=service_host,
+        service_port=service_port,
+        service_metadata=metadata,
+    )
 
-        return True
-
-    except Exception as e:
-        logger.error(f"Agent infrastructure integration failed: {e}")
-        return False
+    return True
 
 
-async def agent_shutdown_integration():
+async def agent_shutdown_integration() -> bool:
     """Integration hook for agent shutdown."""
     try:
         await infrastructure_manager.shutdown()
@@ -673,14 +672,15 @@ async def health_check() -> Dict[str, Any]:
 
 
 # Performance monitoring
-async def performance_monitor():
+async def performance_monitor() -> Dict[str, Any]:
     """Background performance monitoring task."""
     try:
         metrics = await get_performance_stats()
 
         # Cache performance metrics
         await cache_manager.set(
-            "infrastructure:performance",
+            "infrastructure",
+            "performance",
             {**metrics, "timestamp": datetime.now().isoformat()},
             ttl=600,  # 10 minutes
         )
@@ -693,14 +693,15 @@ async def performance_monitor():
 
 
 # Cleanup scheduler
-async def infrastructure_cleanup_scheduler():
+async def infrastructure_cleanup_scheduler() -> Dict[str, Any]:
     """Scheduled infrastructure cleanup task."""
     try:
         cleanup_results = await infrastructure_manager.cleanup_infrastructure()
 
         # Cache cleanup results
         await cache_manager.set(
-            "infrastructure:last_cleanup",
+            "infrastructure",
+            "last_cleanup",
             {**cleanup_results, "timestamp": datetime.now().isoformat()},
             ttl=3600,  # 1 hour
         )

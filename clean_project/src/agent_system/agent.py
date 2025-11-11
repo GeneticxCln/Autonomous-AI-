@@ -11,7 +11,7 @@ from .ai_performance_monitor import ai_performance_monitor
 from .ai_planner import AIHierarchicalPlanner
 from .config_simple import settings
 from .cross_session_learning import cross_session_learning
-from .enhanced_persistence import get_storage_info, load_all, save_all, save_all_async
+from .enhanced_persistence import get_storage_info, load_all, save_all_async
 from .enhanced_tools import EnhancedToolRegistry
 from .goal_manager import GoalManager
 from .intelligent_action_selector import IntelligentActionSelector
@@ -20,15 +20,10 @@ from .learning import LearningSystem
 from .memory import MemorySystem
 from .models import ActionStatus, Goal, GoalStatus, Plan
 from .plugin_loader import load_plugins
+from .real_tools import RealCodeExecutorTool, RealFileReaderTool, RealFileWriterTool
 
 # Import intelligent components
-from .tools import (
-    CodeExecutorTool,
-    FileReaderTool,
-    FileWriterTool,
-    GenericTool,
-    WebSearchTool,
-)
+from .tools import GenericTool, WebSearchTool
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +41,7 @@ class GoalExecutionContext:
 class AutonomousAgent:
     """Main agent that integrates all subsystems."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.goal_manager = GoalManager()
         self.planner = AIHierarchicalPlanner()  # Use AI-powered planner
         self.action_selector = IntelligentActionSelector()  # Use intelligent action selector
@@ -96,12 +91,13 @@ class AutonomousAgent:
             return bool(settings.USE_REAL_TOOLS)
         return bool(get_api_key("serpapi") or get_api_key("bing") or get_api_key("google"))
 
-    def _register_default_tools(self):
+    def _register_default_tools(self) -> None:
         """Register default tools."""
         self.tool_registry.register_tool(GenericTool())
-        self.tool_registry.register_tool(FileReaderTool())
-        self.tool_registry.register_tool(FileWriterTool())
-        self.tool_registry.register_tool(CodeExecutorTool())
+        # Always prefer real file and code tools
+        self.tool_registry.register_tool(RealFileReaderTool())
+        self.tool_registry.register_tool(RealFileWriterTool())
+        self.tool_registry.register_tool(RealCodeExecutorTool())
         # Only register web search when not in terminal-only mode
         if not settings.TERMINAL_ONLY:
             self.tool_registry.register_tool(WebSearchTool())
@@ -115,7 +111,7 @@ class AutonomousAgent:
         """Add a new goal for the agent."""
         return self.goal_manager.add_goal(description, priority, constraints=constraints)
 
-    def run(self, max_cycles: int = 100, max_concurrent_goals: Optional[int] = None):
+    def run(self, max_cycles: int = 100, max_concurrent_goals: Optional[int] = None) -> None:
         """Run the agent synchronously."""
         try:
             asyncio.get_running_loop()
@@ -125,7 +121,7 @@ class AutonomousAgent:
             )
         raise RuntimeError("run() cannot be called from an async context; use run_async instead.")
 
-    async def run_async(self, max_cycles: int = 100, max_concurrent_goals: Optional[int] = None):
+    async def run_async(self, max_cycles: int = 100, max_concurrent_goals: Optional[int] = None) -> None:
         """Run the agent for a maximum number of cycles asynchronously."""
         concurrency_limit = max(1, max_concurrent_goals or self.max_concurrent_goals)
         self.is_running = True
@@ -145,7 +141,7 @@ class AutonomousAgent:
             self.is_running = False
             logger.info("Agent stopped after %s cycles", cycle)
 
-    def stop(self):
+    def stop(self) -> None:
         """Stop the agent."""
         self.is_running = False
         self.goal_contexts.clear()
@@ -175,7 +171,7 @@ class AutonomousAgent:
         results = await asyncio.gather(*(self._process_goal_step(ctx) for ctx in contexts))
         return any(results)
 
-    def _fill_goal_contexts(self, limit: int):
+    def _fill_goal_contexts(self, limit: int) -> None:
         """Populate active goal contexts up to the concurrency limit."""
         while len(self.goal_contexts) < limit:
             goal = self.goal_manager.get_next_goal()
@@ -183,7 +179,7 @@ class AutonomousAgent:
                 break
             self.goal_contexts[goal.id] = GoalExecutionContext(goal=goal)
 
-    def _initialize_goal_context(self, context: GoalExecutionContext):
+    def _initialize_goal_context(self, context: GoalExecutionContext) -> None:
         """Perform one-time setup for a goal context."""
         if context.initialized:
             return
@@ -251,7 +247,7 @@ class AutonomousAgent:
         )
         execution_time = time.time() * 1000 - start_time
 
-        if hasattr(selected_action, "__dict__"):
+        if selected_action is not None:
             action_dict = {
                 "name": selected_action.name,
                 "id": selected_action.id,
@@ -259,7 +255,7 @@ class AutonomousAgent:
                 "parameters": getattr(selected_action, "parameters", {}),
             }
         else:
-            action_dict = selected_action if selected_action else None
+            action_dict = None
 
         selection_criteria = {
             "final_score": 0.7,
@@ -349,7 +345,7 @@ class AutonomousAgent:
 
         return True
 
-    async def _finalize_goal(self, context: GoalExecutionContext, success: bool):
+    async def _finalize_goal(self, context: GoalExecutionContext, success: bool) -> None:
         """Finalize a goal and persist learning signals."""
         goal = context.goal
 
@@ -425,10 +421,11 @@ class AutonomousAgent:
             "is_running": self.is_running,
         }
 
-    def get_debug_explanation(self, decision_id: str = None) -> Dict[str, Any]:
+    def get_debug_explanation(self, decision_id: str | None = None) -> Dict[str, Any]:
         """Get AI decision explanations for debugging."""
         if decision_id:
-            return self.ai_debugger.get_decision_explanation(decision_id)
+            expl = self.ai_debugger.get_decision_explanation(decision_id)
+            return expl or {}
         else:
             return self.ai_debugger.generate_debug_report()
 

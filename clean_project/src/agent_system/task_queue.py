@@ -5,27 +5,50 @@ Enterprise-grade background job processing with Redis
 
 from __future__ import annotations
 
+import asyncio
+import importlib
+import inspect
 import logging
 import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Callable, Dict, Optional
+from functools import wraps
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Coroutine, Dict, Optional, cast
 
+from .cache_manager import cache_manager
+
+# Use synchronous redis client for RQ (rq expects sync redis-py)
+redis_sync: Any | None = None
 try:
-    import rq  # type: ignore
-    from rq import Queue  # type: ignore
-    from rq.job import Job  # type: ignore
-    from rq.registry import (  # type: ignore
+    import redis as _redis_sync  # import under alias to avoid redefinition warnings
+    from redis import Redis as SyncRedis
+    REDIS_SYNC_IMPORT_ERROR: Optional[Exception] = None
+except Exception as _exc:
+    REDIS_SYNC_IMPORT_ERROR = _exc
+    if TYPE_CHECKING:  # pragma: no cover
+        from redis import Redis as SyncRedis
+    else:
+        SyncRedis = Any
+else:
+    redis_sync = _redis_sync
+
+rq: Any | None = None
+try:
+    import rq as _rq  # import under alias to avoid redefinition warnings
+    from rq import Queue
+    from rq.job import Job
+    from rq.registry import (
         DeferredJobRegistry,
         FailedJobRegistry,
         FinishedJobRegistry,
         ScheduledJobRegistry,
         StartedJobRegistry,
     )
-    from rq_scheduler import Scheduler  # type: ignore
-except Exception:  # ModuleNotFoundError or runtime import error
-    rq = None  # type: ignore
+    from rq_scheduler import Scheduler
+    RQ_IMPORT_ERROR: Optional[Exception] = None
+except Exception as _exc:  # ModuleNotFoundError or runtime import error
+    RQ_IMPORT_ERROR = _exc
     if TYPE_CHECKING:
         from rq import Queue as Queue  # pragma: no cover
         from rq.job import Job as Job  # pragma: no cover
@@ -38,35 +61,16 @@ except Exception:  # ModuleNotFoundError or runtime import error
         )
         from rq_scheduler import Scheduler as Scheduler  # pragma: no cover
     else:
-
-        class Queue:  # minimal placeholders
-            pass
-
-        class Job:
-            pass
-
-        class Scheduler:
-            def shutdown(self):
-                pass
-
-        class DeferredJobRegistry:
-            pass
-
-        class FinishedJobRegistry:
-            pass
-
-        class StartedJobRegistry:
-            pass
-
-        class FailedJobRegistry:
-            def get_job_ids(self):
-                return []
-
-        class ScheduledJobRegistry:
-            pass
-
-
-from .cache_manager import cache_manager
+        Queue = Any
+        Job = Any
+        Scheduler = Any
+        DeferredJobRegistry = Any
+        FailedJobRegistry = Any
+        FinishedJobRegistry = Any
+        ScheduledJobRegistry = Any
+        StartedJobRegistry = Any
+else:
+    rq = _rq
 
 logger = logging.getLogger(__name__)
 
@@ -110,45 +114,61 @@ class TaskQueueManager:
         self.config = config or TaskConfig()
         self.queues: Dict[str, Queue] = {}
         self.scheduler: Optional[Scheduler] = None
+        self._rq_connection: Optional[SyncRedis] = None
         self._is_initialized = False
 
     def initialize(self) -> bool:
         """Initialize Redis Queue connections."""
         try:
             if rq is None:
-                logger.warning("RQ/redis packages not available; task queue disabled")
-                self._is_initialized = False
-                return False
-            # Set Redis URL for RQ
+                detail = f": {RQ_IMPORT_ERROR}" if RQ_IMPORT_ERROR else ""
+                raise RuntimeError(
+                    "rq/rq-scheduler packages are required for the task queue"
+                    f"{detail}. Install 'rq>=1.15' and 'rq-scheduler' to enable background jobs."
+                )
+
+            if redis_sync is None:
+                detail = f": {REDIS_SYNC_IMPORT_ERROR}" if REDIS_SYNC_IMPORT_ERROR else ""
+                raise RuntimeError(
+                    "redis-py package is required for the task queue"
+                    f"{detail}. Install 'redis>=5' to enable background jobs."
+                )
+            # Set Redis URL for RQ (rq can use this internally)
             os.environ["REDIS_URL"] = self.config.redis_url
+
+            # Create a synchronous Redis connection for RQ if possible
+            if redis_sync is not None:
+                self._rq_connection = cast(SyncRedis, redis_sync.from_url(self.config.redis_url))
+            else:
+                self._rq_connection = None
 
             # Create queues with different priorities
             self.queues = {
                 QueuePriority.CRITICAL.value: Queue(
                     QueuePriority.CRITICAL.value,
-                    connection=cache_manager.redis_client,
+                    connection=self._rq_connection,
                     default_timeout=self.config.worker_timeout,
                 ),
                 QueuePriority.HIGH.value: Queue(
                     QueuePriority.HIGH.value,
-                    connection=cache_manager.redis_client,
+                    connection=self._rq_connection,
                     default_timeout=self.config.worker_timeout,
                 ),
                 QueuePriority.NORMAL.value: Queue(
                     QueuePriority.NORMAL.value,
-                    connection=cache_manager.redis_client,
+                    connection=self._rq_connection,
                     default_timeout=self.config.worker_timeout,
                 ),
                 QueuePriority.LOW.value: Queue(
                     QueuePriority.LOW.value,
-                    connection=cache_manager.redis_client,
+                    connection=self._rq_connection,
                     default_timeout=self.config.worker_timeout,
                 ),
             }
 
             # Initialize scheduler for delayed jobs
             self.scheduler = Scheduler(
-                queue=self.queues[QueuePriority.NORMAL.value], connection=cache_manager.redis_client
+                queue=self.queues[QueuePriority.NORMAL.value], connection=self._rq_connection
             )
 
             self._is_initialized = True
@@ -158,7 +178,8 @@ class TaskQueueManager:
 
         except Exception as e:
             logger.error(f"❌ Redis Queue initialization failed: {e}")
-            return False
+            self._is_initialized = False
+            raise
 
     def get_queue(self, priority: QueuePriority) -> Queue:
         """Get queue by priority."""
@@ -169,12 +190,12 @@ class TaskQueueManager:
 
     def enqueue_job(
         self,
-        func: Callable,
-        *args,
+        func: Callable[..., Any],
+        *args: Any,
         priority: QueuePriority = QueuePriority.NORMAL,
         timeout: Optional[int] = None,
         ttl: Optional[int] = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> Job:
         """
         Enqueue a job with optional parameters.
@@ -206,12 +227,12 @@ class TaskQueueManager:
 
     def enqueue_job_with_retry(
         self,
-        func: Callable,
-        *args,
+        func: Callable[..., Any],
+        *args: Any,
         priority: QueuePriority = QueuePriority.NORMAL,
-        max_retries: int = None,
-        retry_delay: int = None,
-        **kwargs,
+        max_retries: int | None = None,
+        retry_delay: int | None = None,
+        **kwargs: Any,
     ) -> Job:
         """
         Enqueue a job with automatic retry on failure.
@@ -221,13 +242,13 @@ class TaskQueueManager:
 
         queue = self.get_queue(priority)
 
-        def job_with_retry():
+        def job_with_retry() -> Any:
             """Wrapper function that handles retries."""
             import time
             from functools import wraps
 
             @wraps(func)
-            def wrapped_func(*args, **kwargs):
+            def wrapped_func(*args: Any, **kwargs: Any) -> Any:
                 retries = max_retries or self.config.max_retries
                 delay = retry_delay or self.config.retry_delay
 
@@ -253,11 +274,11 @@ class TaskQueueManager:
 
     def schedule_job(
         self,
-        func: Callable,
+        func: Callable[..., Any],
         run_at: datetime,
-        *args,
+        *args: Any,
         priority: QueuePriority = QueuePriority.NORMAL,
-        **kwargs,
+        **kwargs: Any,
     ) -> str:
         """
         Schedule a job to run at a specific time.
@@ -270,18 +291,19 @@ class TaskQueueManager:
         job = queue.enqueue(func, *args, **kwargs)
 
         # Schedule the job
+        assert self.scheduler is not None
         self.scheduler.enqueue_at(run_at, job)
 
         logger.info(f"⏰ Job scheduled: {job.id} (run at: {run_at})")
-        return job.id
+        return str(job.id)
 
     def schedule_job_interval(
         self,
-        func: Callable,
+        func: Callable[..., Any],
         interval_seconds: int,
-        *args,
+        *args: Any,
         priority: QueuePriority = QueuePriority.NORMAL,
-        **kwargs,
+        **kwargs: Any,
     ) -> str:
         """
         Schedule a job to run at regular intervals.
@@ -292,6 +314,7 @@ class TaskQueueManager:
         job = self.get_queue(priority).enqueue(func, *args, **kwargs)
 
         # Schedule recurring job
+        assert self.scheduler is not None
         self.scheduler.schedule(
             scheduled_time=datetime.now() + timedelta(seconds=interval_seconds),
             func=func,
@@ -302,7 +325,7 @@ class TaskQueueManager:
         )
 
         logger.info(f"🔄 Recurring job scheduled: {job.id} (interval: {interval_seconds}s)")
-        return job.id
+        return str(job.id)
 
     def get_job(self, job_id: str) -> Optional[Job]:
         """Get job by ID."""
@@ -310,7 +333,7 @@ class TaskQueueManager:
             return None
 
         try:
-            return Job.fetch(job_id, connection=cache_manager.redis_client)
+            return Job.fetch(job_id, connection=self._rq_connection)
         except Exception as e:
             logger.error(f"Error fetching job {job_id}: {e}")
             return None
@@ -355,17 +378,18 @@ class TaskQueueManager:
         queue = self.get_queue(priority)
 
         try:
+            assert self.scheduler is not None
             stats = {
                 "queue": priority.value,
                 "size": len(queue),
                 "started_registry": StartedJobRegistry(
-                    queue=queue, connection=cache_manager.redis_client
+                    queue=queue, connection=self._rq_connection
                 ),
                 "failed_registry": FailedJobRegistry(
-                    queue=queue, connection=cache_manager.redis_client
+                    queue=queue, connection=self._rq_connection
                 ),
                 "finished_registry": FinishedJobRegistry(
-                    queue=queue, connection=cache_manager.redis_client
+                    queue=queue, connection=self._rq_connection
                 ),
                 "scheduled_jobs": len(self.scheduler.get_jobs()),
             }
@@ -461,7 +485,7 @@ class TaskQueueManager:
 
             for queue in self.queues.values():
                 failed_registry = FailedJobRegistry(
-                    queue=queue, connection=cache_manager.redis_client
+                    queue=queue, connection=self._rq_connection
                 )
 
                 # Get all job IDs from failed registry
@@ -480,7 +504,7 @@ class TaskQueueManager:
             logger.error(f"Error cleaning up failed jobs: {e}")
             return 0
 
-    def stop_scheduler(self):
+    def stop_scheduler(self) -> None:
         """Stop the scheduler."""
         if self.scheduler:
             self.scheduler.shutdown()
@@ -491,25 +515,71 @@ class TaskQueueManager:
 task_queue_manager = TaskQueueManager()
 
 
+def _execute_job_callable(func_path: str, call_args: tuple[Any, ...], call_kwargs: Dict[str, Any]) -> Any:
+    """Synchronously execute a job by importing the target function."""
+    module_name, _, attr_path = func_path.rpartition(".")
+    if not module_name:
+        raise RuntimeError(f"Invalid job path: {func_path}")
+
+    module = importlib.import_module(module_name)
+    target: Any = module
+    for attr in attr_path.split("."):
+        target = getattr(target, attr)
+
+    result = target(*call_args, **call_kwargs)
+    if inspect.isawaitable(result):
+        return asyncio.run(cast(Coroutine[Any, Any, Any], result))
+    return result
+
+
 # Decorator for easy job creation
 def queue_job(
     priority: QueuePriority = QueuePriority.NORMAL,
     timeout: Optional[int] = None,
     ttl: Optional[int] = None,
-):
+) -> Callable[[Callable[..., Any]], Callable[..., Awaitable[Any]]]:
     """Decorator to easily create queued jobs."""
 
-    def decorator(func: Callable):
-        def wrapper(*args, **kwargs):
-            # This would be replaced with actual job execution
-            # For now, just execute the function directly
-            return func(*args, **kwargs)
+    def decorator(func: Callable[..., Any]) -> Callable[..., Awaitable[Any]]:
+        func_path = f"{func.__module__}.{func.__qualname__}"
+
+        async def _invoke_original(*args: Any, **kwargs: Any) -> Any:
+            result = func(*args, **kwargs)
+            if inspect.isawaitable(result):
+                return await result
+            return result
+
+        @wraps(func)
+        async def wrapper(*args: Any, **kwargs: Any) -> Any:
+            execute_immediately = kwargs.pop("_execute_immediately", False)
+
+            if execute_immediately:
+                return await _invoke_original(*args, **kwargs)
+
+            if not task_queue_manager._is_initialized:
+                raise RuntimeError(
+                    "Task queue manager is not initialized. Call initialize_task_queue() "
+                    "before dispatching jobs or pass _execute_immediately=True."
+                )
+
+            job = task_queue_manager.enqueue_job(
+                _execute_job_callable,
+                func_path,
+                args,
+                kwargs,
+                priority=priority,
+                timeout=timeout,
+                ttl=ttl,
+            )
+
+            return {"job_id": job.id, "queue": priority.value}
 
         # Add metadata for job creation
-        wrapper._queue_job = True
-        wrapper._priority = priority
-        wrapper._timeout = timeout
-        wrapper._ttl = ttl
+        wrapper._queue_job = True  # type: ignore[attr-defined]
+        wrapper._priority = priority  # type: ignore[attr-defined]
+        wrapper._timeout = timeout  # type: ignore[attr-defined]
+        wrapper._ttl = ttl  # type: ignore[attr-defined]
+        wrapper._job_path = func_path  # type: ignore[attr-defined]
         return wrapper
 
     return decorator
@@ -517,14 +587,15 @@ def queue_job(
 
 # Common agent tasks
 @queue_job(priority=QueuePriority.HIGH)
-async def send_notification_task(user_id: str, message: str, notification_type: str = "info"):
+async def send_notification_task(user_id: str, message: str, notification_type: str = "info") -> Dict[str, Any]:
     """Background task to send notifications."""
     try:
         logger.info(f"🔔 Sending {notification_type} notification to user {user_id}: {message}")
 
         # Simulate notification sending
         await cache_manager.set(
-            f"notifications:{user_id}",
+            "notifications",
+            str(user_id),
             {
                 "message": message,
                 "type": notification_type,
@@ -555,7 +626,10 @@ async def process_ai_analysis_task(data: Dict[str, Any]) -> Dict[str, Any]:
 
         # Cache the result
         await cache_manager.set(
-            f"ai_analysis:{data.get('id', 'unknown')}", analysis_result, ttl=3600  # 1 hour
+            "ai_analysis",
+            str(data.get("id", "unknown")),
+            analysis_result,
+            ttl=3600,  # 1 hour
         )
 
         return analysis_result
@@ -565,7 +639,7 @@ async def process_ai_analysis_task(data: Dict[str, Any]) -> Dict[str, Any]:
 
 
 @queue_job(priority=QueuePriority.LOW)
-async def cleanup_task():
+async def cleanup_task() -> Dict[str, Any]:
     """Background task for system cleanup."""
     try:
         logger.info("🧹 Performing system cleanup")
@@ -588,7 +662,7 @@ async def cleanup_task():
 
 
 @queue_job(priority=QueuePriority.CRITICAL)
-async def emergency_task(alert_data: Dict[str, Any]):
+async def emergency_task(alert_data: Dict[str, Any]) -> Dict[str, Any]:
     """Emergency task for critical alerts."""
     try:
         logger.critical(f"🚨 EMERGENCY TASK: {alert_data}")
@@ -596,6 +670,7 @@ async def emergency_task(alert_data: Dict[str, Any]):
         # Store emergency alert
         await cache_manager.set(
             "emergency_alerts",
+            str(alert_data.get("id", "latest")),
             {"alert": alert_data, "timestamp": datetime.now().isoformat(), "severity": "critical"},
             ttl=86400,  # 24 hours
         )
@@ -612,17 +687,17 @@ def initialize_task_queue(redis_url: str = "redis://localhost:6379/0") -> bool:
     try:
         # Connect to Redis first
         if not cache_manager._is_connected:
-            import asyncio
-
             asyncio.run(cache_manager.connect())
 
         # Initialize task queue manager
         config = TaskConfig(redis_url=redis_url)
+        manager = TaskQueueManager(config)
+        manager.initialize()
         global task_queue_manager
-        task_queue_manager = TaskQueueManager(config)
+        task_queue_manager = manager
 
-        return task_queue_manager.initialize()
+        return True
 
     except Exception as e:
         logger.error(f"Task queue initialization failed: {e}")
-        return False
+        raise

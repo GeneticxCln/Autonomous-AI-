@@ -10,7 +10,7 @@ import secrets
 import uuid
 from datetime import UTC, datetime
 from enum import Enum
-from typing import Dict, List
+from typing import Any, Dict, List, Optional
 
 from passlib.context import CryptContext
 from sqlalchemy import (
@@ -27,7 +27,14 @@ from sqlalchemy import (
     UniqueConstraint,
     create_engine,
 )
-from sqlalchemy.orm import declarative_base, relationship, sessionmaker
+from sqlalchemy.orm import (
+    DeclarativeBase,
+    Mapped,
+    Session,
+    mapped_column,
+    relationship,
+    sessionmaker,
+)
 
 
 # Database manager for auth system
@@ -60,9 +67,27 @@ class DatabaseManager:
             pool_recycle if pool_recycle is not None else int(os.getenv("DB_POOL_RECYCLE", "300"))
         )
 
-    def _engine_kwargs(self) -> Dict[str, object]:
+    def configure_pool(
+        self,
+        *,
+        pool_size: Optional[int] = None,
+        max_overflow: Optional[int] = None,
+        pool_timeout: Optional[int] = None,
+        pool_recycle: Optional[int] = None,
+    ) -> None:
+        """Allow the hosting app to override pooling defaults prior to init."""
+        if pool_size is not None:
+            self.pool_size = pool_size
+        if max_overflow is not None:
+            self.max_overflow = max_overflow
+        if pool_timeout is not None:
+            self.pool_timeout = pool_timeout
+        if pool_recycle is not None:
+            self.pool_recycle = pool_recycle
+
+    def _engine_kwargs(self) -> Dict[str, Any]:
         """Build SQLAlchemy engine configuration with pooling enabled."""
-        kwargs: Dict[str, object] = {
+        kwargs: Dict[str, Any] = {
             "pool_pre_ping": True,
             "pool_recycle": self.pool_recycle,
             "echo": False,
@@ -74,11 +99,14 @@ class DatabaseManager:
         if self.pool_timeout is not None:
             kwargs["pool_timeout"] = self.pool_timeout
         if self.database_url.startswith("sqlite"):
-            kwargs.setdefault("connect_args", {})
-            kwargs["connect_args"].update({"check_same_thread": False})
+            # Ensure proper typing for connect_args
+            existing = kwargs.get("connect_args")
+            connect_args: Dict[str, Any] = dict(existing) if isinstance(existing, dict) else {}
+            connect_args.update({"check_same_thread": False})
+            kwargs["connect_args"] = connect_args
         return kwargs
 
-    def initialize(self):
+    def initialize(self) -> None:
         """Initialize database connection and create tables."""
         try:
             engine_kwargs = self._engine_kwargs()
@@ -100,13 +128,13 @@ class DatabaseManager:
             print(f"❌ Auth database initialization failed: {e}")
             raise
 
-    def get_session(self):
+    def get_session(self) -> Session:
         """Get a database session."""
         if not self.SessionLocal:
             raise RuntimeError("Auth database not initialized. Call initialize() first.")
         return self.SessionLocal()
 
-    def close(self):
+    def close(self) -> None:
         """Close database connections."""
         if self.engine:
             self.engine.dispose()
@@ -132,7 +160,10 @@ class DatabaseManager:
 # Global auth database manager instance
 db_manager = DatabaseManager()
 
-Base = declarative_base()
+
+class Base(DeclarativeBase):  # type: ignore[misc]
+    pass
+
 
 # Password hashing context (prefer passlib; fallback to sha256 comparison for legacy hashes)
 pwd_context = CryptContext(schemes=["argon2", "sha256_crypt"], deprecated="auto")
@@ -207,38 +238,42 @@ class UserModel(Base):
 
     __tablename__ = "users"
 
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    username = Column(String(50), unique=True, nullable=False, index=True)
-    email = Column(String(100), unique=True, nullable=False, index=True)
-    full_name = Column(String(100), nullable=False)
-    hashed_password = Column(String(255), nullable=False)
-    is_active = Column(Boolean, default=True, index=True)
-    is_verified = Column(Boolean, default=False, index=True)
-    status = Column(String(20), default="active", index=True)
-    failed_login_attempts = Column(Integer, default=0)
-    last_login_attempt = Column(DateTime)
-    last_login = Column(DateTime)
-    password_changed_at = Column(DateTime, default=lambda: datetime.now(UTC))
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC), index=True)
-    updated_at = Column(
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    username: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
+    email: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
+    full_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    is_verified: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    status: Mapped[str] = mapped_column(String(20), default="active", index=True)
+    failed_login_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    last_login_attempt: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    last_login: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    password_changed_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC), index=True)
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
     )
-    deleted_at = Column(DateTime, nullable=True)
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
     # Security settings
-    mfa_enabled = Column(Boolean, default=False)
-    mfa_secret = Column(String(32))
-    backup_codes = Column(JSON, default=list)
+    mfa_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    mfa_secret: Mapped[Optional[str]] = mapped_column(String(32))
+    backup_codes: Mapped[List[str]] = mapped_column(JSON, default=list)
 
     # Profile data
-    preferences = Column(JSON, default=dict)
-    user_metadata = Column("metadata", JSON, default=dict)
+    preferences: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    user_metadata: Mapped[Dict[str, Any]] = mapped_column("metadata", JSON, default=dict)
 
     # Relationships
-    roles = relationship("RoleModel", secondary=user_roles, back_populates="users")
-    sessions = relationship("UserSessionModel", back_populates="user", cascade="all, delete-orphan")
-    audit_logs = relationship(
-        "AuthSecurityEventModel", back_populates="user", cascade="all, delete-orphan"
+    roles: Mapped[List["RoleModel"]] = relationship(
+        secondary=user_roles, back_populates="users"
+    )
+    sessions: Mapped[List["UserSessionModel"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    audit_logs: Mapped[List["AuthSecurityEventModel"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
     )
 
     # Indexes
@@ -257,11 +292,11 @@ class UserModel(Base):
         try:
             # Passlib-managed hashes
             if self.hashed_password and self.hashed_password.startswith("$argon2"):
-                return pwd_context.verify(password, self.hashed_password)
+                return bool(pwd_context.verify(password, self.hashed_password))
 
             # sha256_crypt ($5$) -> migrate to argon2 on success
             if self.hashed_password and self.hashed_password.startswith("$5$"):
-                ok = pwd_context.verify(password, self.hashed_password)
+                ok: bool = bool(pwd_context.verify(password, self.hashed_password))
                 if ok:
                     try:
                         self.hashed_password = pwd_context.hash(password)
@@ -289,21 +324,23 @@ class RoleModel(Base):
 
     __tablename__ = "roles"
 
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    name = Column(String(50), unique=True, nullable=False, index=True)
-    description = Column(Text)
-    level = Column(Integer, default=50, index=True)  # Role hierarchy level
-    is_system = Column(Boolean, default=False)  # System roles cannot be deleted
-    is_active = Column(Boolean, default=True, index=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC), index=True)
-    updated_at = Column(
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    name: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    level: Mapped[int] = mapped_column(Integer, default=50, index=True)  # Role hierarchy level
+    is_system: Mapped[bool] = mapped_column(Boolean, default=False)  # System roles cannot be deleted
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC), index=True)
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
     )
 
     # Relationships
-    users = relationship("UserModel", secondary=user_roles, back_populates="roles")
-    permissions = relationship(
-        "PermissionModel", secondary=role_permissions, back_populates="roles"
+    users: Mapped[List["UserModel"]] = relationship(
+        secondary=user_roles, back_populates="roles"
+    )
+    permissions: Mapped[List["PermissionModel"]] = relationship(
+        secondary=role_permissions, back_populates="roles"
     )
 
     # Indexes
@@ -320,20 +357,22 @@ class PermissionModel(Base):
 
     __tablename__ = "permissions"
 
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    name = Column(String(100), unique=True, nullable=False, index=True)
-    description = Column(Text)
-    resource = Column(String(50), index=True)  # e.g., 'agent', 'goals', 'actions'
-    action = Column(String(50), index=True)  # e.g., 'read', 'write', 'delete', 'admin'
-    is_system = Column(Boolean, default=False)  # System permissions
-    is_active = Column(Boolean, default=True, index=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC), index=True)
-    updated_at = Column(
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    resource: Mapped[str] = mapped_column(String(50), index=True)  # e.g., 'agent', 'goals', 'actions'
+    action: Mapped[str] = mapped_column(String(50), index=True)  # e.g., 'read', 'write', 'delete', 'admin'
+    is_system: Mapped[bool] = mapped_column(Boolean, default=False)  # System permissions
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC), index=True)
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
     )
 
     # Relationships
-    roles = relationship("RoleModel", secondary=role_permissions, back_populates="permissions")
+    roles: Mapped[List["RoleModel"]] = relationship(
+        secondary=role_permissions, back_populates="permissions"
+    )
 
     # Indexes
     __table_args__ = (
@@ -350,23 +389,23 @@ class UserSessionModel(Base):
 
     __tablename__ = "user_sessions"
 
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    user_id = Column(
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    session_token = Column(String(255), unique=True, nullable=False, index=True)
-    refresh_token = Column(String(255), unique=True, nullable=False, index=True)
-    device_info = Column(JSON, default=dict)
-    ip_address = Column(String(45))  # IPv6 compatible
-    user_agent = Column(Text)
-    is_active = Column(Boolean, default=True, index=True)
-    expires_at = Column(DateTime, nullable=False, index=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC), index=True)
-    last_accessed = Column(DateTime, default=lambda: datetime.now(UTC))
-    revoked_at = Column(DateTime, nullable=True)
+    session_token: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
+    refresh_token: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
+    device_info: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    ip_address: Mapped[Optional[str]] = mapped_column(String(45))  # IPv6 compatible
+    user_agent: Mapped[Optional[str]] = mapped_column(Text)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC), index=True)
+    last_accessed: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    revoked_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
     # Relationships
-    user = relationship("UserModel", back_populates="sessions")
+    user: Mapped["UserModel"] = relationship("UserModel", back_populates="sessions")
 
     # Indexes
     __table_args__ = (
@@ -383,20 +422,20 @@ class APITokenModel(Base):
 
     __tablename__ = "api_tokens"
 
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    user_id = Column(
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    name = Column(String(100), nullable=False)
-    token_hash = Column(String(255), unique=True, nullable=False, index=True)
-    token_prefix = Column(String(8), nullable=False)  # First 8 chars for identification
-    scopes = Column(JSON, default=list)  # API scopes/permissions
-    is_active = Column(Boolean, default=True, index=True)
-    expires_at = Column(DateTime, nullable=True, index=True)
-    last_used = Column(DateTime, nullable=True)
-    usage_count = Column(Integer, default=0)
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC), index=True)
-    updated_at = Column(
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
+    token_prefix: Mapped[str] = mapped_column(String(8), nullable=False)  # First 8 chars for identification
+    scopes: Mapped[List[str]] = mapped_column(JSON, default=list)  # API scopes/permissions
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, index=True)
+    last_used: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    usage_count: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC), index=True)
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
     )
 
@@ -416,21 +455,21 @@ class AuthSecurityEventModel(Base):
 
     __tablename__ = "security_events"
 
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    user_id = Column(
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id: Mapped[Optional[str]] = mapped_column(
         String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
     )
-    event_type = Column(String(50), nullable=False, index=True)  # login, logout, failed_login, etc.
-    severity = Column(String(20), default="info", index=True)  # info, warning, error, critical
-    description = Column(Text, nullable=False)
-    ip_address = Column(String(45))
-    user_agent = Column(Text)
-    event_metadata = Column("metadata", JSON, default=dict)
-    resolved = Column(Boolean, default=False, index=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC), index=True)
+    event_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)  # login, logout, failed_login, etc.
+    severity: Mapped[str] = mapped_column(String(20), default="info", index=True)  # info, warning, error, critical
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    ip_address: Mapped[Optional[str]] = mapped_column(String(45))
+    user_agent: Mapped[Optional[str]] = mapped_column(Text)
+    event_metadata: Mapped[Dict[str, Any]] = mapped_column("metadata", JSON, default=dict)
+    resolved: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC), index=True)
 
     # Relationship
-    user = relationship("UserModel", back_populates="audit_logs")
+    user: Mapped["UserModel"] = relationship("UserModel", back_populates="audit_logs")
 
     # Indexes
     __table_args__ = (
@@ -447,16 +486,16 @@ class PasswordResetModel(Base):
 
     __tablename__ = "password_resets"
 
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    user_id = Column(
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    token_hash = Column(String(255), unique=True, nullable=False, index=True)
-    email = Column(String(100), nullable=False, index=True)
-    expires_at = Column(DateTime, nullable=False, index=True)
-    used = Column(Boolean, default=False, index=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC), index=True)
-    used_at = Column(DateTime, nullable=True)
+    token_hash: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
+    email: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    used: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC), index=True)
+    used_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
     # Indexes
     __table_args__ = (
@@ -649,7 +688,7 @@ DEFAULT_ROLE_PERMISSIONS = {
 class SecurityContext:
     """Security context for authenticated requests."""
 
-    def __init__(self, user: UserModel, permissions: List[str], session_id: str = None):
+    def __init__(self, user: UserModel, permissions: List[str], session_id: Optional[str] = None):
         self.user = user
         self.permissions = permissions
         self.session_id = session_id
@@ -671,12 +710,12 @@ class SecurityContext:
         """Check if user has all specified permissions."""
         return all(p in self.permissions for p in permissions)
 
-    def require_permission(self, resource: str, action: str):
+    def require_permission(self, resource: str, action: str) -> None:
         """Require specific permission - raises exception if not granted."""
         if not self.has_permission(resource, action):
             raise PermissionError(f"Permission denied: {resource}.{action}")
 
-    def require_admin(self):
+    def require_admin(self) -> None:
         """Require admin privileges."""
         if not self.is_admin:
             raise PermissionError("Admin privileges required")

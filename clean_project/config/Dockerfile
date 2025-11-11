@@ -12,6 +12,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy project
 COPY . /app
+# Ensure lifecycle script is executable if present
+RUN chmod +x /app/graceful-shutdown.sh || true
 
 EXPOSE 8000
 

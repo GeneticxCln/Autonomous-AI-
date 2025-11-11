@@ -58,7 +58,7 @@ class Observation:
     result: Any
     timestamp: datetime = field(default_factory=datetime.now)
     feedback: str = ""
-    metrics: Dict[str, float] = field(default_factory=dict)
+    metrics: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass

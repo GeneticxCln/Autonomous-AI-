@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<testsuite errors="0" failures="1" name="mypy" skips="0" tests="1" time="0.977">
+  <testcase classname="mypy" file="mypy" line="1" name="mypy-py3_11-linux" time="0.977">
+    <failure message="mypy produced messages">src/agent_system/auth_setup.py:23: error: Function is missing a return type annotation  [no-untyped-def]
+src/agent_system/auth_setup.py:23: note: Use "-&gt; None" if function does not return a value
+src/agent_system/auth_setup.py:41: error: Call to untyped function "create_default_admin" in typed context  [no-untyped-call]
+src/agent_system/auth_setup.py:52: error: Call to untyped function "print_auth_info" in typed context  [no-untyped-call]
+src/agent_system/auth_setup.py:59: error: Function is missing a return type annotation  [no-untyped-def]
+src/agent_system/auth_setup.py:87: error: Function is missing a type annotation  [no-untyped-def]
+src/agent_system/auth_setup.py:118: error: Call to untyped function "setup_authentication_system" in typed context  [no-untyped-call]
+src/agent_system/ai_performance_monitor.py:37: error: Returning Any from function declared to return "float"  [no-any-return]
+src/agent_system/ai_performance_monitor.py:491: error: Unsupported target for indexed assignment ("Collection[Collection[str]]")  [index]
+src/agent_system/metadata_provider_manager.py:180: error: Function is missing a return type annotation  [no-untyped-def]
+src/agent_system/metadata_provider_manager.py:180: note: Use "-&gt; None" if function does not return a value
+src/agent_system/metadata_provider_manager.py:215: error: Returning Any from function declared to return "MetadataProviderConfig"  [no-any-return]
+src/agent_system/metadata_provider_manager.py:219: error: Call to untyped function "_require_session" in typed context  [no-untyped-call]
+src/agent_system/metadata_provider_manager.py:261: error: Call to untyped function "_require_session" in typed context  [no-untyped-call]
+src/agent_system/metadata_provider_manager.py:280: error: Unused "type: ignore" comment  [unused-ignore]
+src/agent_system/metadata_provider_manager.py:281: error: Unused "type: ignore" comment  [unused-ignore]
+src/agent_system/metadata_provider_manager.py:282: error: Unused "type: ignore" comment  [unused-ignore]
+src/agent_system/metadata_provider_manager.py:283: error: Unused "type: ignore" comment  [unused-ignore]
+src/agent_system/metadata_provider_manager.py:284: error: Unused "type: ignore" comment  [unused-ignore]
+src/agent_system/metadata_provider_manager.py:307: error: Call to untyped function "_require_session" in typed context  [no-untyped-call]
+src/agent_system/metadata_provider_manager.py:334: error: Call to untyped function "_require_session" in typed context  [no-untyped-call]
+src/agent_system/metadata_provider_manager.py:573: error: Unused "type: ignore" comment  [unused-ignore]
+src/agent_system/metadata_provider_manager.py:574: error: Unused "type: ignore" comment  [unused-ignore]
+src/agent_system/metadata_provider_manager.py:680: error: Unused "type: ignore" comment  [unused-ignore]
+src/agent_system/metadata_provider_manager.py:681: error: Unused "type: ignore" comment  [unused-ignore]
+src/agent_system/metadata_provider_manager.py:684: error: Returning Any from function declared to return "EnhancedPluginMetadata | None"  [no-any-return]
+src/agent_system/metadata_provider_manager.py:772: error: Function is missing a type annotation for one or more arguments  [no-untyped-def]
+src/agent_system/project_analyzer/specialization.py:70: error: Function is missing a return type annotation  [no-untyped-def]
+src/agent_system/project_analyzer/specialization.py:70: note: Use "-&gt; None" if function does not return a value
+src/agent_system/metadata_api_endpoints.py:86: error: Returning Any from function declared to return "MetadataProviderConfig"  [no-any-return]
+src/agent_system/project_analyzer/large_project_analyzer.py:55: error: Function is missing a type annotation for one or more arguments  [no-untyped-def]
+src/agent_system/project_analyzer/large_project_analyzer.py:67: error: Call to untyped function "DomainSpecializationLayer" in typed context  [no-untyped-call]
+src/agent_system/project_analyzer/large_project_analyzer.py:356: error: Function is missing a return type annotation  [no-untyped-def]
+src/agent_system/project_analyzer/large_project_analyzer.py:360: error: Function is missing a return type annotation  [no-untyped-def]
+src/agent_system/project_analyzer/stress_tester.py:140: error: Function is missing a return type annotation  [no-untyped-def]
+src/agent_system/project_analyzer/stress_tester.py:152: error: Function is missing a return type annotation  [no-untyped-def]
+src/agent_system/worker.py:181: error: Redundant cast to "Callable[[], Any]"  [redundant-cast]
+src/agent_system/worker.py:215: error: Redundant cast to "Callable[[], Any]"  [redundant-cast]</failure>
+  </testcase>
+</testsuite>

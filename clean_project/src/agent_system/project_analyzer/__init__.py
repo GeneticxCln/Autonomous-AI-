@@ -16,7 +16,7 @@ from .large_project_analyzer import (
 from .memory_guard import MemoryGuard, MemoryGuardConfig, MemoryGuardContext, memory_guard
 from .memory_profiler import MemoryProfiler, MemoryProfilerConfig, memory_profiler
 from .specialization import DomainSpecializationLayer, SpecializationPlan
-from .stress_tester import ProjectStressTester, StressTestResult, StressScenarioMetrics
+from .stress_tester import ProjectStressTester, StressScenarioMetrics, StressTestResult
 
 __all__ = [
     "ASTCache",

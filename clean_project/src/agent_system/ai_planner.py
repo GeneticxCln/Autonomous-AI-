@@ -5,14 +5,24 @@ AI-powered hierarchical planner with real intelligence.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from .models import Action, Goal, Plan
 
+# Import the global reasoning engine instance with a typing-friendly fallback.
+# We keep a local Optional-typed alias to satisfy mypy when the import is unavailable.
+if TYPE_CHECKING:  # pragma: no cover - type checkers only
+    from .reasoning_engine import ReasoningEngine
+
+_reasoning_engine: Optional["ReasoningEngine"] = None
 try:
-    from .reasoning_engine import reasoning_engine
-except ImportError:
-    reasoning_engine = None
+    from .reasoning_engine import reasoning_engine as _re
+    _reasoning_engine = _re
+except Exception:
+    _reasoning_engine = None
+
+# Module-level Optional reference used by the planner
+reasoning_engine: Optional["ReasoningEngine"] = _reasoning_engine
 
 logger = logging.getLogger(__name__)
 
@@ -20,12 +30,13 @@ logger = logging.getLogger(__name__)
 class AIPlanner:
     """AI-powered planner that uses reasoning engine for intelligent planning."""
 
-    def __init__(self):
+    def __init__(self) -> None:
+        # Hold an Optional reference to the global reasoning engine instance
         self.reasoning_engine = reasoning_engine
-        self.goal_cache = {}  # Cache analyzed goals
+        self.goal_cache: Dict[str, Any] = {}  # Cache analyzed goals
 
     def create_intelligent_plan(
-        self, goal: Goal, available_tools: List[str], context: Dict[str, Any] = None
+        self, goal: Goal, available_tools: List[str], context: Optional[Dict[str, Any]] = None
     ) -> Plan:
         """Create an intelligent plan using AI reasoning."""
 
@@ -68,8 +79,42 @@ class AIPlanner:
 
         return plan
 
+    def _create_simple_plan(self, goal: Goal, available_tools: List[str]) -> Plan:
+        """Create a simple plan when AI reasoning is not available."""
+        goal_lower = goal.description.lower()
+
+        if any(word in goal_lower for word in ["research", "find", "search"]):
+            action = Action(
+                id="simple_search",
+                name="search_information",
+                tool_name="web_search" if "web_search" in available_tools else available_tools[0],
+                parameters={"query": goal.description},
+                expected_outcome="information_found",
+                cost=0.3,
+            )
+        elif any(word in goal_lower for word in ["analyze", "process", "data"]):
+            action = Action(
+                id="simple_analysis",
+                name="analyze_data",
+                tool_name="file_reader" if "file_reader" in available_tools else available_tools[0],
+                parameters={"task": goal.description},
+                expected_outcome="analysis_completed",
+                cost=0.4,
+            )
+        else:
+            action = Action(
+                id="simple_task",
+                name="generic_task",
+                tool_name=("generic_tool" if "generic_tool" in available_tools else available_tools[0]),
+                parameters={"goal": goal.description},
+                expected_outcome="task_completed",
+                cost=0.5,
+            )
+
+        return Plan(goal_id=goal.id, actions=[action], estimated_cost=action.cost, confidence=0.5)
+
     def _optimize_actions_for_tools(
-        self, actions: List[Dict], available_tools: List[str]
+        self, actions: List[Dict[str, Any]], available_tools: List[str]
     ) -> List[Action]:
         """Optimize actions to match available tools."""
 
@@ -256,13 +301,13 @@ class AIHierarchicalPlanner(AIPlanner):
     """AI-powered hierarchical planner (drop-in replacement)."""
 
     def create_plan(
-        self, goal: Goal, available_tools: List[str], context: Dict[str, Any] = None
+        self, goal: Goal, available_tools: List[str], context: Optional[Dict[str, Any]] = None
     ) -> Plan:
         """Create plan using AI reasoning."""
         return self.create_intelligent_plan(goal, available_tools, context)
 
     def create_plan_with_fallback(
-        self, goal: Goal, available_tools: List[str], context: Dict[str, Any] = None
+        self, goal: Goal, available_tools: List[str], context: Optional[Dict[str, Any]] = None
     ) -> Plan:
         """Create plan with fallback strategies."""
         try:

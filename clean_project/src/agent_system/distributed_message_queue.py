@@ -6,19 +6,30 @@ Provides cross-node messaging with Redis backend and in-memory fallback.
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import logging
 import time
 import uuid
 from dataclasses import dataclass, field
 from enum import IntEnum
-from typing import Any, Dict, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
 
-from .cache_manager import Redis as RedisClient
 from .cache_manager import cache_manager
+
+if TYPE_CHECKING:  # pragma: no cover - type checking only
+    from redis.asyncio import Redis as RedisClient
+else:
+    RedisClient = Any
 from .config_simple import settings
 
 logger = logging.getLogger(__name__)
+
+
+async def _await_if_awaitable(value: Any) -> Any:
+    if inspect.isawaitable(value):
+        return await value
+    return value
 
 
 class MessagePriority(IntEnum):
@@ -128,7 +139,17 @@ class DistributedMessageQueue:
             return True
 
         if not cache_manager._is_connected:
-            await cache_manager.connect()
+            try:
+                await cache_manager.connect()
+            except Exception as exc:
+                # Fall back to in-memory backend when Redis is unavailable
+                self._using_fallback = True
+                self._is_initialized = True
+                logger.warning(
+                    "Redis unavailable for distributed queue: %s; using in-memory fallback",
+                    exc,
+                )
+                return True
 
         if cache_manager._is_connected and cache_manager.redis_client:
             self._redis = cache_manager.redis_client
@@ -136,6 +157,12 @@ class DistributedMessageQueue:
             self._is_initialized = True
             logger.info("Distributed message queue connected to Redis backend")
             return True
+
+        # If distributed is enabled, fail fast instead of falling back
+        if getattr(settings, "DISTRIBUTED_ENABLED", False):
+            raise RuntimeError(
+                "Distributed messaging requires Redis. Configure REDIS and ensure connectivity."
+            )
 
         self._using_fallback = True
         self._is_initialized = True
@@ -149,6 +176,12 @@ class DistributedMessageQueue:
 
     def _pending_key(self, queue: str) -> str:
         return f"{self.config.namespace}:{queue}:pending"
+
+    def _require_redis(self) -> RedisClient:
+        """Return initialized Redis client or raise."""
+        if self._redis is None:
+            raise RuntimeError("Redis backend not initialized")
+        return self._redis
 
     async def publish(
         self,
@@ -174,8 +207,11 @@ class DistributedMessageQueue:
         else:
             raw = json.dumps(envelope.to_dict(), default=str)
             key = self._queue_key(queue, priority)
-            await self._redis.rpush(key, raw)
-            await self._redis.expire(key, self.config.retention_seconds)
+            r = self._require_redis()
+            res1 = r.rpush(key, raw)
+            await _await_if_awaitable(res1)
+            res2 = r.expire(key, self.config.retention_seconds)
+            await _await_if_awaitable(res2)
 
         return envelope.message_id
 
@@ -202,7 +238,9 @@ class DistributedMessageQueue:
             )
         ]
 
-        result = await self._redis.blpop(keys, timeout=effective_timeout)
+        r = self._require_redis()
+        result = r.blpop(keys, timeout=effective_timeout)
+        result = await _await_if_awaitable(result)
         if not result:
             return None
 
@@ -222,7 +260,9 @@ class DistributedMessageQueue:
                 return pending.pop(message_id, None) is not None
 
         pending_key = self._pending_key(queue)
-        removed = await self._redis.hdel(pending_key, message_id)
+        r = self._require_redis()
+        removed_res = r.hdel(pending_key, message_id)
+        removed = await _await_if_awaitable(removed_res)
         return bool(removed)
 
     async def requeue_stale(self, queue: str) -> int:
@@ -238,7 +278,9 @@ class DistributedMessageQueue:
             return await self._requeue_fallback(queue)
 
         pending_key = self._pending_key(queue)
-        pending_messages = await self._redis.hgetall(pending_key)
+        r = self._require_redis()
+        pending_res = r.hgetall(pending_key)
+        pending_messages = await _await_if_awaitable(pending_res)
         if not pending_messages:
             return 0
 
@@ -253,11 +295,14 @@ class DistributedMessageQueue:
             data = entry.get("message", {})
             envelope = MessageEnvelope.from_dict(data)
             envelope.retries = entry.get("retries", envelope.retries) + 1
-            await self._redis.rpush(
+            r2 = self._require_redis()
+            res3 = r2.rpush(
                 self._queue_key(queue, envelope.priority),
                 json.dumps(envelope.to_dict(), default=str),
             )
-            await self._redis.hdel(pending_key, message_id)
+            await _await_if_awaitable(res3)
+            res4 = r2.hdel(pending_key, message_id)
+            await _await_if_awaitable(res4)
             requeued += 1
 
         if requeued:
@@ -278,10 +323,13 @@ class DistributedMessageQueue:
         counts = {}
         for priority in MessagePriority:
             key = self._queue_key(queue, priority)
-            counts[priority.name.lower()] = await self._redis.llen(key)
+            r = self._require_redis()
+            llen_res = r.llen(key)
+            counts[priority.name.lower()] = await _await_if_awaitable(llen_res)
 
-        pending = await self._redis.hlen(self._pending_key(queue))
-        counts["pending"] = pending
+        hlen_res = r.hlen(self._pending_key(queue))
+        pending_count = await _await_if_awaitable(hlen_res)
+        counts["pending"] = pending_count
         counts["backend"] = "redis"
         return counts
 
@@ -356,16 +404,21 @@ class DistributedMessageQueue:
             "visibility_deadline": time.time() + self.config.visibility_timeout,
             "retries": envelope.retries,
         }
-        await self._redis.hset(
+        r = self._require_redis()
+        hset_res = r.hset(
             self._pending_key(queue), envelope.message_id, json.dumps(entry, default=str)
         )
-        await self._redis.expire(self._pending_key(queue), self.config.retention_seconds)
+        await _await_if_awaitable(hset_res)
+        exp_res = r.expire(self._pending_key(queue), self.config.retention_seconds)
+        await _await_if_awaitable(exp_res)
 
     @staticmethod
     def _decode(value: Any) -> str:
         if isinstance(value, bytes):
-            return value.decode("utf-8")
-        return value
+            return value.decode("utf-8", errors="ignore")
+        if isinstance(value, str):
+            return value
+        return str(value)
 
 
 # Global queue instance used by the application

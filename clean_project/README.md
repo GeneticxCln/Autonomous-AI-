@@ -33,6 +33,10 @@ make install
 make dev
 ```
 
+### Core Dependencies
+
+The production runtime expects a running Redis instance (v6+) and the Python packages `redis`, `rq`, and `rq-scheduler`. These services power caching, distributed queues, and business metric persistence. Ensure Redis is reachable (`REDIS_URL`/`REDIS_HOST`) before starting the API or worker processes; startup will fail fast if the connection cannot be established.
+
 ### Basic Usage
 
 ```bash
@@ -135,10 +139,18 @@ MAX_CYCLES=100
 LOG_LEVEL=INFO
 USE_REAL_TOOLS=true
 
+# Strict mode (optional)
+# When enabled: embeddings must be available; rate limiting requires Redis (no in-memory fallback)
+STRICT_MODE=false
+
 # API keys (optional)
 OPENAI_API_KEY=your_key_here
 ANTHROPIC_API_KEY=your_key_here
 SERPAPI_KEY=your_key_here
+BING_SEARCH_KEY=your_key_here
+GOOGLE_SEARCH_KEY=your_key_here
+# Google Custom Search requires a CSE ID
+GOOGLE_CSE_ID=your_cse_id
 
 # Database
 DATABASE_URL=sqlite:///./agent.db
@@ -153,6 +165,31 @@ The agent supports both real and mock tools:
 - **Real tools**: Use actual APIs when keys are available
 - **Mock tools**: Fallback to simulated responses
 - **Auto-detection**: Automatically switches based on configuration
+
+#### Web Search Provider Selection
+- Configure provider order via `SEARCH_PROVIDER_ORDER` (comma-separated): `serpapi,bing,google`
+- Disable providers via `DISABLED_SEARCH_PROVIDERS`
+- Google Custom Search requires both `GOOGLE_SEARCH_KEY` and `GOOGLE_CSE_ID` (or `GOOGLE_SEARCH_CX`)
+
+In strict mode, web search will fail fast if no enabled providers are configured.
+
+## 🔐 RBAC Helpers
+
+- Grant a role to an existing user (admin has `system.write` by default):
+
+```bash
+python clean_project/scripts/grant_role.py --username <your-user> --role admin
+```
+
+- Default admin in development:
+  - Username: `admin`
+  - Password: `admin123` (override by setting `DEFAULT_ADMIN_PASSWORD`)
+
+Permissions of built-in roles:
+- admin: full access including `system.write` and `system.admin`
+- manager: elevated access including `system.write`
+- user: basic access
+- guest: read-only
 
 ## 📖 API Documentation
 
@@ -184,12 +221,40 @@ docker build -f config/Dockerfile -t agent-system .
 docker-compose -f config/docker-compose.yml up
 ```
 
+### Provider Configuration API
+
+Requires an authenticated token with `system.read`/`system.write`.
+
+```bash
+# Login to obtain token (replace credentials as necessary)
+TOKEN=$(curl -s -X POST http://localhost:8000/api/v1/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"admin","password":"admin123"}' | jq -r .data.access_token)
+
+# Get current provider configuration/status
+curl -s -H "Authorization: Bearer $TOKEN" \
+  http://localhost:8000/api/v1/system/providers/search-config | jq '.'
+
+# Update provider order/disable list
+curl -s -X PUT -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" \
+  -d '{"order":["serpapi","bing","google"],"disabled":["google"]}' \
+  http://localhost:8000/api/v1/system/providers/search-config | jq '.'
+```
+
+Make targets for convenience:
+- `make provider-show` – prints current configuration and status
+- `make provider-set-order ORDER=serpapi,bing,google` – sets provider order
+- `make provider-disable DISABLE=google` – disables providers (comma-separated)
+- `make grant-role USER=<user> ROLE=<admin|manager|user|guest>` – grant role to a user
+- `make bootstrap-check` – readiness check (DB, Redis, providers)
+
 ### Production Considerations
 - Set strong JWT secrets
 - Configure proper database
 - Enable rate limiting
 - Set up monitoring
 - Use HTTPS in production
+- Manage secrets via a dedicated store (AWS Secrets Manager, GCP Secret Manager, Vault, or Kubernetes Secrets) as outlined in [`docs/SECRET_MANAGEMENT.md`](docs/SECRET_MANAGEMENT.md)
 
 ### Monitoring & Observability
 - **Prometheus**: scrape the FastAPI `/metrics` endpoint (enabled when `ENABLE_METRICS=1`) for detailed system, cache, and AI-performance metrics including `agent_system_health_score`, `agent_decision_accuracy_ratio`, and `cache_hit_ratio`.

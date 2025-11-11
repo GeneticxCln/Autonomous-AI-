@@ -5,20 +5,32 @@ Intelligent action selector with real decision-making capabilities.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, TypedDict, cast
 
 from .models import Action, Goal
 
 logger = logging.getLogger(__name__)
 
 
+class _HistoryRecord(TypedDict):
+    total_attempts: int
+    successes: int
+    success_scores: List[float]
+
+
+class _GoalPattern(TypedDict):
+    actions: List[str]
+    score: float
+    timestamp: Optional[str]
+
+
 class IntelligentActionSelector:
     """AI-powered action selector that makes intelligent decisions."""
 
-    def __init__(self):
-        self.action_history = {}  # Track action performance
-        self.context_weights = {}  # Context-specific weights
-        self.goal_patterns = {}  # Learned goal patterns
+    def __init__(self) -> None:
+        self.action_history: Dict[str, _HistoryRecord] = {}  # Track action performance
+        self.context_weights: Dict[str, float] = {}  # Context-specific weights
+        self.goal_patterns: Dict[str, List[_GoalPattern]] = {}  # Learned goal patterns
 
     def select_action(
         self,
@@ -37,7 +49,7 @@ class IntelligentActionSelector:
         )
 
         # Score each action
-        scored_actions = []
+        scored_actions: List[Tuple[Action, float]] = []
         for action in available_actions:
             score = self._calculate_action_score(action, goal, context, completed_actions)
             scored_actions.append((action, score))
@@ -125,12 +137,12 @@ class IntelligentActionSelector:
         relevance = 0.5  # Base relevance
 
         # Check if action has been recently used
-        recent_actions = context.get("recent_actions", [])
+        recent_actions = cast(Sequence[str], context.get("recent_actions", []))
         if action.name in recent_actions:
             relevance -= 0.2  # Penalize repetition
 
         # Check context-specific preferences
-        context_type = context.get("context_type", "general")
+        context_type = cast(str, context.get("context_type", "general"))
 
         if context_type == "research" and action.name == "search_information":
             relevance += 0.4
@@ -141,7 +153,9 @@ class IntelligentActionSelector:
 
         # Check parameter relevance
         if action.parameters:
-            param_relevance = self._evaluate_parameter_relevance(action.parameters, context)
+            param_relevance = self._evaluate_parameter_relevance(
+                action.parameters, context
+            )
             relevance += param_relevance * 0.3
 
         return max(0.0, min(1.0, relevance))
@@ -155,18 +169,18 @@ class IntelligentActionSelector:
 
         # Check if parameters match context needs
         if "query" in parameters and "search_terms" in context:
-            common_terms = set(str(parameters["query"]).lower().split()) & set(
-                context["search_terms"]
-            )
+            search_terms = cast(Iterable[str], context.get("search_terms", []))
+            common_terms = set(str(parameters["query"]).lower().split()) & set(search_terms)
             if common_terms:
                 relevance += len(common_terms) / max(len(str(parameters["query"]).split()), 1)
 
         if "filepath" in parameters and "target_files" in context:
-            if parameters["filepath"] in context["target_files"]:
+            target_files = cast(Iterable[str], context.get("target_files", []))
+            if parameters["filepath"] in target_files:
                 relevance += 1.0
 
         if "code" in parameters and "code_context" in context:
-            if context["code_context"]:
+            if bool(context.get("code_context")):
                 relevance += 0.5
 
         return min(1.0, relevance)
@@ -180,14 +194,14 @@ class IntelligentActionSelector:
             history = self.action_history[action_key]
 
             # Calculate success rate
-            total_attempts = history.get("total_attempts", 0)
-            successes = history.get("successes", 0)
+            total_attempts: int = history["total_attempts"]
+            successes: int = history["successes"]
 
             if total_attempts > 0:
                 success_rate = successes / total_attempts
 
                 # Calculate average success score
-                scores = history.get("success_scores", [])
+                scores: List[float] = history["success_scores"]
                 avg_score = sum(scores) / len(scores) if scores else 0.5
 
                 # Combine success rate and score
@@ -282,7 +296,7 @@ class IntelligentActionSelector:
 
     def _store_selection_rationale(
         self, action: Action, goal: Goal, context: Dict[str, Any], score: float
-    ):
+    ) -> None:
         """Store rationale for action selection for learning."""
 
         _rationale = {
@@ -310,7 +324,7 @@ class IntelligentActionSelector:
 
         self.action_history[action_key]["total_attempts"] += 1
 
-    def update_action_performance(self, action: Action, success: bool, success_score: float):
+    def update_action_performance(self, action: Action, success: bool, success_score: float) -> None:
         """Update performance tracking for an action."""
 
         action_key = f"{action.tool_name}_{action.name}"
@@ -328,7 +342,7 @@ class IntelligentActionSelector:
 
             logger.debug(f"Updated performance for {action_key}: {success}, score: {success_score}")
 
-    def update_action_score(self, action: Action, success_score: float):
+    def update_action_score(self, action: Action, success_score: float) -> None:
         """Compatibility method required by agent.py"""
         success = success_score > 0.5
         self.update_action_performance(action, success, success_score)
@@ -342,7 +356,7 @@ class IntelligentActionSelector:
         if not available_actions:
             return []
 
-        recommendations = []
+        recommendations: List[Tuple[Action, float]] = []
 
         for action in available_actions:
             alignment = self._calculate_goal_alignment(action, goal)
@@ -361,7 +375,7 @@ class IntelligentActionSelector:
 
     def learn_from_success_pattern(
         self, goal: Goal, successful_actions: List[Action], success_score: float
-    ):
+    ) -> None:
         """Learn from successful action sequences."""
 
         if success_score > 0.7:  # Only learn from highly successful episodes
@@ -371,7 +385,7 @@ class IntelligentActionSelector:
                 self.goal_patterns[goal_key] = []
 
             # Store successful pattern
-            pattern = {
+            pattern: _GoalPattern = {
                 "actions": [action.name for action in successful_actions],
                 "score": success_score,
                 "timestamp": goal.created_at.isoformat() if hasattr(goal, "created_at") else None,

@@ -1,0 +1,4 @@
+# Canonical runtime dependencies are maintained in the clean_project tree.
+# Expose them at the repository root so `pip install -r requirements.txt`
+# (as documented in the README) installs FastAPI, SQLAlchemy, and the rest.
+-r clean_project/config/requirements.txt

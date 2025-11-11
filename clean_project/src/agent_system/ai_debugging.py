@@ -190,8 +190,8 @@ class AIDebugger:
 
     def log_action_selection(
         self,
-        available_actions: List[Dict],
-        selected_action: Optional[Dict],
+        available_actions: List[Dict[str, Any]],
+        selected_action: Optional[Dict[str, Any]],
         selection_criteria: Dict[str, Any],
         execution_time_ms: float = 0.0,
     ) -> str:
@@ -297,7 +297,7 @@ class AIDebugger:
     def log_planning(
         self,
         goal: Dict[str, Any],
-        generated_plan: List[Dict],
+        generated_plan: List[Dict[str, Any]],
         planning_method: str,
         execution_time_ms: float = 0.0,
     ) -> str:
@@ -529,7 +529,7 @@ class AIDebugger:
         else:
             return f"Made a {decision_type} decision with {decision.confidence:.0%} confidence"
 
-    def generate_debug_report(self, session_id: str = None) -> Dict[str, Any]:
+    def generate_debug_report(self, session_id: Optional[str] = None) -> Dict[str, Any]:
         """Generate a comprehensive debug report."""
         if session_id:
             # Filter decisions by session
@@ -539,7 +539,7 @@ class AIDebugger:
 
         # Calculate statistics
         total_decisions = len(session_decisions)
-        decisions_by_type = {}
+        decisions_by_type: Dict[str, int] = {}
         confidence_distribution = {
             "very_high": 0,
             "high": 0,
@@ -638,7 +638,7 @@ class AIDebugger:
 
         return insights
 
-    def save_debug_data(self, filepath: str = None) -> str:
+    def save_debug_data(self, filepath: Optional[Path | str] = None) -> str:
         """Save all debug data to a file."""
         if not filepath:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")

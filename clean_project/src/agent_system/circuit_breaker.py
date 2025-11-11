@@ -12,7 +12,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import aiohttp
 import requests
@@ -36,8 +36,8 @@ class CircuitBreakerConfig:
     recovery_timeout: float = 60.0  # Seconds to wait before trying half-open
     success_threshold: int = 3  # Successes needed to close circuit from half-open
     timeout: float = 30.0  # Request timeout in seconds
-    expected_exception: type = Exception  # Exception that should trigger circuit breaker
-    monitor_callback: Optional[Callable] = None  # Callback for state changes
+    expected_exception: Union[type[BaseException], Tuple[type[BaseException], ...]] = Exception
+    monitor_callback: Optional[Callable[..., Any]] = None  # Callback for state changes
 
 
 @dataclass
@@ -53,7 +53,7 @@ class CircuitBreakerStats:
     last_success_time: Optional[datetime] = None
     last_state_change: Optional[datetime] = None
 
-    def add_request(self, success: bool, rejected: bool = False):
+    def add_request(self, success: bool, rejected: bool = False) -> None:
         """Add request statistics."""
         self.total_requests += 1
         if rejected:
@@ -67,7 +67,7 @@ class CircuitBreakerStats:
         if success and not rejected:
             self.last_success_time = datetime.now()
 
-    def add_state_change(self, old_state: CircuitState, new_state: CircuitState, reason: str = ""):
+    def add_state_change(self, old_state: CircuitState, new_state: CircuitState, reason: str = "") -> None:
         """Add state change event."""
         self.state_changes.append(
             {
@@ -109,8 +109,8 @@ class CircuitBreaker:
         self.stats = CircuitBreakerStats()
         self._failure_count = 0
         self._success_count = 0
-        self._last_failure_time = None
-        self._lock = asyncio.Lock() if asyncio.iscoroutinefunction(self.call) else None
+        self._last_failure_time: Optional[float] = None
+        self._lock: asyncio.Lock = asyncio.Lock()
 
     def _should_attempt_reset(self) -> bool:
         """Check if circuit breaker should attempt reset."""
@@ -129,7 +129,7 @@ class CircuitBreaker:
         else:  # HALF_OPEN
             return True
 
-    def _record_success(self):
+    def _record_success(self) -> None:
         """Record a successful operation."""
         self._failure_count = 0
 
@@ -138,7 +138,7 @@ class CircuitBreaker:
             if self._success_count >= self.config.success_threshold:
                 self._change_state(CircuitState.CLOSED, "Recovery successful")
 
-    def _record_failure(self):
+    def _record_failure(self) -> None:
         """Record a failed operation."""
         self._failure_count += 1
         self._last_failure_time = time.time()
@@ -154,7 +154,7 @@ class CircuitBreaker:
         elif self.state == CircuitState.HALF_OPEN:
             self._change_state(CircuitState.OPEN, "Failed during recovery attempt")
 
-    def _change_state(self, new_state: CircuitState, reason: str = ""):
+    def _change_state(self, new_state: CircuitState, reason: str = "") -> None:
         """Change circuit breaker state."""
         old_state = self.state
         self.state = new_state
@@ -183,7 +183,7 @@ class CircuitBreaker:
             f"Circuit breaker '{self.name}': {old_state.value} → {new_state.value} ({reason})"
         )
 
-    async def call_async(self, func: Callable, *args, fallback_result: Any = None, **kwargs) -> Any:
+    async def call_async(self, func: Callable[..., Any], *args: Any, fallback_result: Any = None, **kwargs: Any) -> Any:
         """
         Execute function with circuit breaker protection (async version).
 
@@ -243,7 +243,7 @@ class CircuitBreaker:
                 self.stats.add_request(success=False, rejected=False)
                 return fallback_result
 
-    def call_sync(self, func: Callable, *args, fallback_result: Any = None, **kwargs) -> Any:
+    def call_sync(self, func: Callable[..., Any], *args: Any, fallback_result: Any = None, **kwargs: Any) -> Any:
         """
         Execute function with circuit breaker protection (sync version).
 
@@ -314,7 +314,7 @@ class CircuitBreaker:
             },
         }
 
-    def reset(self):
+    def reset(self) -> None:
         """Manually reset circuit breaker to closed state."""
         self._change_state(CircuitState.CLOSED, "Manual reset")
         self._failure_count = 0
@@ -326,7 +326,7 @@ class CircuitBreaker:
 class CircuitBreakerRegistry:
     """Registry for managing multiple circuit breakers."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._breakers: Dict[str, CircuitBreaker] = {}
         self._global_config = CircuitBreakerConfig()
 
@@ -341,7 +341,7 @@ class CircuitBreakerRegistry:
         """Get circuit breaker by name."""
         return self._breakers.get(name)
 
-    def remove(self, name: str):
+    def remove(self, name: str) -> None:
         """Remove circuit breaker."""
         if name in self._breakers:
             del self._breakers[name]
@@ -351,12 +351,12 @@ class CircuitBreakerRegistry:
         """Get status of all circuit breakers."""
         return {name: breaker.get_status() for name, breaker in self._breakers.items()}
 
-    def reset_all(self):
+    def reset_all(self) -> None:
         """Reset all circuit breakers."""
         for breaker in self._breakers.values():
             breaker.reset()
 
-    def set_global_config(self, config: CircuitBreakerConfig):
+    def set_global_config(self, config: CircuitBreakerConfig) -> None:
         """Set global default configuration."""
         self._global_config = config
 
@@ -368,7 +368,7 @@ circuit_registry = CircuitBreakerRegistry()
 # Decorator for automatic circuit breaker protection
 def circuit_breaker(
     name: str, config: Optional[CircuitBreakerConfig] = None, fallback_result: Any = None
-):
+) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """
     Decorator to add circuit breaker protection to functions.
 
@@ -378,14 +378,14 @@ def circuit_breaker(
         fallback_result: Default result when circuit is open
     """
 
-    def decorator(func):
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         # Register circuit breaker
         breaker = circuit_registry.register(name, config)
 
         if asyncio.iscoroutinefunction(func):
 
             @functools.wraps(func)
-            async def async_wrapper(*args, **kwargs):
+            async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
                 return await breaker.call_async(
                     func, *args, fallback_result=fallback_result, **kwargs
                 )
@@ -394,7 +394,7 @@ def circuit_breaker(
         else:
 
             @functools.wraps(func)
-            def sync_wrapper(*args, **kwargs):
+            def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
                 return breaker.call_sync(func, *args, fallback_result=fallback_result, **kwargs)
 
             return sync_wrapper
@@ -414,27 +414,26 @@ class APIRequestCircuitBreaker:
         if expected_status_codes is None:
             expected_status_codes = [500, 502, 503, 504, 429]
 
-        def api_exception_handler(response):
-            """Handle HTTP response errors."""
-            if response.status in expected_status_codes:
-                return True
-            if response.status >= 500:
-                return True
-            return False
+        # Expected exceptions for API calls
+        expected_exc: Tuple[type[BaseException], ...] = (
+            aiohttp.ClientError,
+            requests.RequestException,
+            asyncio.TimeoutError,
+        )
 
         config = CircuitBreakerConfig(
             failure_threshold=3,
             recovery_timeout=30.0,
             success_threshold=2,
             timeout=10.0,
-            expected_exception=api_exception_handler,
+            expected_exception=expected_exc,
         )
 
         return circuit_registry.register(name, config)
 
     @staticmethod
     @circuit_breaker("http_requests")
-    async def make_request(url: str, method: str = "GET", **kwargs) -> requests.Response:
+    async def make_request(url: str, method: str = "GET", **kwargs: Any) -> aiohttp.ClientResponse:
         """Make HTTP request with circuit breaker protection."""
         async with aiohttp.ClientSession() as session:
             async with session.request(method, url, **kwargs) as response:
@@ -442,7 +441,7 @@ class APIRequestCircuitBreaker:
 
     @staticmethod
     @circuit_breaker("requests_lib")
-    def make_sync_request(url: str, method: str = "GET", **kwargs) -> requests.Response:
+    def make_sync_request(url: str, method: str = "GET", **kwargs: Any) -> requests.Response:
         """Make synchronous HTTP request with circuit breaker protection."""
         return requests.request(method, url, **kwargs)
 
@@ -465,13 +464,13 @@ class DatabaseCircuitBreaker:
 
     @staticmethod
     @circuit_breaker("database_operations", fallback_result=None)
-    def execute_query(query_func: Callable, *args, **kwargs):
+    def execute_query(query_func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         """Execute database query with circuit breaker protection."""
         return query_func(*args, **kwargs)
 
 
 # Initialize default circuit breakers
-def initialize_circuit_breakers():
+def initialize_circuit_breakers() -> None:
     """Initialize default circuit breakers for common services."""
     # API circuit breakers
     circuit_registry.register(

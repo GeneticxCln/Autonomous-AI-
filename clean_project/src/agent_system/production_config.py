@@ -29,12 +29,16 @@ class ConfigError(Exception):
 class ProductionConfig:
     """Production-ready configuration management."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.environment = self.get_env("ENVIRONMENT", "development")
         self.debug = self.get_env("API_DEBUG", "false").lower() == "true"
 
         # Database Configuration
         self.database_url = self.get_env("DATABASE_URL", "sqlite:///./agent_enterprise.db")
+        self.db_pool_size = int(self.get_env("DB_POOL_SIZE", "10"))
+        self.db_max_overflow = int(self.get_env("DB_MAX_OVERFLOW", "20"))
+        self.db_pool_timeout = int(self.get_env("DB_POOL_TIMEOUT", "30"))
+        self.db_pool_recycle = int(self.get_env("DB_POOL_RECYCLE", "3600"))
 
         # JWT Security (CRITICAL)
         self.jwt_secret_key = self._get_jwt_secret()
@@ -58,14 +62,19 @@ class ProductionConfig:
         self.account_lockout_duration = int(self.get_env("ACCOUNT_LOCKOUT_DURATION", "30"))
 
         # CORS Configuration
-        cors_origins = self.get_env("CORS_ORIGINS", "*")
+        cors_origins = self.get_env(
+            "CORS_ORIGINS",
+            "https://agent.yourdomain.com,https://app.agent.yourdomain.com,http://localhost:3000",
+        )
         if cors_origins == "*":
             self.cors_origins = ["*"]
         else:
             self.cors_origins = [origin.strip() for origin in cors_origins.split(",")]
 
         # Allowed hosts for TrustedHost middleware (comma-separated)
-        allowed_hosts = self.get_env("ALLOWED_HOSTS", "localhost,127.0.0.1")
+        allowed_hosts = self.get_env(
+            "ALLOWED_HOSTS", "localhost,127.0.0.1,api.agent.yourdomain.com"
+        )
         self.allowed_hosts = [h.strip() for h in allowed_hosts.split(",") if h.strip()]
 
         # Security Features
@@ -105,16 +114,17 @@ class ProductionConfig:
         # Validate critical settings
         self._validate_config()
 
-    def _get_env(self, key: str, default: str = None) -> str:
+    def _get_env(self, key: str, default: str | None = None) -> str:
         """Get environment variable with validation."""
         value = os.getenv(key, default)
         if value is None:
             raise ConfigError(f"Required environment variable {key} is not set")
         return value
 
-    def get_env(self, key: str, default: str = None) -> str:
-        """Get environment variable safely."""
-        return os.getenv(key, default)
+    def get_env(self, key: str, default: str = "") -> str:
+        """Get environment variable safely (never returns None)."""
+        val = os.getenv(key, default)
+        return val if val is not None else default
 
     def _get_jwt_secret(self) -> str:
         """Get JWT secret with validation and generation fallback."""
@@ -138,7 +148,7 @@ class ProductionConfig:
 
         return secret
 
-    def _validate_config(self):
+    def _validate_config(self) -> None:
         """Validate critical configuration settings."""
         errors = []
 
@@ -187,20 +197,10 @@ class ProductionConfig:
         return self.environment.lower() == "testing"
 
     def get_database_url(self) -> str:
-        """Get database URL with environment-specific settings."""
-        if self.database_url.startswith("postgresql://") or self.database_url.startswith(
-            "postgres://"
-        ):
-            # Add connection pool settings for PostgreSQL
-            url = self.database_url.rstrip("/")
-            if "?" not in url:
-                url += "?"
-            else:
-                url += "&"
-
-            url += "pool_size=20&max_overflow=30&pool_pre_ping=True&pool_recycle=3600"
-            return url
-
+        """Get database URL with driver normalization when needed."""
+        if self.database_url.startswith("postgres://"):
+            # Normalize deprecated postgres:// scheme for SQLAlchemy
+            return self.database_url.replace("postgres://", "postgresql://", 1)
         return self.database_url
 
     def get_cors_origins(self) -> List[str]:
@@ -242,7 +242,7 @@ def get_config() -> ProductionConfig:
 config = get_config()
 
 
-def validate_production_config():
+def validate_production_config() -> None:
     """Validate that production configuration is secure."""
     if config.is_production():
         print("🔐 Validating production configuration...")

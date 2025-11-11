@@ -10,7 +10,7 @@ import hashlib
 import json
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional
 
@@ -47,9 +47,9 @@ class CacheEntry:
     accessed_at: float
     access_count: int = 0
     ttl: Optional[float] = None
-    tags: List[str] = None
+    tags: List[str] = field(default_factory=list)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.tags is None:
             self.tags = []
 
@@ -59,7 +59,7 @@ class CacheEntry:
             return False
         return (time.time() - self.created_at) > self.ttl
 
-    def touch(self):
+    def touch(self) -> None:
         """Update access metadata."""
         self.accessed_at = time.time()
         self.access_count += 1
@@ -81,9 +81,9 @@ class MultiLevelCache:
         self.l3_ttl = l3_ttl
         self.eviction_policy = eviction_policy
         self._lock = asyncio.Lock()
-        self._warmup_tasks: List[asyncio.Task] = []
+        self._warmup_tasks: List[asyncio.Task[None]] = []
 
-    def _make_key(self, prefix: str, *args, **kwargs) -> str:
+    def _make_key(self, prefix: str, *args: Any, **kwargs: Any) -> str:
         """Generate a cache key."""
         key_data = {
             "prefix": prefix,
@@ -114,7 +114,7 @@ class MultiLevelCache:
         if level is None or level == CacheLevel.L2:
             try:
                 if cache_manager._is_connected:
-                    value = await cache_manager.get(key)
+                    value = await cache_manager.get("mlcache", key)
                     if value is not None:
                         # Promote to L1
                         await self._set_l1(key, value, ttl=self.l2_ttl)
@@ -132,7 +132,7 @@ class MultiLevelCache:
         ttl: Optional[float] = None,
         level: CacheLevel = CacheLevel.L1,
         tags: Optional[List[str]] = None,
-    ):
+    ) -> None:
         """Set value in cache at specified level."""
         if level == CacheLevel.L1:
             await self._set_l1(key, value, ttl=ttl, tags=tags)
@@ -141,7 +141,7 @@ class MultiLevelCache:
 
     async def _set_l1(
         self, key: str, value: Any, ttl: Optional[float] = None, tags: Optional[List[str]] = None
-    ):
+    ) -> None:
         """Set value in L1 cache."""
         async with self._lock:
             # Evict if needed
@@ -159,15 +159,15 @@ class MultiLevelCache:
             )
             self.l1_cache[key] = entry
 
-    async def _set_l2(self, key: str, value: Any, ttl: float):
+    async def _set_l2(self, key: str, value: Any, ttl: float) -> None:
         """Set value in L2 cache (Redis)."""
         try:
             if cache_manager._is_connected:
-                await cache_manager.set(key, value, ttl=int(ttl))
+                await cache_manager.set("mlcache", key, value, ttl=int(ttl))
         except Exception as e:
             logger.debug(f"Failed to set L2 cache for {key}: {e}")
 
-    async def _evict_l1(self):
+    async def _evict_l1(self) -> None:
         """Evict entries from L1 cache based on policy."""
         if not self.l1_cache:
             return
@@ -190,7 +190,7 @@ class MultiLevelCache:
             key_to_remove = sorted_entries[0][0]
             del self.l1_cache[key_to_remove]
 
-    async def invalidate(self, pattern: Optional[str] = None, tags: Optional[List[str]] = None):
+    async def invalidate(self, pattern: Optional[str] = None, tags: Optional[List[str]] = None) -> None:
         """Invalidate cache entries by pattern or tags."""
         async with self._lock:
             if pattern:
@@ -214,17 +214,17 @@ class MultiLevelCache:
             try:
                 if pattern:
                     # Redis pattern matching
-                    await cache_manager.delete_pattern(pattern)
+                    await cache_manager.delete_pattern("mlcache", pattern)
             except Exception as e:
                 logger.debug(f"Failed to invalidate L2 cache: {e}")
 
-    async def warmup(self, warmup_funcs: List[Callable[[], Any]]):
+    async def warmup(self, warmup_funcs: List[Callable[[], Any]]) -> None:
         """Warm up cache with pre-computed values."""
         for func in warmup_funcs:
             task = asyncio.create_task(self._warmup_task(func))
             self._warmup_tasks.append(task)
 
-    async def _warmup_task(self, func: Callable[[], Any]):
+    async def _warmup_task(self, func: Callable[[], Any]) -> None:
         """Execute a warmup function and cache results."""
         try:
             if asyncio.iscoroutinefunction(func):

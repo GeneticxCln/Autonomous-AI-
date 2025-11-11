@@ -9,7 +9,7 @@ import json
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional, TypedDict
 
 from .database_models import db_manager
 from .database_persistence import db_persistence
@@ -20,12 +20,20 @@ logger = logging.getLogger(__name__)
 STATE_DIR = Path(".agent_state")
 
 
+class MigrationStats(TypedDict):
+    files_processed: int
+    records_migrated: int
+    errors: int
+    start_time: Optional[datetime]
+    end_time: Optional[datetime]
+
+
 class DataMigration:
     """Handles migration from JSON files to database."""
 
     def __init__(self, state_dir: Path = STATE_DIR):
         self.state_dir = state_dir
-        self.migration_stats = {
+        self.migration_stats: MigrationStats = {
             "files_processed": 0,
             "records_migrated": 0,
             "errors": 0,
@@ -52,9 +60,13 @@ class DataMigration:
             self.migrate_observations()
 
             self.migration_stats["end_time"] = datetime.now()
-            duration = self.migration_stats["end_time"] - self.migration_stats["start_time"]
-
-            logger.info(f"Data migration completed in {duration.total_seconds():.2f} seconds")
+            start = self.migration_stats["start_time"]
+            end = self.migration_stats["end_time"]
+            if start is not None and end is not None:
+                duration = (end - start).total_seconds()
+                logger.info(f"Data migration completed in {duration:.2f} seconds")
+            else:
+                logger.info("Data migration completed")
             return self.get_migration_report()
 
         except Exception as e:
@@ -136,12 +148,16 @@ class DataMigration:
                 data = json.load(f)
 
             # Handle different memory formats
-            memories = []
+            memories: list[Any] = []
             if isinstance(data, list):
                 memories = data
             elif isinstance(data, dict):
                 # Handle different possible structures
-                memories = data.get("memories", data.get("episodic_memory", []))
+                maybe_mem = data.get("memories", data.get("episodic_memory", []))
+                if isinstance(maybe_mem, list):
+                    memories = maybe_mem
+                else:
+                    memories = []
 
             # Save to database
             db_persistence.save_memory(memories)
@@ -162,33 +178,36 @@ class DataMigration:
 
     def migrate_goals(self) -> None:
         """Migrate goals data."""
-        file_path = self.state_dir / "goals.json"
+        primary = self.state_dir / "goals.json"
 
-        if not file_path.exists():
+        path: Optional[Path] = primary if primary.exists() else None
+        if path is None:
             # Try alternative locations
             alt_paths = [self.state_dir / "goal_manager.json", self.state_dir / "goals_data.json"]
-
-            file_path = None
             for alt_path in alt_paths:
                 if alt_path.exists():
-                    file_path = alt_path
+                    path = alt_path
                     break
 
-        if not file_path or not file_path.exists():
+        if path is None or not path.exists():
             logger.warning("Goals file not found")
             return
 
         try:
-            with open(file_path, encoding="utf-8") as f:
+            with open(path, encoding="utf-8") as f:
                 data = json.load(f)
 
             # Handle different goal formats
-            goals = []
+            goals: list[Any] = []
             if isinstance(data, list):
                 goals = data
             elif isinstance(data, dict):
                 # Handle different possible structures
-                goals = data.get("goals", data.get("goal_list", data.get("items", [])))
+                maybe_goals = data.get("goals", data.get("goal_list", data.get("items", [])))
+                if isinstance(maybe_goals, list):
+                    goals = maybe_goals
+                else:
+                    goals = []
 
             # Ensure each goal has required fields
             for goal in goals:
@@ -204,8 +223,8 @@ class DataMigration:
             logger.info(f"Migrated {len(goals)} goals")
 
             # Create backup
-            backup_path = file_path.with_suffix(".json.backup")
-            file_path.rename(backup_path)
+            backup_path = path.with_suffix(".json.backup")
+            path.rename(backup_path)
             logger.info(f"Backed up original file to: {backup_path}")
 
         except Exception as e:
@@ -225,12 +244,16 @@ class DataMigration:
                 data = json.load(f)
 
             # Handle different action formats
-            actions = []
+            actions: list[Any] = []
             if isinstance(data, list):
                 actions = data
             elif isinstance(data, dict):
                 # Handle different possible structures
-                actions = data.get("actions", data.get("action_list", data.get("items", [])))
+                maybe_actions = data.get("actions", data.get("action_list", data.get("items", [])))
+                if isinstance(maybe_actions, list):
+                    actions = maybe_actions
+                else:
+                    actions = []
 
             # Ensure each action has required fields
             for action in actions:
@@ -267,14 +290,18 @@ class DataMigration:
                 data = json.load(f)
 
             # Handle different observation formats
-            observations = []
+            observations: list[Any] = []
             if isinstance(data, list):
                 observations = data
             elif isinstance(data, dict):
                 # Handle different possible structures
-                observations = data.get(
+                maybe_obs = data.get(
                     "observations", data.get("observation_list", data.get("items", []))
                 )
+                if isinstance(maybe_obs, list):
+                    observations = maybe_obs
+                else:
+                    observations = []
 
             # Ensure each observation has required fields
             for obs in observations:

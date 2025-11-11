@@ -15,7 +15,7 @@ class ObservationAnalyzer:
         self, observation: Observation, expected_outcome: str, goal: Goal
     ) -> Dict[str, Any]:
         """Analyze an observation and determine if replanning is needed."""
-        analysis = {
+        analysis: Dict[str, Any] = {
             "success": observation.status == ActionStatus.SUCCESS,
             "outcome_match": self._check_outcome_match(observation, expected_outcome),
             "goal_progress": 0.0,

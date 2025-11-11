@@ -7,7 +7,7 @@ import logging
 import time
 from collections import OrderedDict
 from dataclasses import dataclass, field
-from typing import List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from ..unified_config import unified_config
 
@@ -33,7 +33,7 @@ class DiffSummary:
     change_ratio: float
     baseline_available: bool
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> Dict[str, Any]:
         return {
             "changed_lines": self.changed_lines,
             "additions": self.additions,
@@ -65,7 +65,7 @@ class DiffAwareContextCache:
             self._cache.move_to_end(key)
         return entry
 
-    def put(self, key: str, context: DiffContext):
+    def put(self, key: str, context: DiffContext) -> None:
         self._cache[key] = context
         self._cache.move_to_end(key)
         if len(self._cache) > self.max_entries:
@@ -105,7 +105,7 @@ class IncrementalParseSystem:
         version: str,
         language: str,
         content: str,
-    ):
+    ) -> DiffContext:
         context = DiffContext(
             content_hash=content_hash,
             version=version,
@@ -129,7 +129,7 @@ class IncrementalParseSystem:
 
         return DeltaParseDecision(False, False, "full_reparse")
 
-    def compare_ast_versions(self, old_ast, new_ast) -> dict:
+    def compare_ast_versions(self, old_ast: Any, new_ast: Any) -> Dict[str, Any]:
         if old_ast is None or new_ast is None:
             return {"comparable": False}
 
@@ -149,7 +149,7 @@ class IncrementalParseSystem:
             "delta_ratio": delta,
         }
 
-    def _safe_dump(self, ast_obj) -> str:
+    def _safe_dump(self, ast_obj: Any) -> str:
         try:
             import ast
 

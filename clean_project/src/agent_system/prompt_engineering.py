@@ -12,7 +12,7 @@ import statistics
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -91,10 +91,10 @@ class PromptPerformance:
 class PromptOptimizer:
     """AI-powered prompt optimization engine."""
 
-    def __init__(self):
-        self.templates = {}
-        self.performance_data = {}
-        self.optimization_strategies = {
+    def __init__(self) -> None:
+        self.templates: Dict[str, PromptTemplate] = {}
+        self.performance_data: Dict[str, PromptPerformance] = {}
+        self.optimization_strategies: Dict[str, Callable[[str], str]] = {
             "clarity": self._optimize_for_clarity,
             "specificity": self._optimize_for_specificity,
             "context": self._optimize_for_context,
@@ -206,13 +206,13 @@ Constraints and Guidelines:
 class PromptEngineeringManager:
     """Comprehensive prompt engineering and management system."""
 
-    def __init__(self):
-        self.templates = {}
-        self.performance_data = {}
+    def __init__(self) -> None:
+        self.templates: Dict[str, PromptTemplate] = {}
+        self.performance_data: Dict[str, PromptPerformance] = {}
         self.optimizer = PromptOptimizer()
         self._initialize_default_templates()
 
-    def _initialize_default_templates(self):
+    def _initialize_default_templates(self) -> None:
         """Initialize with comprehensive default templates."""
         default_templates = [
             PromptTemplate(
@@ -375,7 +375,7 @@ Ensure customers achieve their desired outcomes while maximizing customer lifeti
         for template in default_templates:
             self.add_template(template)
 
-    def add_template(self, template: PromptTemplate):
+    def add_template(self, template: PromptTemplate) -> None:
         """Add a new prompt template."""
         self.templates[template.template_id] = template
         self.performance_data[template.template_id] = PromptPerformance(
@@ -508,7 +508,7 @@ Ensure customers achieve their desired outcomes while maximizing customer lifeti
         quality_score: Optional[float] = None,
         user_satisfaction: Optional[float] = None,
         error_type: Optional[str] = None,
-    ):
+    ) -> None:
         """Record performance metrics for a prompt."""
         if template_id not in self.performance_data:
             self.performance_data[template_id] = PromptPerformance(template_id=template_id)
