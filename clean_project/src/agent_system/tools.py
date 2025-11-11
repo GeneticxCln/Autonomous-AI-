@@ -9,9 +9,15 @@ import time
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Awaitable, Dict, Tuple
+from typing import Any, Awaitable, Coroutine, Dict, Tuple, cast
 
 from .models import Action, ActionStatus, Observation
+from .real_tools import (
+    RealCodeExecutorTool,
+    RealFileReaderTool,
+    RealFileWriterTool,
+    RealWebSearchTool,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -25,69 +31,21 @@ class Tool(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def execute(self, **kwargs) -> Tuple[ActionStatus, Any] | Awaitable[Tuple[ActionStatus, Any]]:
+    def execute(self, **kwargs: Any) -> Tuple[ActionStatus, Any] | Awaitable[Tuple[ActionStatus, Any]]:
         raise NotImplementedError
 
 
-class WebSearchTool(Tool):
-    """Mock web search tool."""
-
-    @property
-    def name(self) -> str:
-        return "web_search"
-
-    def execute(self, **kwargs) -> Tuple[ActionStatus, Any]:
-        query = kwargs.get("query", "")
-        logger.info("Executing web search: %s", query)
-        return ActionStatus.SUCCESS, {"results": [f"Result for: {query}"], "count": 1}
+# Backwards-compatible aliases to real tool implementations (avoid subclassing Any in type-checking)
+WebSearchTool = RealWebSearchTool
 
 
-class FileReaderTool(Tool):
-    """Mock file reader tool."""
-
-    @property
-    def name(self) -> str:
-        return "file_reader"
-
-    def execute(self, **kwargs) -> Tuple[ActionStatus, Any]:
-        filepath = kwargs.get("filepath", "")
-        logger.info("Reading file (mock): %s", filepath)
-        return ActionStatus.SUCCESS, {
-            "content": f"Contents of {filepath} (mock)",
-            "filepath": filepath,
-        }
+FileReaderTool = RealFileReaderTool
 
 
-class FileWriterTool(Tool):
-    """Mock file writer tool."""
-
-    @property
-    def name(self) -> str:
-        return "file_writer"
-
-    def execute(self, **kwargs) -> Tuple[ActionStatus, Any]:
-        filepath = kwargs.get("filepath", "")
-        content = kwargs.get("content", "")
-        fmt = kwargs.get("format", "text")
-        logger.info("Writing file (mock): %s", filepath)
-        return ActionStatus.SUCCESS, {
-            "filepath": filepath,
-            "bytes_written": len(str(content).encode("utf-8")),
-            "format": fmt,
-            "note": "Mock write; no file created",
-        }
+FileWriterTool = RealFileWriterTool
 
 
-class CodeExecutorTool(Tool):
-    """Mock code executor tool."""
-
-    @property
-    def name(self) -> str:
-        return "code_executor"
-
-    def execute(self, **kwargs) -> Tuple[ActionStatus, Any]:
-        logger.info("Executing code")
-        return ActionStatus.SUCCESS, {"output": "Code executed successfully"}
+CodeExecutorTool = RealCodeExecutorTool
 
 
 class ShellTool(Tool):
@@ -104,7 +62,7 @@ class ShellTool(Tool):
 
         return bool(re.fullmatch(r"[A-Za-z0-9_\-\./]+", token))
 
-    def execute(self, **kwargs) -> Tuple[ActionStatus, Any]:
+    def execute(self, **kwargs: Any) -> Tuple[ActionStatus, Any]:
         import subprocess
 
         from .config_simple import settings, validate_file_path
@@ -150,7 +108,7 @@ class CodeSearchTool(Tool):
     def name(self) -> str:
         return "code_search"
 
-    def execute(self, **kwargs) -> Tuple[ActionStatus, Any]:
+    def execute(self, **kwargs: Any) -> Tuple[ActionStatus, Any]:
         import fnmatch
         import os
         import re
@@ -222,7 +180,7 @@ class EditFileTool(Tool):
     def name(self) -> str:
         return "edit_file"
 
-    def execute(self, **kwargs) -> Tuple[ActionStatus, Any]:
+    def execute(self, **kwargs: Any) -> Tuple[ActionStatus, Any]:
         import hashlib
         import json
         import time
@@ -286,7 +244,7 @@ class RestoreBackupTool(Tool):
     def name(self) -> str:
         return "restore_backup"
 
-    def execute(self, **kwargs) -> Tuple[ActionStatus, Any]:
+    def execute(self, **kwargs: Any) -> Tuple[ActionStatus, Any]:
         import json
         from pathlib import Path
 
@@ -338,7 +296,7 @@ class ReplaceInFilesTool(Tool):
     def name(self) -> str:
         return "replace_in_files"
 
-    def execute(self, **kwargs) -> Tuple[ActionStatus, Any]:
+    def execute(self, **kwargs: Any) -> Tuple[ActionStatus, Any]:
         import fnmatch
         import hashlib
         import json
@@ -442,7 +400,7 @@ class GitTool(Tool):
 
         return bool(re.fullmatch(r"[A-Za-z0-9._/\-]+", tok))
 
-    def execute(self, **kwargs) -> Tuple[ActionStatus, Any]:
+    def execute(self, **kwargs: Any) -> Tuple[ActionStatus, Any]:
         import subprocess
 
         from .config_simple import settings
@@ -491,7 +449,7 @@ class TestTool(Tool):
     def name(self) -> str:
         return "tests"
 
-    def execute(self, **kwargs) -> Tuple[ActionStatus, Any]:
+    def execute(self, **kwargs: Any) -> Tuple[ActionStatus, Any]:
         import subprocess
 
         from .config_simple import settings
@@ -523,7 +481,7 @@ class FormatTool(Tool):
     def name(self) -> str:
         return "format"
 
-    def execute(self, **kwargs) -> Tuple[ActionStatus, Any]:
+    def execute(self, **kwargs: Any) -> Tuple[ActionStatus, Any]:
         import subprocess
 
         from .config_simple import settings, validate_file_path
@@ -556,7 +514,7 @@ class LintTool(Tool):
     def name(self) -> str:
         return "lint"
 
-    def execute(self, **kwargs) -> Tuple[ActionStatus, Any]:
+    def execute(self, **kwargs: Any) -> Tuple[ActionStatus, Any]:
         import subprocess
 
         from .config_simple import settings, validate_file_path
@@ -589,7 +547,7 @@ class GenericTool(Tool):
     def name(self) -> str:
         return "generic_tool"
 
-    def execute(self, **kwargs) -> Tuple[ActionStatus, Any]:
+    def execute(self, **kwargs: Any) -> Tuple[ActionStatus, Any]:
         action_name = kwargs.get("action") or kwargs.get("goal", "generic_task")
         logger.info("Executing generic action handler for: %s", action_name)
         return ActionStatus.SUCCESS, {"status": f"Completed generic action for {action_name}"}
@@ -598,7 +556,7 @@ class GenericTool(Tool):
 class ToolRegistry:
     """Manages available tools and handles execution with retry logic."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.tools: Dict[str, Tool] = {}
         self.tool_stats: Dict[str, Dict[str, int]] = defaultdict(
             lambda: {"success": 0, "failure": 0, "total": 0}
@@ -618,7 +576,7 @@ class ToolRegistry:
         )
         atexit.register(self._executor.shutdown, False)
 
-    def register_tool(self, tool: Tool):
+    def register_tool(self, tool: Tool) -> None:
         """Register a tool."""
         self.tools[tool.name] = tool
         logger.info("Registered tool: %s", tool.name)
@@ -649,7 +607,7 @@ class ToolRegistry:
             attempts += 1
 
             try:
-                status, result = tool.execute(**action.parameters)
+                status, result = self._invoke_tool_sync(tool, action.parameters)
 
                 self._update_tool_stats(tool.name, status)
 
@@ -827,7 +785,7 @@ class ToolRegistry:
         if inspect.isawaitable(result):
             result = await result
 
-        return result
+        return cast(Tuple[ActionStatus, Any], result)
 
     def _update_tool_stats(self, tool_name: str, status: ActionStatus) -> None:
         stats = self.tool_stats[tool_name]
@@ -857,3 +815,23 @@ class ToolRegistry:
                 "failures": data["failure"],
             }
         return stats
+
+    def _invoke_tool_sync(self, tool: Tool, parameters: Dict[str, Any]) -> Tuple[ActionStatus, Any]:
+        """Synchronous wrapper to invoke a tool that may be async or sync."""
+        res = tool.execute(**parameters)
+        if inspect.isawaitable(res):
+            # Try to run coroutine safely
+            try:
+                # If no loop is running, run directly
+                return asyncio.run(cast(Coroutine[Any, Any, Tuple[ActionStatus, Any]], res))
+            except RuntimeError:
+                # Event loop already running; execute in a worker thread with its own loop
+                from concurrent.futures import ThreadPoolExecutor as _TPE
+
+                def _run() -> Tuple[ActionStatus, Any]:
+                    return asyncio.run(cast(Coroutine[Any, Any, Tuple[ActionStatus, Any]], res))
+
+                with _TPE(max_workers=1) as ex:
+                    fut = ex.submit(_run)
+                    return fut.result()
+        return res

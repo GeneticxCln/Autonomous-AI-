@@ -10,7 +10,7 @@ import time
 from collections import deque
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any, Deque, Dict, List, Optional
 
 import psutil
 
@@ -51,11 +51,11 @@ class HealthMetrics:
 class SystemHealthMonitor:
     """Monitors overall system health."""
 
-    def __init__(self):
-        self.health_history = deque(maxlen=100)
-        self.last_check = 0
-        self.check_interval = 30  # seconds
-        self.component_weights = {
+    def __init__(self) -> None:
+        self.health_history: Deque[HealthMetrics] = deque(maxlen=100)
+        self.last_check: float = 0.0
+        self.check_interval: int = 30  # seconds
+        self.component_weights: Dict[str, float] = {
             "ai_performance": 0.25,
             "memory_optimization": 0.20,
             "security_validation": 0.20,
@@ -403,7 +403,7 @@ class SystemHealthMonitor:
         else:
             return "critical"
 
-    def export_health_report(self, filepath: str = None) -> str:
+    def export_health_report(self, filepath: Optional[str] = None) -> str:
         """Export comprehensive health report to file."""
         if not filepath:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -427,6 +427,7 @@ class SystemHealthMonitor:
 
         except Exception as e:
             logger.error(f"Failed to export health report: {e}")
+            return ""
             return ""
 
 

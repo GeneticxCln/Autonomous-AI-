@@ -67,6 +67,12 @@ class APIConfig:
     requests_per_minute: int = 60
     api_key_rotation_days: int = 30
 
+    # Web search provider selection
+    search_provider_order: List[str] = field(
+        default_factory=lambda: ["serpapi", "bing", "google"]
+    )
+    disabled_search_providers: List[str] = field(default_factory=list)
+
 
 @dataclass
 class SecurityConfig:
@@ -174,6 +180,8 @@ class UnifiedConfig:
 
     def __init__(self, config_file: Optional[str] = None):
         self.config_file = config_file or ".agent_config.json"
+        # Global strict mode toggle
+        self.strict_mode: bool = os.getenv("STRICT_MODE", "false").lower() == "true"
 
         # Initialize configuration sections
         self.agent = AgentConfig()
@@ -220,119 +228,130 @@ class UnifiedConfig:
     def load_from_env(self) -> None:
         """Load configuration from environment variables."""
         # Agent settings
-        if os.getenv("AGENT_MAX_CYCLES"):
-            self.agent.max_cycles = int(os.getenv("AGENT_MAX_CYCLES"))
-        if os.getenv("AGENT_MAX_CONCURRENT_GOALS"):
-            self.agent.max_concurrent_goals = int(os.getenv("AGENT_MAX_CONCURRENT_GOALS"))
-        if os.getenv("AGENT_ENABLE_LEARNING"):
-            self.agent.enable_cross_session_learning = (
-                os.getenv("AGENT_ENABLE_LEARNING").lower() == "true"
-            )
+        v = os.getenv("AGENT_MAX_CYCLES")
+        if v is not None:
+            self.agent.max_cycles = int(v)
+        v = os.getenv("AGENT_MAX_CONCURRENT_GOALS")
+        if v is not None:
+            self.agent.max_concurrent_goals = int(v)
+        v = os.getenv("AGENT_ENABLE_LEARNING")
+        if v is not None:
+            self.agent.enable_cross_session_learning = v.lower() == "true"
 
         # Tool settings
-        if os.getenv("TOOL_TIMEOUT"):
-            self.tools.timeout_seconds = int(os.getenv("TOOL_TIMEOUT"))
-        if os.getenv("TOOL_MAX_RETRIES"):
-            self.tools.max_retries = int(os.getenv("TOOL_MAX_RETRIES"))
+        v = os.getenv("TOOL_TIMEOUT")
+        if v is not None:
+            self.tools.timeout_seconds = int(v)
+        v = os.getenv("TOOL_MAX_RETRIES")
+        if v is not None:
+            self.tools.max_retries = int(v)
 
         # API settings
         self.api.serpapi_key = os.getenv("SERPAPI_KEY")
         self.api.openai_api_key = os.getenv("OPENAI_API_KEY")
         self.api.anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
+        self.api.bing_search_key = os.getenv("BING_SEARCH_KEY")
+        self.api.google_search_key = os.getenv("GOOGLE_SEARCH_KEY")
+        v = os.getenv("SEARCH_PROVIDER_ORDER")
+        if v is not None:
+            self.api.search_provider_order = [p.strip().lower() for p in v.split(",") if p.strip()]
+        v = os.getenv("DISABLED_SEARCH_PROVIDERS")
+        if v is not None:
+            self.api.disabled_search_providers = [p.strip().lower() for p in v.split(",") if p.strip()]
 
         # Security settings
-        if os.getenv("SECRET_KEY"):
-            self.security.secret_key = os.getenv("SECRET_KEY")
-        if os.getenv("ENABLE_SANDBOX"):
-            self.security.enable_sandbox = os.getenv("ENABLE_SANDBOX").lower() == "true"
+        v = os.getenv("SECRET_KEY")
+        if v is not None:
+            self.security.secret_key = v
+        v = os.getenv("ENABLE_SANDBOX")
+        if v is not None:
+            self.security.enable_sandbox = v.lower() == "true"
 
         # Logging settings
-        if os.getenv("LOG_LEVEL"):
-            self.logging.level = os.getenv("LOG_LEVEL")
+        v = os.getenv("LOG_LEVEL")
+        if v is not None:
+            self.logging.level = v
 
         # AI settings
-        if os.getenv("ENABLE_SEMANTIC_SIMILARITY"):
-            self.ai.enable_semantic_similarity = (
-                os.getenv("ENABLE_SEMANTIC_SIMILARITY").lower() == "true"
-            )
+        v = os.getenv("ENABLE_SEMANTIC_SIMILARITY")
+        if v is not None:
+            self.ai.enable_semantic_similarity = v.lower() == "true"
 
         # Distributed settings
-        if os.getenv("DISTRIBUTED_ENABLED"):
-            self.distributed.enabled = os.getenv("DISTRIBUTED_ENABLED").lower() == "true"
-        if os.getenv("DISTRIBUTED_CLUSTER_NAME"):
-            self.distributed.cluster_name = os.getenv("DISTRIBUTED_CLUSTER_NAME")
-        if os.getenv("DISTRIBUTED_NODE_ID"):
-            self.distributed.node_id = os.getenv("DISTRIBUTED_NODE_ID")
-        if os.getenv("DISTRIBUTED_SERVICE_NAMESPACE"):
-            self.distributed.service_namespace = os.getenv("DISTRIBUTED_SERVICE_NAMESPACE")
-        if os.getenv("DISTRIBUTED_MESSAGE_NAMESPACE"):
-            self.distributed.message_namespace = os.getenv("DISTRIBUTED_MESSAGE_NAMESPACE")
-        if os.getenv("DISTRIBUTED_STATE_NAMESPACE"):
-            self.distributed.state_namespace = os.getenv("DISTRIBUTED_STATE_NAMESPACE")
-        if os.getenv("DISTRIBUTED_HEARTBEAT_INTERVAL"):
-            self.distributed.heartbeat_interval_seconds = int(
-                os.getenv("DISTRIBUTED_HEARTBEAT_INTERVAL")
-            )
-        if os.getenv("DISTRIBUTED_SERVICE_TTL"):
-            self.distributed.service_ttl_seconds = int(os.getenv("DISTRIBUTED_SERVICE_TTL"))
-        if os.getenv("DISTRIBUTED_VISIBILITY_TIMEOUT"):
-            self.distributed.visibility_timeout_seconds = int(
-                os.getenv("DISTRIBUTED_VISIBILITY_TIMEOUT")
-            )
-        if os.getenv("DISTRIBUTED_QUEUE_POLL_INTERVAL"):
-            self.distributed.queue_poll_interval_seconds = int(
-                os.getenv("DISTRIBUTED_QUEUE_POLL_INTERVAL")
-            )
-        if os.getenv("DISTRIBUTED_MESSAGE_BACKEND"):
-            self.distributed.message_backend = os.getenv("DISTRIBUTED_MESSAGE_BACKEND")
-        if os.getenv("DISTRIBUTED_DISCOVERY_BACKEND"):
-            self.distributed.discovery_backend = os.getenv("DISTRIBUTED_DISCOVERY_BACKEND")
+        v = os.getenv("DISTRIBUTED_ENABLED")
+        if v is not None:
+            self.distributed.enabled = v.lower() == "true"
+        v = os.getenv("STRICT_MODE")
+        if v is not None:
+            self.strict_mode = v.lower() == "true"
+        v = os.getenv("DISTRIBUTED_CLUSTER_NAME")
+        if v is not None:
+            self.distributed.cluster_name = v
+        v = os.getenv("DISTRIBUTED_NODE_ID")
+        if v is not None:
+            self.distributed.node_id = v
+        v = os.getenv("DISTRIBUTED_SERVICE_NAMESPACE")
+        if v is not None:
+            self.distributed.service_namespace = v
+        v = os.getenv("DISTRIBUTED_MESSAGE_NAMESPACE")
+        if v is not None:
+            self.distributed.message_namespace = v
+        v = os.getenv("DISTRIBUTED_STATE_NAMESPACE")
+        if v is not None:
+            self.distributed.state_namespace = v
+        v = os.getenv("DISTRIBUTED_HEARTBEAT_INTERVAL")
+        if v is not None:
+            self.distributed.heartbeat_interval_seconds = int(v)
+        v = os.getenv("DISTRIBUTED_SERVICE_TTL")
+        if v is not None:
+            self.distributed.service_ttl_seconds = int(v)
+        v = os.getenv("DISTRIBUTED_VISIBILITY_TIMEOUT")
+        if v is not None:
+            self.distributed.visibility_timeout_seconds = int(v)
+        v = os.getenv("DISTRIBUTED_QUEUE_POLL_INTERVAL")
+        if v is not None:
+            self.distributed.queue_poll_interval_seconds = int(v)
+        v = os.getenv("DISTRIBUTED_MESSAGE_BACKEND")
+        if v is not None:
+            self.distributed.message_backend = v
+        v = os.getenv("DISTRIBUTED_DISCOVERY_BACKEND")
+        if v is not None:
+            self.distributed.discovery_backend = v
 
         # Project analysis settings
-        if os.getenv("PROJECT_ANALYSIS_AST_CACHE_ENTRIES"):
-            self.project_analysis.ast_cache_entries = int(
-                os.getenv("PROJECT_ANALYSIS_AST_CACHE_ENTRIES")
-            )
-        if os.getenv("PROJECT_ANALYSIS_AST_CACHE_MAX_MB"):
-            self.project_analysis.ast_cache_max_mb = int(
-                os.getenv("PROJECT_ANALYSIS_AST_CACHE_MAX_MB")
-            )
-        if os.getenv("PROJECT_ANALYSIS_AST_CACHE_TTL_SECONDS"):
-            self.project_analysis.ast_cache_ttl_seconds = int(
-                os.getenv("PROJECT_ANALYSIS_AST_CACHE_TTL_SECONDS")
-            )
-        if os.getenv("PROJECT_ANALYSIS_MEMORY_SOFT_LIMIT_MB"):
-            self.project_analysis.memory_soft_limit_mb = int(
-                os.getenv("PROJECT_ANALYSIS_MEMORY_SOFT_LIMIT_MB")
-            )
-        if os.getenv("PROJECT_ANALYSIS_MEMORY_HARD_LIMIT_MB"):
-            self.project_analysis.memory_hard_limit_mb = int(
-                os.getenv("PROJECT_ANALYSIS_MEMORY_HARD_LIMIT_MB")
-            )
-        if os.getenv("PROJECT_ANALYSIS_MEMORY_PRESSURE_THRESHOLD"):
-            self.project_analysis.memory_pressure_threshold = float(
-                os.getenv("PROJECT_ANALYSIS_MEMORY_PRESSURE_THRESHOLD")
-            )
-        if os.getenv("PROJECT_ANALYSIS_PROFILER_ENABLED"):
-            self.project_analysis.profiler_enabled = (
-                os.getenv("PROJECT_ANALYSIS_PROFILER_ENABLED").lower() == "true"
-            )
-        if os.getenv("PROJECT_ANALYSIS_DEFAULT_LANGUAGE"):
-            self.project_analysis.default_language = os.getenv(
-                "PROJECT_ANALYSIS_DEFAULT_LANGUAGE"
-            )
-        if os.getenv("PROJECT_ANALYSIS_MAX_PARALLEL_PARSE_TASKS"):
-            self.project_analysis.max_parallel_parse_tasks = int(
-                os.getenv("PROJECT_ANALYSIS_MAX_PARALLEL_PARSE_TASKS")
-            )
-        if os.getenv("PROJECT_ANALYSIS_DIFF_SAMPLE_WINDOW"):
-            self.project_analysis.diff_sample_window = int(
-                os.getenv("PROJECT_ANALYSIS_DIFF_SAMPLE_WINDOW")
-            )
-        if os.getenv("PROJECT_ANALYSIS_DELTA_CHANGE_RATIO_THRESHOLD"):
-            self.project_analysis.delta_change_ratio_threshold = float(
-                os.getenv("PROJECT_ANALYSIS_DELTA_CHANGE_RATIO_THRESHOLD")
-            )
+        v = os.getenv("PROJECT_ANALYSIS_AST_CACHE_ENTRIES")
+        if v is not None:
+            self.project_analysis.ast_cache_entries = int(v)
+        v = os.getenv("PROJECT_ANALYSIS_AST_CACHE_MAX_MB")
+        if v is not None:
+            self.project_analysis.ast_cache_max_mb = int(v)
+        v = os.getenv("PROJECT_ANALYSIS_AST_CACHE_TTL_SECONDS")
+        if v is not None:
+            self.project_analysis.ast_cache_ttl_seconds = int(v)
+        v = os.getenv("PROJECT_ANALYSIS_MEMORY_SOFT_LIMIT_MB")
+        if v is not None:
+            self.project_analysis.memory_soft_limit_mb = int(v)
+        v = os.getenv("PROJECT_ANALYSIS_MEMORY_HARD_LIMIT_MB")
+        if v is not None:
+            self.project_analysis.memory_hard_limit_mb = int(v)
+        v = os.getenv("PROJECT_ANALYSIS_MEMORY_PRESSURE_THRESHOLD")
+        if v is not None:
+            self.project_analysis.memory_pressure_threshold = float(v)
+        v = os.getenv("PROJECT_ANALYSIS_PROFILER_ENABLED")
+        if v is not None:
+            self.project_analysis.profiler_enabled = v.lower() == "true"
+        v = os.getenv("PROJECT_ANALYSIS_DEFAULT_LANGUAGE")
+        if v is not None:
+            self.project_analysis.default_language = v
+        v = os.getenv("PROJECT_ANALYSIS_MAX_PARALLEL_PARSE_TASKS")
+        if v is not None:
+            self.project_analysis.max_parallel_parse_tasks = int(v)
+        v = os.getenv("PROJECT_ANALYSIS_DIFF_SAMPLE_WINDOW")
+        if v is not None:
+            self.project_analysis.diff_sample_window = int(v)
+        v = os.getenv("PROJECT_ANALYSIS_DELTA_CHANGE_RATIO_THRESHOLD")
+        if v is not None:
+            self.project_analysis.delta_change_ratio_threshold = float(v)
 
     def save_to_file(self) -> None:
         """Save current configuration to file."""
@@ -355,9 +374,9 @@ class UnifiedConfig:
         except Exception as e:
             logger.error(f"Failed to save configuration: {e}")
 
-    def _dataclass_to_dict(self, obj) -> Dict[str, Any]:
+    def _dataclass_to_dict(self, obj: Any) -> Dict[str, Any]:
         """Convert dataclass to dictionary."""
-        result = {}
+        result: Dict[str, Any] = {}
         for field_name, field_value in obj.__dataclass_fields__.items():
             value = getattr(obj, field_name)
             if isinstance(value, (str, int, float, bool, list, dict)) or value is None:
@@ -383,6 +402,14 @@ class UnifiedConfig:
         # Validate security config
         if self.security.max_memory_mb <= 0:
             raise ValueError("max_memory_mb must be positive")
+        environment = os.getenv("ENVIRONMENT", "development").lower()
+        if environment == "production":
+            if self.security.secret_key == "change-this-in-production":
+                raise ValueError("SECRET_KEY must be set via environment for production deployments")
+            if len(self.security.secret_key) < 32:
+                raise ValueError("SECRET_KEY must be at least 32 characters long in production")
+        elif self.security.secret_key == "change-this-in-production":
+            logger.warning("Using default SECRET_KEY outside production; set SECRET_KEY to avoid reuse.")
 
         # Validate AI config
         if not 0 <= self.ai.similarity_threshold <= 1:
@@ -418,6 +445,13 @@ class UnifiedConfig:
             raise ValueError("diff_sample_window must be positive")
         if not 0 < self.project_analysis.delta_change_ratio_threshold < 1:
             raise ValueError("delta_change_ratio_threshold must be between 0 and 1")
+
+        # Critical environment validations
+        if os.getenv("DISTRIBUTED_ENABLED", "false").lower() == "true":
+            if not os.getenv("REDIS_URL") and not os.getenv("REDIS_HOST"):
+                raise ValueError(
+                    "Distributed mode requires Redis configuration (set REDIS_URL or REDIS_HOST/PORT)"
+                )
 
     def get_api_key(self, provider: str) -> Optional[str]:
         """Get API key for a specific provider."""
@@ -467,8 +501,12 @@ class UnifiedConfig:
             },
             "api": {
                 "serpapi_key": "your_serpapi_key_here",
+                "bing_search_key": "your_bing_key_here",
+                "google_search_key": "your_google_key_here",
                 "openai_api_key": "your_openai_key_here",
                 "default_llm_model": "gpt-3.5-turbo",
+                "search_provider_order": ["serpapi", "bing", "google"],
+                "disabled_search_providers": [],
             },
             "security": {
                 "secret_key": "change-this-in-production",

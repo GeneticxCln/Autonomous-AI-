@@ -54,14 +54,16 @@ class PerformanceTracker:
 
     def __init__(self, max_history: int = 1000):
         self.max_history = max_history
-        self.metrics_history: Dict[str, deque] = defaultdict(lambda: deque(maxlen=max_history))
+        self.metrics_history: Dict[str, deque[PerformanceMetric]] = defaultdict(
+            lambda: deque(maxlen=max_history)
+        )
         self.snapshots: List[PerformanceSnapshot] = []
-        self.current_metrics: Dict[str, float] = {}
+        self.current_metrics: Dict[str, List[float]] = {}
         self.start_time = datetime.now()
-        self.performance_data = {}
-        self.memory_hotspots: deque = deque(maxlen=200)
+        self.performance_data: Dict[str, int] = {}
+        self.memory_hotspots: deque[Dict[str, Any]] = deque(maxlen=200)
 
-    def track_response_time(self, operation: str, duration: float, success: bool = True):
+    def track_response_time(self, operation: str, duration: float, success: bool = True) -> None:
         """Track response time for an operation."""
         metric_name = f"response_time_{operation}"
         self._record_metric(
@@ -79,7 +81,7 @@ class PerformanceTracker:
             if len(self.current_metrics[metric_name]) > 10:
                 self.current_metrics[metric_name] = self.current_metrics[metric_name][-10:]
 
-    def track_success_rate(self, operation: str, successful: bool, total_attempts: int = 1):
+    def track_success_rate(self, operation: str, successful: bool, total_attempts: int = 1) -> None:
         """Track success rate for an operation."""
         metric_name = f"success_rate_{operation}"
         success_key = f"{operation}_successes"
@@ -109,7 +111,7 @@ class PerformanceTracker:
                 "percentage",
             )
 
-    def track_resource_usage(self, cpu_percent: float, memory_mb: float, disk_usage: float):
+    def track_resource_usage(self, cpu_percent: float, memory_mb: float, disk_usage: float) -> None:
         """Track system resource usage."""
         self._record_metric("cpu_usage", cpu_percent, {}, "percentage")
         self._record_metric("memory_usage", memory_mb, {}, "megabytes")
@@ -117,7 +119,7 @@ class PerformanceTracker:
 
     def track_task_completion(
         self, task_type: str, duration: float, quality_score: Optional[float] = None
-    ):
+    ) -> None:
         """Track task completion metrics."""
         self._record_metric(
             f"task_duration_{task_type}",
@@ -140,24 +142,25 @@ class PerformanceTracker:
         bytes_used: float,
         duration_ms: float,
         metadata: Optional[Dict[str, Any]] = None,
-    ):
+    ) -> None:
         """Record localized memory pressure information for hotspot analysis."""
+        meta_dict: Dict[str, Any] = dict(metadata or {})
         hotspot = {
             "label": label,
             "bytes_used": bytes_used,
             "duration_ms": duration_ms,
-            "metadata": metadata or {},
+            "metadata": meta_dict,
             "timestamp": datetime.now().isoformat(),
         }
         self.memory_hotspots.append(hotspot)
         self._record_metric(
             f"memory_hotspot_{label}",
             bytes_used,
-            {**hotspot["metadata"], "duration_ms": duration_ms},
+            {**meta_dict, "duration_ms": duration_ms},
             "bytes",
         )
 
-    def track_user_satisfaction(self, rating: float, context: Dict[str, Any] = None):
+    def track_user_satisfaction(self, rating: float, context: Optional[Dict[str, Any]] = None) -> None:
         """Track user satisfaction ratings."""
         self._record_metric("user_satisfaction", rating, context or {}, "rating")
 
@@ -166,7 +169,7 @@ class PerformanceTracker:
         now = datetime.now()
         uptime = (now - self.start_time).total_seconds()
 
-        summary = {
+        summary: Dict[str, Any] = {
             "uptime_seconds": uptime,
             "uptime_hours": uptime / 3600,
             "timestamp": now.isoformat(),
@@ -249,13 +252,12 @@ class PerformanceTracker:
         # Check response times
         response_metrics = [k for k in self.current_metrics.keys() if "response_time" in k]
         if response_metrics:
-            avg_response_time = statistics.mean(
-                [
-                    self._get_latest_value(metric)
-                    for metric in response_metrics
-                    if self._get_latest_value(metric) is not None
-                ]
-            )
+            vals: List[float] = []
+            for metric in response_metrics:
+                v = self._get_latest_value(metric)
+                if v is not None:
+                    vals.append(v)
+            avg_response_time = statistics.mean(vals) if vals else 0.0
             if avg_response_time > 2.0:  # > 2 seconds
                 health_score -= 20
                 health_factors["response_time"] = "poor"
@@ -268,13 +270,12 @@ class PerformanceTracker:
         # Check success rates
         success_metrics = [k for k in self.current_metrics.keys() if "success_rate" in k]
         if success_metrics:
-            avg_success_rate = statistics.mean(
-                [
-                    self._get_latest_value(metric)
-                    for metric in success_metrics
-                    if self._get_latest_value(metric) is not None
-                ]
-            )
+            svals: List[float] = []
+            for metric in success_metrics:
+                v = self._get_latest_value(metric)
+                if v is not None:
+                    svals.append(v)
+            avg_success_rate = statistics.mean(svals) if svals else 1.0
             if avg_success_rate < 0.8:  # < 80%
                 health_score -= 25
                 health_factors["success_rate"] = "poor"
@@ -285,7 +286,9 @@ class PerformanceTracker:
                 health_factors["success_rate"] = "good"
 
         # Check user satisfaction
-        satisfaction_values = self.metrics_history.get("user_satisfaction", [])
+        satisfaction_values: List[PerformanceMetric] = list(
+            self.metrics_history.get("user_satisfaction", deque())
+        )
         if satisfaction_values:
             avg_satisfaction = statistics.mean([m.value for m in satisfaction_values])
             if avg_satisfaction < 3.0:  # < 3/5
@@ -315,12 +318,16 @@ class PerformanceTracker:
         }
 
     def take_snapshot(
-        self, system_info: Dict[str, Any] = None, agent_status: Dict[str, Any] = None
-    ):
+        self, system_info: Optional[Dict[str, Any]] = None, agent_status: Optional[Dict[str, Any]] = None
+    ) -> None:
         """Take a performance snapshot."""
+        # Convert rolling lists to latest values for snapshot
+        snapshot_metrics: Dict[str, float] = {}
+        for k, v in self.current_metrics.items():
+            snapshot_metrics[k] = (v[-1] if v else 0.0)
         snapshot = PerformanceSnapshot(
             timestamp=datetime.now(),
-            metrics=self.current_metrics.copy(),
+            metrics=snapshot_metrics,
             system_info=system_info or {},
             agent_status=agent_status or {},
         )
@@ -330,7 +337,7 @@ class PerformanceTracker:
         if len(self.snapshots) > 100:
             self.snapshots = self.snapshots[-100:]
 
-    def _record_metric(self, name: str, value: float, context: Dict[str, Any], unit: str = "count"):
+    def _record_metric(self, name: str, value: float, context: Dict[str, Any], unit: str = "count") -> None:
         """Record a performance metric."""
         metric = PerformanceMetric(
             name=name, value=value, timestamp=datetime.now(), context=context, unit=unit
@@ -343,7 +350,7 @@ class PerformanceTracker:
             return self.metrics_history[metric_name][-1].value
         return None
 
-    def export_performance_data(self, filename: str = None) -> str:
+    def export_performance_data(self, filename: Optional[str] = None) -> str:
         """Export performance data to JSON file."""
         if filename is None:
             filename = f"performance_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
@@ -446,7 +453,7 @@ def get_performance_tracker() -> PerformanceTracker:
     return performance_tracker
 
 
-def track_agent_performance(operation: str, duration: float, success: bool = True):
+def track_agent_performance(operation: str, duration: float, success: bool = True) -> None:
     """Track agent performance metrics."""
     tracker = get_performance_tracker()
     tracker.track_response_time(operation, duration, success)

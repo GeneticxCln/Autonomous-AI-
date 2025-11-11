@@ -23,7 +23,7 @@ class HierarchicalPlanner(PlanningStrategy):
     into concrete action sequences.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.decomposition_rules = self._init_decomposition_rules()
         self.action_templates = self._init_action_templates()
 

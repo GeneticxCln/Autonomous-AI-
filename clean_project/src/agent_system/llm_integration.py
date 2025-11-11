@@ -7,7 +7,7 @@ from __future__ import annotations
 import json
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional
+from typing import Any, AsyncIterator, Dict, List, Optional, cast
 
 from .config_simple import get_api_key, settings
 
@@ -18,22 +18,22 @@ class LLMProvider(ABC):
     """Abstract base class for LLM providers."""
 
     @abstractmethod
-    async def generate(self, prompt: str, **kwargs) -> str:
+    async def generate(self, prompt: str, **kwargs: Any) -> str:
         """Generate text from prompt."""
         pass
 
     @abstractmethod
-    async def chat(self, messages: List[Dict[str, str]], **kwargs) -> str:
+    async def chat(self, messages: List[Dict[str, str]], **kwargs: Any) -> str:
         """Chat completion."""
         pass
 
-    async def stream_chat(self, messages: List[Dict[str, str]], **kwargs):
+    async def stream_chat(self, messages: List[Dict[str, str]], **kwargs: Any) -> AsyncIterator[str]:
         """Optional: stream chat chunks as an async generator.
         Default implementation yields the full response once.
         """
         text = await self.chat(messages, **kwargs)
 
-        async def _gen():
+        async def _gen() -> AsyncIterator[str]:
             yield text
 
         return _gen()
@@ -47,7 +47,7 @@ class OpenAIProvider(LLMProvider):
         self.model = model
         self.base_url = "https://api.openai.com/v1"
 
-    async def generate(self, prompt: str, **kwargs) -> str:
+    async def generate(self, prompt: str, **kwargs: Any) -> str:
         """Generate text from prompt using OpenAI."""
         try:
             import openai
@@ -58,13 +58,13 @@ class OpenAIProvider(LLMProvider):
                 model=self.model, messages=[{"role": "user", "content": prompt}], **kwargs
             )
 
-            return response.choices[0].message.content
+            return str(response.choices[0].message.content or "")
 
         except Exception as e:
             logger.error(f"OpenAI generation failed: {e}")
             return f"Error: {str(e)}"
 
-    async def chat(self, messages: List[Dict[str, str]], **kwargs) -> str:
+    async def chat(self, messages: List[Dict[str, str]], **kwargs: Any) -> str:
         """Chat completion using OpenAI."""
         try:
             import openai
@@ -75,13 +75,13 @@ class OpenAIProvider(LLMProvider):
                 model=self.model, messages=messages, stream=False, **kwargs
             )
 
-            return response.choices[0].message.content
+            return str(response.choices[0].message.content or "")
 
         except Exception as e:
             logger.error(f"OpenAI chat failed: {e}")
             return f"Error: {str(e)}"
 
-    async def stream_chat(self, messages: List[Dict[str, str]], **kwargs):
+    async def stream_chat(self, messages: List[Dict[str, str]], **kwargs: Any) -> AsyncIterator[str]:
         """Stream chat chunks using OpenAI if available, else fallback."""
         try:
             import openai
@@ -91,7 +91,7 @@ class OpenAIProvider(LLMProvider):
                 model=self.model, messages=messages, stream=True, **kwargs
             )
 
-            async def _gen():
+            async def _gen() -> AsyncIterator[str]:
                 async for event in stream:
                     try:
                         delta = event.choices[0].delta.content or ""
@@ -113,7 +113,7 @@ class AnthropicProvider(LLMProvider):
         self.api_key = api_key
         self.model = model
 
-    async def generate(self, prompt: str, **kwargs) -> str:
+    async def generate(self, prompt: str, **kwargs: Any) -> str:
         """Generate text from prompt using Anthropic."""
         try:
             import anthropic
@@ -127,13 +127,13 @@ class AnthropicProvider(LLMProvider):
                 **kwargs,
             )
 
-            return response.content[0].text
+            return str(response.content[0].text)
 
         except Exception as e:
             logger.error(f"Anthropic generation failed: {e}")
             return f"Error: {str(e)}"
 
-    async def chat(self, messages: List[Dict[str, str]], **kwargs) -> str:
+    async def chat(self, messages: List[Dict[str, str]], **kwargs: Any) -> str:
         """Chat completion using Anthropic."""
         try:
             import anthropic
@@ -148,13 +148,13 @@ class AnthropicProvider(LLMProvider):
                 **kwargs,
             )
 
-            return response.content[0].text
+            return str(response.content[0].text)
 
         except Exception as e:
             logger.error(f"Anthropic chat failed: {e}")
             return f"Error: {str(e)}"
 
-    async def stream_chat(self, messages: List[Dict[str, str]], **kwargs):
+    async def stream_chat(self, messages: List[Dict[str, str]], **kwargs: Any) -> AsyncIterator[str]:
         try:
             import anthropic
 
@@ -167,7 +167,7 @@ class AnthropicProvider(LLMProvider):
                 **kwargs,
             )
 
-            async def _gen():
+            async def _gen() -> AsyncIterator[str]:
                 async for event in stream:
                     try:
                         # Depending on SDK, event may contain delta text
@@ -188,7 +188,7 @@ class LocalProvider(LLMProvider):
         self.base_url = base_url
         self.model = settings.DEFAULT_LLM_MODEL
 
-    async def generate(self, prompt: str, **kwargs) -> str:
+    async def generate(self, prompt: str, **kwargs: Any) -> str:
         """Generate text using local LLM."""
         try:
             import httpx
@@ -200,13 +200,13 @@ class LocalProvider(LLMProvider):
                     timeout=30.0,
                 )
                 response.raise_for_status()
-                return response.json()["response"]
+                return str(response.json().get("response", ""))
 
         except Exception as e:
             logger.error(f"Local LLM generation failed: {e}")
             return f"Error: {str(e)}"
 
-    async def chat(self, messages: List[Dict[str, str]], **kwargs) -> str:
+    async def chat(self, messages: List[Dict[str, str]], **kwargs: Any) -> str:
         """Chat completion using local LLM."""
         try:
             import httpx
@@ -218,13 +218,13 @@ class LocalProvider(LLMProvider):
                     timeout=30.0,
                 )
                 response.raise_for_status()
-                return response.json().get("message", {}).get("content", response.text)
+                return str(response.json().get("message", {}).get("content") or response.text)
 
         except Exception as e:
             logger.error(f"Local LLM chat failed: {e}")
             return f"Error: {str(e)}"
 
-    async def stream_chat(self, messages: List[Dict[str, str]], **kwargs):
+    async def stream_chat(self, messages: List[Dict[str, str]], **kwargs: Any) -> AsyncIterator[str]:
         """Attempt streaming with local LLM (Ollama-like), fallback to non-stream."""
         try:
             import httpx
@@ -237,13 +237,13 @@ class LocalProvider(LLMProvider):
                 ) as resp:
                     resp.raise_for_status()
 
-                    async def _gen():
+                    async def _gen() -> AsyncIterator[str]:
                         async for line in resp.aiter_lines():
                             if not line:
                                 continue
                             yield line
 
-                    return _gen()
+            return _gen()
         except Exception as e:
             logger.warning(f"Local LLM streaming unavailable, falling back: {e}")
             return await super().stream_chat(messages, **kwargs)
@@ -252,11 +252,11 @@ class LocalProvider(LLMProvider):
 class LLMManager:
     """Manager for LLM providers with fallback support."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.providers: Dict[str, LLMProvider] = {}
         self._initialize_providers()
 
-    def _initialize_providers(self):
+    def _initialize_providers(self) -> None:
         """Initialize available LLM providers."""
         # Try OpenAI
         openai_key = get_api_key("openai")
@@ -275,7 +275,7 @@ class LLMManager:
         logger.info("Local LLM provider initialized")
 
     async def generate(
-        self, prompt: str, provider: Optional[str] = None, fallback: bool = True, **kwargs
+        self, prompt: str, provider: Optional[str] = None, fallback: bool = True, **kwargs: Any
     ) -> str:
         """Generate text with optional fallback to other providers."""
         providers_to_try = []
@@ -306,7 +306,7 @@ class LLMManager:
         messages: List[Dict[str, str]],
         provider: Optional[str] = None,
         fallback: bool = True,
-        **kwargs,
+        **kwargs: Any,
     ) -> str:
         """Chat completion with optional fallback."""
         providers_to_try = []
@@ -340,8 +340,8 @@ class LLMManager:
         messages: List[Dict[str, str]],
         provider: Optional[str] = None,
         fallback: bool = True,
-        **kwargs,
-    ):
+        **kwargs: Any,
+    ) -> AsyncIterator[str]:
         providers_to_try: List[str] = []
         if provider and provider in self.providers:
             providers_to_try = [provider]
@@ -356,7 +356,7 @@ class LLMManager:
                 continue
 
         # Fallback: yield single full response
-        async def _gen():
+        async def _gen() -> AsyncIterator[str]:
             text = await self.chat(messages, provider=provider, fallback=fallback, **kwargs)
             yield text
 
@@ -374,7 +374,7 @@ llm_manager = LLMManager()
 class LLMAugmentedActionSelector:
     """Action selector enhanced with LLM capabilities."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.llm_manager = llm_manager
 
     async def analyze_goal_context(self, goal_description: str, context: Dict[str, Any]) -> str:
@@ -423,7 +423,7 @@ class LLMAugmentedActionSelector:
 
         try:
             # Try to parse as JSON
-            suggestions = json.loads(result)
+            suggestions = cast(List[Dict[str, Any]], json.loads(result))
             return suggestions
         except json.JSONDecodeError:
             # Fallback to text parsing

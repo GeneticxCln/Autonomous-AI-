@@ -8,11 +8,12 @@ from __future__ import annotations
 import logging
 import sys
 from pathlib import Path
+from typing import Optional, cast
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from agent_system.auth_models import Base, db_manager
+from agent_system.auth_models import Base, UserModel, db_manager
 from agent_system.auth_service import auth_service
 
 # Configure logging
@@ -20,7 +21,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 
-def setup_authentication_system():
+def setup_authentication_system() -> None:
     """Setup authentication system with default data."""
     logger.info("Setting up authentication system...")
 
@@ -39,6 +40,10 @@ def setup_authentication_system():
 
         # Create default admin user
         admin_user = create_default_admin()
+        if admin_user is None:
+            logger.error("Failed to create admin user")
+            raise RuntimeError("Failed to create admin user")
+        
         logger.info(f"✅ Default admin user created: {admin_user.username}")
 
         # Create API token for admin
@@ -56,17 +61,15 @@ def setup_authentication_system():
         raise
 
 
-def create_default_admin():
+def create_default_admin() -> Optional[UserModel]:
     """Create default admin user."""
     try:
         # Check if admin user already exists
         with db_manager.get_session() as session:
-            from agent_system.auth_models import UserModel
-
             existing_admin = session.query(UserModel).filter(UserModel.username == "admin").first()
             if existing_admin:
                 logger.info("Admin user already exists")
-                return existing_admin
+                return cast(Optional[UserModel], existing_admin)
 
         # Create admin user
         admin_user = auth_service.create_user(
@@ -84,7 +87,7 @@ def create_default_admin():
         raise
 
 
-def print_auth_info(admin_user, api_token):
+def print_auth_info(admin_user: UserModel, api_token: str) -> None:
     """Print authentication system information."""
     print("\n" + "=" * 60)
     print("🔐 AUTHENTICATION SYSTEM SETUP COMPLETE")

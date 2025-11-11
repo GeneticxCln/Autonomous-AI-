@@ -43,7 +43,7 @@ class KernelCacheManager:
     """Tracks AST cache metadata and failure telemetry."""
 
     def __init__(self, cache: Optional[ASTCache] = None):
-        self.cache = cache or ast_cache
+        self.cache: ASTCache = cache or ast_cache
         self._metadata: Dict[str, KernelArtifact] = {}
         self._failures: Deque[KernelFailureRecord] = deque(maxlen=5000)
         self._lock = threading.RLock()
@@ -90,6 +90,7 @@ class KernelCacheManager:
             return None
 
         digest_source = f"{parser}:{content_hash}".encode("utf-8")
+        entry = self.cache.get(project_id, file_path, content_hash=content_hash)
         artifact = KernelArtifact(
             project_id=project_id,
             file_path=file_path,
@@ -99,7 +100,7 @@ class KernelCacheManager:
             content_hash=content_hash,
             ast_digest=hashlib.sha1(digest_source).hexdigest(),
             stored_at=time.time(),
-            size_bytes=self.cache.get(project_id, file_path, content_hash=content_hash).size_bytes,
+            size_bytes=entry.size_bytes if entry else 0,
             metadata=metadata or {},
         )
 
@@ -131,7 +132,7 @@ class KernelCacheManager:
 
         return {"ast": entry.ast_object, "artifact": artifact}
 
-    def invalidate(self, project_id: str, file_path: Optional[str] = None):
+    def invalidate(self, project_id: str, file_path: Optional[str] = None) -> None:
         self.cache.invalidate(project_id, file_path)
         if file_path:
             with self._lock:
@@ -148,7 +149,7 @@ class KernelCacheManager:
         file_path: str,
         error: str,
         metadata: Optional[Dict[str, Any]] = None,
-    ):
+    ) -> None:
         """Track parse failures for recovery analysis."""
         self._failures.append(
             KernelFailureRecord(
@@ -159,11 +160,11 @@ class KernelCacheManager:
             )
         )
 
-    def get_failure_report(self, limit: int = 20):
+    def get_failure_report(self, limit: int = 20) -> list[KernelFailureRecord]:
         return list(self._failures)[-limit:]
 
     def stats(self) -> Dict[str, Any]:
-        cache_stats = self.cache.stats()
+        cache_stats: Dict[str, Any] = self.cache.stats()
         with self._lock:
             meta_count = len(self._metadata)
         cache_stats.update({"artifacts": meta_count, "failures_tracked": len(self._failures)})
@@ -175,7 +176,7 @@ class KernelCacheManager:
         max_entries: Optional[int] = None,
         max_bytes: Optional[int] = None,
         ttl_seconds: Optional[int] = None,
-    ):
+    ) -> None:
         """Delegate cache tuning to the underlying AST cache."""
         self.cache.reconfigure(
             max_entries=max_entries,

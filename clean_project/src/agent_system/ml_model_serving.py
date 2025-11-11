@@ -8,7 +8,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import pickle
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Dict, Optional
 
@@ -36,9 +36,10 @@ class ModelMetadata:
     inference_count: int = 0
     avg_latency_ms: float = 0.0
     error_count: int = 0
-    metadata: Dict[str, Any] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
+        # metadata ensured by default_factory; keep guard for safety
         if self.metadata is None:
             self.metadata = {}
 
@@ -58,7 +59,7 @@ class ModelServer:
         name: str,
         version: str,
         model_path: Optional[str] = None,
-        loader_func: Optional[Callable] = None,
+        loader_func: Optional[Callable[[str], Any]] = None,
     ) -> bool:
         """Load a model."""
         async with self._lock:
@@ -110,7 +111,7 @@ class ModelServer:
         with open(path, "rb") as f:
             return pickle.load(f)
 
-    async def unload_model(self, name: str, version: str):
+    async def unload_model(self, name: str, version: str) -> None:
         """Unload a model."""
         async with self._lock:
             if name in self.models and version in self.models[name]:
@@ -183,7 +184,7 @@ class ModelServer:
                 metadata.error_count += 1
             raise
 
-    def set_active_version(self, name: str, version: str):
+    def set_active_version(self, name: str, version: str) -> None:
         """Set the active version for a model (for A/B testing)."""
         if name not in self.models or version not in self.models[name]:
             raise ValueError(f"Model {name}:{version} not loaded")

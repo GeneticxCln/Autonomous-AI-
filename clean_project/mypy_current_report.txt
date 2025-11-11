@@ -1,0 +1,11 @@
+src/agent_system/auth_service.py:439: error: Redundant cast to "str"  [redundant-cast]
+src/agent_system/auth_service.py:447: error: Redundant cast to "str"  [redundant-cast]
+src/agent_system/auth_setup.py:68: error: Returning Any from function declared to return "UserModel"  [no-any-return]
+src/agent_system/ai_performance_monitor.py:37: error: Name "cast" is not defined  [name-defined]
+src/agent_system/ai_performance_monitor.py:37: note: Did you forget to import it from "typing"? (Suggestion: "from typing import cast")
+src/agent_system/ai_performance_monitor.py:39: error: Returning Any from function declared to return "float"  [no-any-return]
+src/agent_system/system_health_dashboard.py:406: error: Name "Optional" is not defined  [name-defined]
+src/agent_system/system_health_dashboard.py:406: note: Did you forget to import it from "typing"? (Suggestion: "from typing import Optional")
+src/agent_system/system_health_dashboard.py:426: error: Returning Any from function declared to return "str"  [no-any-return]
+src/agent_system/fastapi_app.py:492: error: Returning Any from function declared to return "dict[str, Any]"  [no-any-return]
+Found 8 errors in 5 files (checked 92 source files)

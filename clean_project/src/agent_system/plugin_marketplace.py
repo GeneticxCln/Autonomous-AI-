@@ -6,13 +6,14 @@ Plugin marketplace, versioning, dependency management, and discovery.
 from __future__ import annotations
 
 import asyncio
+import importlib
 import json
 import logging
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union, cast
 
 logger = logging.getLogger(__name__)
 
@@ -39,9 +40,10 @@ class PluginMetadata:
     repository_url: Optional[str] = None
     status: PluginStatus = PluginStatus.AVAILABLE
     installed_at: Optional[float] = None
-    metadata: Dict[str, Any] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
+        # metadata is ensured non-None by default_factory; keep guard for safety
         if self.metadata is None:
             self.metadata = {}
 
@@ -49,7 +51,7 @@ class PluginMetadata:
 class PluginMarketplace:
     """Manages plugin discovery, installation, and versioning."""
 
-    def __init__(self, plugin_dir: str = "./plugins", marketplace_url: Optional[str] = None):
+    def __init__(self, plugin_dir: str = "./plugins", marketplace_url: Optional[str] = None) -> None:
         self.plugin_dir = Path(plugin_dir)
         self.marketplace_url = marketplace_url or os.getenv("PLUGIN_MARKETPLACE_URL")
         self.plugins: Dict[str, PluginMetadata] = {}
@@ -59,39 +61,45 @@ class PluginMarketplace:
     async def discover_plugins(self, query: Optional[str] = None) -> List[PluginMetadata]:
         """Discover available plugins from marketplace."""
         if not self.marketplace_url:
-            logger.warning("No marketplace URL configured")
-            return []
+            # Fail fast with clear instructions instead of returning mock data
+            raise RuntimeError(
+                "PLUGIN_MARKETPLACE_URL not configured. Provide an HTTP JSON index or set a source."
+            )
 
         try:
-            # In production, this would fetch from a real marketplace API
-            # For now, return mock data
-            plugins = [
-                PluginMetadata(
-                    name="web-scraper",
-                    version="1.0.0",
-                    description="Advanced web scraping tool",
-                    author="Agent System",
-                    dependencies=["beautifulsoup4", "requests"],
-                    entry_point="web_scraper:WebScraperTool",
-                ),
-                PluginMetadata(
-                    name="database-connector",
-                    version="2.1.0",
-                    description="Database connection and query tool",
-                    author="Agent System",
-                    dependencies=["sqlalchemy", "psycopg2"],
-                    entry_point="db_connector:DatabaseTool",
-                ),
-            ]
+            # Import requests at runtime to avoid hard dependency on typing stubs
+            requests = importlib.import_module("requests")
+
+            resp = requests.get(self.marketplace_url, timeout=10)
+            resp.raise_for_status()
+            raw = resp.json()
+            data = cast(Union[List[Dict[str, Any]], Dict[str, Any]], raw)
+            items: List[Dict[str, Any]] = (
+                data if isinstance(data, list) else cast(List[Dict[str, Any]], data.get("plugins", []))
+            )
+            results: List[PluginMetadata] = []
+            for item in items:
+                try:
+                    md = PluginMetadata(
+                        name=item["name"],
+                        version=item.get("version", "0.0.0"),
+                        description=item.get("description", ""),
+                        author=item.get("author", "unknown"),
+                        dependencies=item.get("dependencies", []),
+                        entry_point=item.get("entry_point", ""),
+                        repository_url=item.get("repository_url"),
+                    )
+                    results.append(md)
+                except Exception as exc:
+                    logger.warning("Skipping invalid plugin metadata: %s", exc)
 
             if query:
-                plugins = [
-                    p
-                    for p in plugins
-                    if query.lower() in p.name.lower() or query.lower() in p.description.lower()
+                q = query.lower()
+                results = [
+                    p for p in results if q in p.name.lower() or q in p.description.lower()
                 ]
 
-            return plugins
+            return results
 
         except Exception as e:
             logger.error(f"Failed to discover plugins: {e}")
@@ -222,7 +230,7 @@ class PluginMarketplace:
         # Install new version
         return await self.install_plugin(name, target_version)
 
-    async def _install_dependencies(self, dependencies: List[str]):
+    async def _install_dependencies(self, dependencies: List[str]) -> None:
         """Install plugin dependencies."""
         if not dependencies:
             return

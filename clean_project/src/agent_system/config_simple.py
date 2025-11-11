@@ -16,7 +16,7 @@ from .unified_config import unified_config
 class Settings:
     """Application settings proxying to unified_config."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         # Core agent settings
         self.MAX_CYCLES = unified_config.agent.max_cycles
         self.MAX_CONCURRENT_GOALS = unified_config.agent.max_concurrent_goals
@@ -87,7 +87,7 @@ class Settings:
 
 
 # Global settings instance
-settings = Settings()
+settings: Settings = Settings()
 
 
 def get_api_key(service: str) -> Optional[str]:

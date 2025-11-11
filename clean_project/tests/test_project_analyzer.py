@@ -4,13 +4,13 @@ from agent_system.project_analyzer.ast_cache import ASTCache, ASTCacheConfig
 from agent_system.project_analyzer.incremental_parser import IncrementalParseSystem
 from agent_system.project_analyzer.kernel_cache_manager import KernelCacheManager
 from agent_system.project_analyzer.large_project_analyzer import LargeProjectAnalyzer
-from agent_system.project_analyzer.stress_tester import ProjectStressTester
 from agent_system.project_analyzer.memory_guard import (
     MemoryGuard,
     MemoryGuardConfig,
     MemoryGuardContext,
 )
 from agent_system.project_analyzer.memory_profiler import MemoryProfiler, MemoryProfilerConfig
+from agent_system.project_analyzer.stress_tester import ProjectStressTester
 
 
 def _make_guard() -> MemoryGuard:

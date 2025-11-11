@@ -29,7 +29,7 @@ def _load_json(path: Path) -> Dict[str, Any]:
         return {}
 
 
-def _instantiate(class_path: str):
+def _instantiate(class_path: str) -> Any:
     mod_name, _, cls_name = class_path.rpartition(".")
     if not mod_name:
         raise ImportError(f"Invalid class path: {class_path}")
@@ -38,7 +38,7 @@ def _instantiate(class_path: str):
     return cls()
 
 
-def load_plugins(agent, config_path: str | None = None) -> Dict[str, Any]:
+def load_plugins(agent: Any, config_path: str | None = None) -> Dict[str, Any]:
     """Load custom tools and goals from a plugins config file.
 
     Supports .yaml/.yml or .json with schema:

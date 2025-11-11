@@ -12,10 +12,22 @@ import json
 import logging
 import secrets
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    ParamSpec,
+    Set,
+    Tuple,
+    TypedDict,
+    TypeVar,
+    cast,
+)
 
 # Security libraries
 try:
@@ -66,15 +78,13 @@ class SecurityEvent:
     user_agent: Optional[str] = None
     user_id: Optional[str] = None
     endpoint: Optional[str] = None
-    timestamp: datetime = None
-    details: Dict[str, Any] = None
+    timestamp: Optional[datetime] = None
+    details: Dict[str, Any] = field(default_factory=dict)
     signature: Optional[str] = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.timestamp is None:
             self.timestamp = datetime.now()
-        if self.details is None:
-            self.details = {}
 
 
 class WAFRule:
@@ -87,7 +97,7 @@ class WAFRule:
         action: str = "block",
         threat_level: ThreatLevel = ThreatLevel.MEDIUM,
         description: str = "",
-    ):
+    ) -> None:
         self.name = name
         self.pattern = pattern
         self.action = action
@@ -95,7 +105,12 @@ class WAFRule:
         self.description = description
         self.enabled = True
         self.hit_count = 0
-        self.last_hit = None
+        self.last_hit: Optional[datetime] = None
+
+
+class _RateLimiterState(TypedDict):
+    requests: List[float]
+    blocked_until: float
 
 
 class AdvancedSecurityManager:
@@ -110,9 +125,9 @@ class AdvancedSecurityManager:
     - Encrypted storage
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.waf_rules: List[WAFRule] = []
-        self.rate_limiters: Dict[str, Dict] = {}
+        self.rate_limiters: Dict[str, _RateLimiterState] = {}
         self.security_events: List[SecurityEvent] = []
         self.blocked_ips: Set[str] = set()
         self.suspicious_ips: Dict[str, int] = {}
@@ -124,7 +139,7 @@ class AdvancedSecurityManager:
         self._init_waf_rules()
         self._init_encryption()
 
-    def _init_waf_rules(self):
+    def _init_waf_rules(self) -> None:
         """Initialize default WAF rules."""
         # SQL Injection patterns
         self.add_waf_rule(
@@ -206,7 +221,7 @@ class AdvancedSecurityManager:
             )
         )
 
-    def _init_encryption(self):
+    def _init_encryption(self) -> None:
         """Initialize encryption for sensitive data."""
         try:
             if Fernet:
@@ -226,7 +241,7 @@ class AdvancedSecurityManager:
         except Exception as e:
             logger.error(f"❌ Encryption initialization failed: {e}")
 
-    def add_waf_rule(self, rule: WAFRule):
+    def add_waf_rule(self, rule: WAFRule) -> None:
         """Add WAF rule."""
         self.waf_rules.append(rule)
         logger.info(f"🛡️ WAF rule added: {rule.name}")
@@ -253,11 +268,11 @@ class AdvancedSecurityManager:
         if not self.is_initialized:
             return True, []
 
-        events = []
-        _suspicious_content = []
+        events: List[SecurityEvent] = []
+        _suspicious_content: List[str] = []
 
         # Extract content to scan
-        content_parts = []
+        content_parts: List[str] = []
 
         # URL path
         if "path" in request_data:
@@ -265,11 +280,11 @@ class AdvancedSecurityManager:
 
         # Query parameters
         if "query_params" in request_data:
-            content_parts.extend(request_data["query_params"].values())
+            content_parts.extend([str(v) for v in request_data["query_params"].values()])
 
         # Headers
         if "headers" in request_data:
-            content_parts.extend(request_data["headers"].values())
+            content_parts.extend([str(v) for v in request_data["headers"].values()])
 
         # Request body
         if "body" in request_data and isinstance(request_data["body"], str):
@@ -329,7 +344,7 @@ class AdvancedSecurityManager:
         window_start = now - window_seconds
 
         if identifier not in self.rate_limiters:
-            self.rate_limiters[identifier] = {"requests": [], "blocked_until": 0}
+            self.rate_limiters[identifier] = {"requests": [], "blocked_until": 0.0}
 
         limiter = self.rate_limiters[identifier]
 
@@ -391,17 +406,17 @@ class AdvancedSecurityManager:
             "window": window_seconds,
         }
 
-    def block_ip(self, ip_address: str, duration_seconds: int = 3600):
+    def block_ip(self, ip_address: str, duration_seconds: int = 3600) -> None:
         """Block an IP address temporarily."""
         self.blocked_ips.add(ip_address)
         self.rate_limiters[ip_address] = {
             "requests": [],
-            "blocked_until": time.time() + duration_seconds,
+            "blocked_until": time.time() + float(duration_seconds),
         }
 
         logger.warning(f"🚫 IP blocked: {ip_address} for {duration_seconds} seconds")
 
-    def unblock_ip(self, ip_address: str):
+    def unblock_ip(self, ip_address: str) -> None:
         """Unblock an IP address."""
         self.blocked_ips.discard(ip_address)
         if ip_address in self.rate_limiters:
@@ -434,7 +449,7 @@ class AdvancedSecurityManager:
             Tuple of (is_valid, sanitized_data)
         """
         if not input_data:
-            return True, input_data
+            return True, str(input_data)
 
         sanitized_data = str(input_data)
 
@@ -501,8 +516,8 @@ class AdvancedSecurityManager:
 
         try:
             decoded_data = base64.urlsafe_b64decode(encrypted_data.encode())
-            decrypted_data = self.cipher.decrypt(decoded_data)
-            return decrypted_data.decode()
+            decrypted_data_bytes = cast(bytes, self.cipher.decrypt(decoded_data))
+            return decrypted_data_bytes.decode()
         except Exception as e:
             logger.error(f"❌ Decryption failed: {e}")
             return encrypted_data
@@ -516,7 +531,7 @@ class AdvancedSecurityManager:
         expected_signature = self.create_security_signature(data, secret)
         return hmac.compare_digest(expected_signature, signature)
 
-    def log_security_event(self, event: SecurityEvent):
+    def log_security_event(self, event: SecurityEvent) -> None:
         """Log security event."""
         self.security_events.append(event)
 
@@ -546,8 +561,8 @@ class AdvancedSecurityManager:
         last_7d = now - timedelta(days=7)
 
         # Count events by type and threat level
-        event_counts = {}
-        threat_counts = {}
+        event_counts: Dict[str, int] = {}
+        threat_counts: Dict[str, int] = {}
         blocked_ips_count = len(self.blocked_ips)
 
         for event in self.security_events:
@@ -560,9 +575,13 @@ class AdvancedSecurityManager:
             threat_counts[threat_level] = threat_counts.get(threat_level, 0) + 1
 
         # Recent events
-        recent_events_24h = [event for event in self.security_events if event.timestamp >= last_24h]
+        recent_events_24h = [
+            event for event in self.security_events if event.timestamp is not None and event.timestamp >= last_24h
+        ]
 
-        recent_events_7d = [event for event in self.security_events if event.timestamp >= last_7d]
+        recent_events_7d = [
+            event for event in self.security_events if event.timestamp is not None and event.timestamp >= last_7d
+        ]
 
         return {
             "total_events": len(self.security_events),
@@ -584,7 +603,9 @@ class AdvancedSecurityManager:
         """Get recent security events."""
         cutoff_time = datetime.now() - timedelta(hours=hours)
 
-        events = [event for event in self.security_events if event.timestamp >= cutoff_time]
+        events = [
+        event for event in self.security_events if event.timestamp is not None and event.timestamp >= cutoff_time
+    ]
 
         if event_type:
             events = [event for event in events if event.event_type == event_type]
@@ -597,7 +618,7 @@ class AdvancedSecurityManager:
                 "user_agent": event.user_agent,
                 "user_id": event.user_id,
                 "endpoint": event.endpoint,
-                "timestamp": event.timestamp.isoformat(),
+                "timestamp": event.timestamp.isoformat() if event.timestamp else "",
                 "details": event.details,
             }
             for event in events[-100:]  # Limit to last 100 events
@@ -653,11 +674,14 @@ async def security_middleware(request_data: Dict[str, Any]) -> bool:
 
 
 # Security decorators
-def require_secure_input(input_type: str = "generic"):
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
+
+def require_secure_input(input_type: str = "generic") -> Callable[[Callable[_P, _R]], Callable[_P, _R]]:
     """Decorator to require secure input validation."""
 
-    def decorator(func):
-        def wrapper(*args, **kwargs):
+    def decorator(func: Callable[_P, _R]) -> Callable[_P, _R]:
+        def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
             # This would be implemented based on the function signature
             # For now, just return the function result
             return func(*args, **kwargs)
@@ -668,7 +692,7 @@ def require_secure_input(input_type: str = "generic"):
 
 
 # Security monitoring
-async def security_monitor():
+async def security_monitor() -> None:
     """Background security monitoring task."""
     while True:
         try:
@@ -691,7 +715,7 @@ async def security_monitor():
             security_manager.security_events = [
                 event
                 for event in security_manager.security_events
-                if event.timestamp >= cutoff_time
+                if event.timestamp is not None and event.timestamp >= cutoff_time
             ]
 
             await asyncio.sleep(300)  # Check every 5 minutes
@@ -702,7 +726,7 @@ async def security_monitor():
 
 
 # Initialize security system
-def initialize_security():
+def initialize_security() -> bool:
     """Initialize the global security system."""
     try:
         # Start background security monitor
@@ -781,7 +805,7 @@ def verify_password(password: str, hashed_password: str, salt: str) -> bool:
             import hashlib
 
             hash_obj = hashlib.pbkdf2_hmac("sha256", password.encode(), salt_bytes, 100000)
-            expected_hash = hash_obj.hexdigest()
+            expected_hash = hash_obj.hex()
 
         return hmac.compare_digest(hashed_password, expected_hash)
 

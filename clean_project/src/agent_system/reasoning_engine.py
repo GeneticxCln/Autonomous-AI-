@@ -17,7 +17,6 @@ from .unified_config import unified_config
 # Initialize variables for optional imports
 SENTENCE_TRANSFORMERS_AVAILABLE = False
 NUMPY_AVAILABLE = False
-SentenceTransformer = None
 
 # Try to import sentence transformers for semantic similarity
 try:
@@ -28,36 +27,33 @@ except ImportError:
     pass  # Keep as False
 
 # Try to import numpy for similarity calculations
+# Numpy import with a typing-friendly fallback
+np: Any = None
 try:
-    import numpy as np
-
+    import numpy as _np
+    np = _np
     NUMPY_AVAILABLE = True
 except ImportError:
     NUMPY_AVAILABLE = False
 
-    # Create simple fallback functions for when numpy is not available
-    def np_dot(a, b):
-        return sum(x * y for x, y in zip(a, b))
+    def _np_dot(a: List[float], b: List[float]) -> float:
+        return float(sum(x * y for x, y in zip(a, b)))
 
-    def np_norm(x):
-        return sum(xi * xi for xi in x) ** 0.5
+    def _np_norm(x: List[float]) -> float:
+        return float(sum(xi * xi for xi in x) ** 0.5)
 
-    class np:
+    class _LinalgFallback:
         @staticmethod
-        def dot(a, b):
-            return np_dot(a, b)
+        def norm(x: List[float]) -> float:
+            return _np_norm(x)
 
+    class _NPFallback:
         @staticmethod
-        def linalg_norm(x):
-            return np_norm(x)
+        def dot(a: List[float], b: List[float]) -> float:
+            return _np_dot(a, b)
 
-    # Add linalg module
-    class linalg:
-        @staticmethod
-        def norm(x):
-            return np_norm(x)
-
-    np.linalg = linalg
+    # Compose a minimal object with the required attributes
+    np = type("_NP", (), {"dot": staticmethod(_NPFallback.dot), "linalg": _LinalgFallback()})()
 
 logger = logging.getLogger(__name__)
 
@@ -65,10 +61,13 @@ logger = logging.getLogger(__name__)
 class ReasoningEngine:
     """Core AI reasoning engine for goal analysis and action planning."""
 
-    def __init__(self):
-        self.goal_patterns = self._load_goal_patterns()
-        self.action_templates = self._load_action_templates()
-        self.success_patterns = {}
+    def __init__(self) -> None:
+        self.goal_patterns: Dict[str, Any] = self._load_goal_patterns()
+        self.action_templates: Dict[str, Dict[str, Any]] = self._load_action_templates()
+        self.success_patterns: Dict[str, List[Dict[str, Any]]] = {}
+        self.semantic_similarity_enabled: bool = False
+        self.model: Any | None = None
+        self.pattern_embeddings: Dict[str, Any] = {}
 
         # Determine whether semantic similarity should be enabled (requires network + optional deps)
         disable_flag = os.getenv("DISABLE_SEMANTIC_SIMILARITY", "").lower() == "true"
@@ -77,6 +76,13 @@ class ReasoningEngine:
             and not getattr(settings, "TERMINAL_ONLY", False)
             and not disable_flag
         )
+
+        # Enforce strict mode for embeddings availability
+        if unified_config.strict_mode and self.semantic_similarity_enabled:
+            if not SENTENCE_TRANSFORMERS_AVAILABLE or not NUMPY_AVAILABLE:
+                raise RuntimeError(
+                    "Strict mode: sentence-transformers and numpy are required for semantic similarity"
+                )
 
         # Initialize semantic similarity components
         if self.semantic_similarity_enabled and SENTENCE_TRANSFORMERS_AVAILABLE and NUMPY_AVAILABLE:
@@ -92,8 +98,10 @@ class ReasoningEngine:
                     "Failed to load sentence transformer (%s). Using fallback similarity.",
                     e,
                 )
+                if unified_config.strict_mode:
+                    raise
                 self.model = None
-                self.pattern_embeddings = None
+                self.pattern_embeddings = {}
                 self._setup_fallback_similarity()
         else:
             if not self.semantic_similarity_enabled:
@@ -104,11 +112,13 @@ class ReasoningEngine:
                     disable_flag,
                 )
             elif not SENTENCE_TRANSFORMERS_AVAILABLE or not NUMPY_AVAILABLE:
-                logger.warning(
-                    "Sentence transformers or numpy not available, using fallback similarity"
-                )
+                if unified_config.strict_mode:
+                    raise RuntimeError(
+                        "Strict mode: sentence-transformers and numpy are required for semantic similarity"
+                    )
+                logger.warning("Sentence transformers or numpy not available, using fallback similarity")
             self.model = None
-            self.pattern_embeddings = None
+            self.pattern_embeddings = {}
             self._setup_fallback_similarity()
 
     def _load_goal_patterns(self) -> Dict[str, Any]:
@@ -146,7 +156,7 @@ class ReasoningEngine:
             },
         }
 
-    def _load_action_templates(self) -> Dict[str, Dict]:
+    def _load_action_templates(self) -> Dict[str, Dict[str, Any]]:
         """Load action templates with parameters."""
         search_tool = "generic_tool" if settings.TERMINAL_ONLY else "web_search"
         return {
@@ -295,7 +305,7 @@ class ReasoningEngine:
     def generate_action_plan(self, goal_analysis: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Generate intelligent action plan based on goal analysis."""
 
-        plan = []
+        plan: List[Dict[str, Any]] = []
         pattern = goal_analysis["pattern"]
         parameters = goal_analysis["parameters"]
         actions = goal_analysis["suggested_actions"]
@@ -401,8 +411,8 @@ print(f"Statistics: {{result}}")
         return min(1.0, max(0.0, base_score))
 
     def learn_from_episode(
-        self, goal_analysis: Dict[str, Any], actions: List[Dict], success_score: float
-    ):
+        self, goal_analysis: Dict[str, Any], actions: List[Dict[str, Any]], success_score: float
+    ) -> None:
         """Learn from completed episodes to improve future performance."""
 
         pattern = goal_analysis["pattern"]
@@ -436,7 +446,7 @@ print(f"Statistics: {{result}}")
 
         return None
 
-    def _precompute_embeddings(self) -> Dict[str, np.ndarray]:
+    def _precompute_embeddings(self) -> Dict[str, Any]:
         """Precompute embeddings for all goal patterns for faster similarity calculation."""
         embeddings = {}
 
@@ -451,7 +461,7 @@ print(f"Statistics: {{result}}")
 
         return embeddings
 
-    def _setup_fallback_similarity(self):
+    def _setup_fallback_similarity(self) -> None:
         """Setup fallback similarity using TF-IDF-like approach."""
         self.pattern_keywords = {}
         for pattern_name, pattern in self.goal_patterns.items():
@@ -496,8 +506,9 @@ print(f"Statistics: {{result}}")
 
             # Calculate cosine similarity using numpy
             if NUMPY_AVAILABLE:
-                similarity = np.dot(goal_embedding, pattern_embedding) / (
-                    np.linalg.norm(goal_embedding) * np.linalg.norm(pattern_embedding)
+                similarity = float(
+                    np.dot(goal_embedding, pattern_embedding)
+                    / (np.linalg.norm(goal_embedding) * np.linalg.norm(pattern_embedding))
                 )
             else:
                 # Manual cosine similarity calculation
@@ -508,7 +519,7 @@ print(f"Statistics: {{result}}")
                     dot_product / (norm_goal * norm_pattern) if norm_goal * norm_pattern > 0 else 0
                 )
 
-            return max(0.0, similarity)  # Ensure non-negative
+            return float(max(0.0, float(similarity)))  # Ensure non-negative
         except Exception as e:
             logger.warning(f"Error calculating similarity: {e}")
             return self._fallback_similarity(goal_text, pattern_name)

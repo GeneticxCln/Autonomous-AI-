@@ -9,10 +9,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from ..multi_agent_system import MultiAgentOrchestrator
 from .large_project_analyzer import AnalyzerReport, LargeProjectAnalyzer, large_project_analyzer
 from .orchestrator_integration import apply_specialization_plan_to_registry
 from .specialization import SpecializationPlan
-from ..multi_agent_system import MultiAgentOrchestrator
 
 
 @dataclass
@@ -137,7 +137,7 @@ class ProjectStressTester:
             recovery_time_ms=recovery,
         )
 
-    def _apply_specialization_plan(self, report: Optional[AnalyzerReport]):
+    def _apply_specialization_plan(self, report: Optional[AnalyzerReport]) -> None:
         if not self.orchestrator or not report:
             return
         plan_data = report.specialization_plan
@@ -156,7 +156,7 @@ class ProjectStressTester:
         *,
         language: str = "python",
         invalid_ratio: float = 0.0,
-    ):
+    ) -> None:
         root.mkdir(exist_ok=True, parents=True)
         for idx in range(count):
             file_path = root / f"module_{idx}.py"

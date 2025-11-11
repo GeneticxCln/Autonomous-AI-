@@ -58,7 +58,7 @@ class ActionSelector:
         logger.info("Selected action: %s (score: %.3f)", selected_action.name, scored_actions[0][0])
         return selected_action
 
-    def update_action_score(self, action: Action, success_score: float):
+    def update_action_score(self, action: Action, success_score: float) -> None:
         """Update action score based on outcome."""
         action_key = f"{action.tool_name}:{action.name}"
         # Use same default baseline as _score_action to ensure monotonic improvement when learning

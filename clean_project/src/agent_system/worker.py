@@ -10,9 +10,7 @@ import contextlib
 import datetime
 import logging
 import signal
-from typing import Any, Awaitable, Callable, Dict, Optional, cast
-
-from sqlalchemy.orm import Session
+from typing import Any, Dict, Optional, cast
 
 from .async_utils import run_blocking
 from .cache_manager import cache_manager
@@ -161,8 +159,7 @@ class AgentWorker:
             await service_registry.deregister(
                 self._service_instance.service_name, self._service_instance.instance_id
             )
-        disconnect_fn = cast(Callable[[], Awaitable[Any]], cache_manager.disconnect)
-        await disconnect_fn()
+        await cache_manager.disconnect()
         logger.info("Worker shutdown complete")
 
     def _register_capabilities(self, instance_id: str, metadata: Dict[str, Any]) -> None:
@@ -178,7 +175,7 @@ class AgentWorker:
                 "quality_requirements": ["reliability", "throughput"],
             }
         ]
-        session_factory = cast(Callable[[], Session], db_manager.get_session)
+        session_factory = db_manager.get_session
         with session_factory() as session:
             existing = (
                 session.query(AgentCapabilityModel)
@@ -212,7 +209,7 @@ class AgentWorker:
 
     def _touch_capability_heartbeat(self, instance_id: str) -> None:
         """Update capability heartbeat without blocking the event loop."""
-        session_factory = cast(Callable[[], Session], db_manager.get_session)
+        session_factory = db_manager.get_session
         with session_factory() as session:
             session.query(AgentCapabilityModel).filter(
                 AgentCapabilityModel.instance_id == instance_id

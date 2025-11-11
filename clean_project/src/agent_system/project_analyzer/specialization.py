@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from ..multi_agent_system import AgentRole
@@ -67,7 +67,7 @@ class PatternResourceAllocator:
 class DomainSpecializationLayer:
     """Maps project characteristics to domain-aware strategies."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.allocator = PatternResourceAllocator()
         self.profiles = {
             "frontend": DomainProfile(

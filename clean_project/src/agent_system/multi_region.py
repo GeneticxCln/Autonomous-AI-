@@ -40,7 +40,7 @@ class RegionConfig:
 class MultiRegionManager:
     """Manages multi-region deployment and routing."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.current_region = self._detect_region()
         self.regions: Dict[Region, RegionConfig] = {}
         self._region_health: Dict[Region, bool] = {}
@@ -49,14 +49,15 @@ class MultiRegionManager:
 
     def _detect_region(self) -> Region:
         """Detect current region from environment."""
-        region_str = os.getenv("AWS_REGION") or os.getenv("REGION", "us-east-1")
+        region_env = os.getenv("AWS_REGION")
+        region_str: str = region_env if region_env is not None else os.getenv("REGION", "us-east-1")
         try:
             return Region(region_str.lower())
         except ValueError:
             logger.warning(f"Unknown region {region_str}, defaulting to us-east-1")
             return Region.US_EAST_1
 
-    async def initialize(self):
+    async def initialize(self) -> None:
         """Initialize multi-region configuration."""
         if self._initialized:
             return
@@ -73,7 +74,7 @@ class MultiRegionManager:
         self._initialized = True
         logger.info(f"Multi-region manager initialized for region: {self.current_region}")
 
-    def _load_region_configs(self):
+    def _load_region_configs(self) -> None:
         """Load region configurations from environment or defaults."""
         # Default configurations (can be overridden via environment)
         default_regions = {
@@ -106,7 +107,7 @@ class MultiRegionManager:
                 self.regions[region] = config
                 self._region_health[region] = True
 
-    async def _measure_region_latencies(self):
+    async def _measure_region_latencies(self) -> None:
         """Measure latency to other regions."""
         for region, config in self.regions.items():
             if region == self.current_region:
@@ -127,7 +128,7 @@ class MultiRegionManager:
                 logger.debug(f"Failed to measure latency to {region}: {e}")
                 self._latency_cache[region] = float("inf")
 
-    async def _health_check_loop(self):
+    async def _health_check_loop(self) -> None:
         """Periodically check health of all regions."""
         while True:
             try:
@@ -181,7 +182,7 @@ class MultiRegionManager:
 
     async def replicate_data(
         self, data: Dict[str, Any], target_regions: Optional[List[Region]] = None
-    ):
+    ) -> None:
         """Replicate data to other regions."""
         if target_regions is None:
             target_regions = [r for r in self.regions.keys() if r != self.current_region]

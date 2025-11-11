@@ -1,0 +1,7 @@
+src/agent_system/auth_service.py:439: error: Redundant cast to "str"  [redundant-cast]
+src/agent_system/auth_service.py:447: error: Redundant cast to "str"  [redundant-cast]
+src/agent_system/auth_setup.py:72: error: Returning Any from function declared to return "UserModel | None"  [no-any-return]
+src/agent_system/auth_setup.py:72: error: Name "cast" is not defined  [name-defined]
+src/agent_system/auth_setup.py:72: note: Did you forget to import it from "typing"? (Suggestion: "from typing import cast")
+src/agent_system/ai_performance_monitor.py:39: error: Returning Any from function declared to return "float"  [no-any-return]
+Found 5 errors in 3 files (checked 92 source files)

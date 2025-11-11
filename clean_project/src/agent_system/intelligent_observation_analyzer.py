@@ -17,10 +17,10 @@ logger = logging.getLogger(__name__)
 class IntelligentObservationAnalyzer:
     """AI-powered observation analyzer that provides meaningful insights."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.outcome_patterns = self._load_outcome_patterns()
         self.success_indicators = self._load_success_indicators()
-        self.learning_data = {}
+        self.learning_data: Dict[str, Dict[str, Any]] = {}
 
     def _load_outcome_patterns(self) -> Dict[str, Any]:
         """Load patterns for understanding different types of outcomes."""
@@ -422,12 +422,10 @@ class IntelligentObservationAnalyzer:
     def _calculate_processing_time(self, observation: Observation) -> float:
         """Calculate processing time if timestamp available."""
 
-        if hasattr(observation, "timestamp"):
-            return (datetime.now() - observation.timestamp).total_seconds()
+        obs_ts: datetime = observation.timestamp
+        return (datetime.now() - obs_ts).total_seconds()
 
-        return 0.0
-
-    def _store_analysis_for_learning(self, observation: Observation, analysis: Dict[str, Any]):
+    def _store_analysis_for_learning(self, observation: Observation, analysis: Dict[str, Any]) -> None:
         """Store analysis data for machine learning."""
 
         learning_key = f"{observation.action_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
@@ -465,7 +463,7 @@ class IntelligentObservationAnalyzer:
             / total_analyses
         )
 
-        common_outcomes = {}
+        common_outcomes: Dict[str, int] = {}
         for data in self.learning_data.values():
             outcome_type = data["analysis"]["outcome_type"]
             common_outcomes[outcome_type] = common_outcomes.get(outcome_type, 0) + 1
@@ -481,7 +479,7 @@ class IntelligentObservationAnalyzer:
     def _identify_anomaly_patterns(self) -> List[str]:
         """Identify common anomaly patterns."""
 
-        anomaly_count = {}
+        anomaly_count: Dict[str, int] = {}
 
         for data in self.learning_data.values():
             for anomaly in data["analysis"]["anomalies"]:

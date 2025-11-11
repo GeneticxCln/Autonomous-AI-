@@ -4,7 +4,8 @@ DEV_REQ?=$(if $(wildcard requirements-dev.txt),requirements-dev.txt,../requireme
 PKG=src.agent_system
 WORKER_QUEUE?=agent.jobs
 
-.PHONY: venv install dev lint format typecheck test cov ci run web api interactive worker infra-up infra-down infra-logs infra-status health clean
+.PHONY: venv install dev lint format typecheck test cov ci run web api interactive worker infra-up infra-down infra-logs infra-status health clean \
+	bootstrap-check grant-role provider-show provider-set-order provider-disable
 
 venv:
 	@if [ ! -d "$(VENV)" ]; then \
@@ -99,6 +100,38 @@ health:
 	@curl -s http://localhost:8000/health | jq '.' || echo "API not responding"
 	@echo "Redis status:"
 	@docker exec $$(docker ps -q -f name=agent_redis) redis-cli ping || echo "Redis not responding"
+
+# Readiness check
+bootstrap-check:
+	PYTHONPATH=src $(PY) scripts/bootstrap_check.py
+
+# RBAC helper: grant role to a user (usage: make grant-role USER=alice ROLE=admin)
+grant-role:
+	@if [ -z "$(USER)" ] || [ -z "$(ROLE)" ]; then \
+		echo "Usage: make grant-role USER=<username|email> ROLE=<admin|manager|user|guest>"; \
+		exit 1; \
+	fi
+	PYTHONPATH=src $(PY) scripts/grant_role.py --username $(USER) --role $(ROLE)
+
+# Provider configuration (CLI shortcuts)
+provider-show:
+	PYTHONPATH=src $(PY) scripts/search_providers_cli.py --show
+
+# Set provider order: make provider-set-order ORDER=serpapi,bing,google
+provider-set-order:
+	@if [ -z "$(ORDER)" ]; then \
+		echo "Usage: make provider-set-order ORDER=serpapi,bing,google"; \
+		exit 1; \
+	fi
+	PYTHONPATH=src $(PY) scripts/search_providers_cli.py --set-order $(ORDER)
+
+# Disable providers: make provider-disable DISABLE=google
+provider-disable:
+	@if [ -z "$(DISABLE)" ]; then \
+		echo "Usage: make provider-disable DISABLE=google"; \
+		exit 1; \
+	fi
+	PYTHONPATH=src $(PY) scripts/search_providers_cli.py --disable $(DISABLE)
 
 # Kubernetes Commands (when deployed to K8s)
 k8s-deploy:

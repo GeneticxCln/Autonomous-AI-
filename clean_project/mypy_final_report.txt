@@ -1,0 +1,7 @@
+src/agent_system/auth_setup.py:43: error: Item "None" of "UserModel | None" has no attribute "username"  [union-attr]
+src/agent_system/auth_setup.py:47: error: Item "None" of "UserModel | None" has no attribute "id"  [union-attr]
+src/agent_system/auth_setup.py:53: error: Argument 1 to "print_auth_info" has incompatible type "UserModel | None"; expected "UserModel"  [arg-type]
+src/agent_system/auth_setup.py:68: error: Returning Any from function declared to return "UserModel | None"  [no-any-return]
+src/agent_system/ai_performance_monitor.py:37: error: Redundant cast to "float"  [redundant-cast]
+src/agent_system/ai_performance_monitor.py:38: error: Redundant cast to "float"  [redundant-cast]
+Found 6 errors in 2 files (checked 92 source files)

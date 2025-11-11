@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 import time
+from types import TracebackType
 from typing import Any, Dict, List, Optional
 
 from .agent import AutonomousAgent  # Import original agent
@@ -22,7 +23,7 @@ logger = logging.getLogger(__name__)
 class EnhancedAutonomousAgent(AutonomousAgent):
     """Enhanced autonomous agent with performance optimization and security."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         # Initialize enhanced systems first
         self.config = unified_config
         self.performance_optimizer = performance_optimizer
@@ -39,7 +40,7 @@ class EnhancedAutonomousAgent(AutonomousAgent):
 
         logger.info("Enhanced Autonomous Agent initialized with optimization and security")
 
-    def _setup_enhanced_logging(self):
+    def _setup_enhanced_logging(self) -> None:
         """Setup enhanced logging configuration."""
         try:
             log_level = getattr(logging, self.config.logging.level.upper(), logging.INFO)
@@ -74,7 +75,7 @@ class EnhancedAutonomousAgent(AutonomousAgent):
         except Exception as e:
             logger.error(f"Failed to setup enhanced logging: {e}")
 
-    def _validate_initial_configuration(self):
+    def _validate_initial_configuration(self) -> None:
         """Validate agent configuration on startup."""
         try:
             # Validate security configuration
@@ -99,7 +100,7 @@ class EnhancedAutonomousAgent(AutonomousAgent):
         except Exception as e:
             logger.error(f"Configuration validation error: {e}")
 
-    def _start_background_monitoring(self):
+    def _start_background_monitoring(self) -> None:
         """Start background monitoring and optimization."""
         try:
             # Start performance monitoring
@@ -265,12 +266,12 @@ class EnhancedAutonomousAgent(AutonomousAgent):
             logger.error(f"Error running health check: {e}")
             return {"error": str(e)}
 
-    def enable_optimization(self):
+    def enable_optimization(self) -> None:
         """Enable performance optimization."""
         self.performance_optimizer.enable_optimization()
         logger.info("Performance optimization enabled")
 
-    def disable_optimization(self):
+    def disable_optimization(self) -> None:
         """Disable performance optimization."""
         self.performance_optimizer.disable_optimization()
         logger.info("Performance optimization disabled")
@@ -306,7 +307,7 @@ class EnhancedAutonomousAgent(AutonomousAgent):
             logger.error(f"Error exporting comprehensive report: {e}")
             return ""
 
-    def shutdown(self):
+    def shutdown(self) -> None:
         """Enhanced shutdown with cleanup."""
         try:
             logger.info("Starting enhanced agent shutdown...")
@@ -324,18 +325,23 @@ class EnhancedAutonomousAgent(AutonomousAgent):
                 self.performance_optimizer.disable_optimization()
 
             # Call parent shutdown
-            super().shutdown()
+            super().shutdown()  # type: ignore[misc]
 
             logger.info("Enhanced agent shutdown completed")
 
         except Exception as e:
             logger.error(f"Error during enhanced shutdown: {e}")
 
-    def __enter__(self):
+    def __enter__(self) -> "EnhancedAutonomousAgent":
         """Context manager entry."""
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(
+        self,
+        exc_type: Optional[type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType],
+    ) -> None:
         """Context manager exit with proper cleanup."""
         self.shutdown()
 

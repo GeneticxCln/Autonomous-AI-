@@ -10,30 +10,39 @@ import os
 import time
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+from enum import Enum
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    AsyncIterator,
+    Awaitable,
+    Callable,
+    Dict,
+    Mapping,
+    Optional,
+    Tuple,
+    Union,
+    cast,
+)
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.openapi.utils import get_openapi
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 try:
-    from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
+    from prometheus_client import (
+        CONTENT_TYPE_LATEST,
+        CollectorRegistry,
+        Counter,
+        Histogram,
+        generate_latest,
+    )
 
     _PROM = True
 except Exception:
     _PROM = False
-
-if "PYTEST_CURRENT_TEST" in os.environ:
-    os.environ.setdefault("SKIP_INFRA_STARTUP", "true")
-
-if _PROM:
-    from .advanced_monitoring import initialize_monitoring, monitoring_system
-else:
-    monitoring_system = None
-    initialize_monitoring = None
-
-from typing import AsyncIterator, Awaitable, Callable, Optional
 
 from .api_endpoints import api_router
 from .api_schemas import (
@@ -83,9 +92,39 @@ from .api_security import (
 from .async_utils import run_blocking
 from .auth_models import db_manager as auth_db_manager
 from .auth_service import auth_service
+from .config_simple import get_api_key, settings
 from .database_models import db_manager
 from .infrastructure_manager import agent_shutdown_integration, agent_startup_integration
 from .production_config import get_config
+from .unified_config import unified_config
+
+# Prometheus metrics state (module-level), created lazily
+
+_PROMETHEUS_METRICS_CREATED = False
+REQUEST_COUNT: Optional["Counter"] = None
+REQUEST_LATENCY: Optional["Histogram"] = None
+PROM_REGISTRY: Optional["CollectorRegistry"] = None
+
+# Predeclare optional monitoring variables for type-checking
+if TYPE_CHECKING:
+    from .advanced_monitoring import AdvancedMonitoringSystem
+
+_mon: Optional["AdvancedMonitoringSystem"]
+_init_mon: Optional[Callable[[], Awaitable[bool]]]
+
+if _PROM:
+    from .advanced_monitoring import initialize_monitoring as _init_mon
+    from .advanced_monitoring import monitoring_system as _mon
+else:
+    _mon = None
+    _init_mon = None
+
+monitoring: Any | None = _mon
+initialize_monitoring: Callable[[], Awaitable[bool]] | None = _init_mon
+
+# Set test-friendly infra skip after all imports
+if "PYTEST_CURRENT_TEST" in os.environ:
+    os.environ.setdefault("SKIP_INFRA_STARTUP", "true")
 
 # Configure logging
 logging.basicConfig(
@@ -99,27 +138,32 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Application lifespan events."""
     # Startup
     logger.info("🚀 Starting Agent Enterprise API Server")
+    cfg = get_config()
 
     try:
         # Initialize database (prefer DATABASE_URL env)
-        try:
-            db_url = os.getenv("DATABASE_URL")
-            if db_url:
-                db_manager.database_url = db_url
-        except Exception:
-            logger.debug("DATABASE_URL not set; using default DB URL")
+        primary_db_url = os.getenv("DATABASE_URL") or cfg.get_database_url()
+        db_manager.database_url = primary_db_url
+        db_manager.configure_pool(
+            pool_size=cfg.db_pool_size,
+            max_overflow=cfg.db_max_overflow,
+            pool_timeout=cfg.db_pool_timeout,
+            pool_recycle=cfg.db_pool_recycle,
+        )
         logger.debug("Initializing primary database")
         await run_blocking(db_manager.initialize)
         logger.debug("Primary database ready")
         logger.info("✅ Database initialized successfully")
 
         # Initialize authentication database (prefer AUTH_DATABASE_URL or fallback to DATABASE_URL)
-        try:
-            auth_db_url = os.getenv("AUTH_DATABASE_URL") or os.getenv("DATABASE_URL")
-            if auth_db_url:
-                auth_db_manager.database_url = auth_db_url
-        except Exception:
-            logger.debug("AUTH/DATABASE_URL not set for auth DB; using default")
+        auth_db_url = os.getenv("AUTH_DATABASE_URL") or primary_db_url
+        auth_db_manager.database_url = auth_db_url
+        auth_db_manager.configure_pool(
+            pool_size=cfg.db_pool_size,
+            max_overflow=cfg.db_max_overflow,
+            pool_timeout=cfg.db_pool_timeout,
+            pool_recycle=cfg.db_pool_recycle,
+        )
         logger.debug("Initializing auth database")
         await run_blocking(auth_db_manager.initialize)
         logger.debug("Auth database ready")
@@ -247,7 +291,7 @@ def create_app() -> FastAPI:
     # Add CORS middleware
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=api_security_config.cors_origins,
+        allow_origins=list(api_security_config.cors_origins or []),
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         allow_headers=["*"],
@@ -265,15 +309,19 @@ def create_app() -> FastAPI:
     logger.info("✅ API routes included")
 
     if _PROM:
-        # Basic Prometheus metrics
-        REQUEST_COUNT = Counter(
-            "http_requests_total", "Total HTTP requests", ["method", "path", "status"]
-        )
-        REQUEST_LATENCY = Histogram(
-            "http_request_duration_seconds", "Request latency", ["method", "path"]
-        )
+        # Basic Prometheus metrics (create once per process)
+        global _PROMETHEUS_METRICS_CREATED, REQUEST_COUNT, REQUEST_LATENCY
+        if not _PROMETHEUS_METRICS_CREATED:
+            PROM_REGISTRY = CollectorRegistry()
+            REQUEST_COUNT = Counter(
+                "http_requests_total", "Total HTTP requests", ["method", "path", "status"], registry=PROM_REGISTRY
+            )
+            REQUEST_LATENCY = Histogram(
+                "http_request_duration_seconds", "Request latency", ["method", "path"], registry=PROM_REGISTRY
+            )
+            _PROMETHEUS_METRICS_CREATED = True
 
-        def _extract_content_length(headers) -> Optional[int]:
+        def _extract_content_length(headers: Mapping[str, str]) -> Optional[int]:
             try:
                 raw_value = headers.get("content-length")
                 if raw_value is None:
@@ -282,7 +330,7 @@ def create_app() -> FastAPI:
             except Exception:
                 return None
 
-        @app.middleware("http")
+        @app.middleware("http")  # type: ignore[misc]
         async def metrics_middleware(
             request: Request, call_next: Callable[[Request], Awaitable[Response]]
         ) -> Response:
@@ -296,11 +344,13 @@ def create_app() -> FastAPI:
                 try:
                     route = getattr(request.scope.get("route"), "path", request.url.path)
                     status_code = response.status_code if response else 500
-                    REQUEST_COUNT.labels(request.method, route, str(status_code)).inc()
-                    REQUEST_LATENCY.labels(request.method, route).observe(duration)
+                    if REQUEST_COUNT is not None:
+                        REQUEST_COUNT.labels(request.method, route, str(status_code)).inc()
+                    if REQUEST_LATENCY is not None:
+                        REQUEST_LATENCY.labels(request.method, route).observe(duration)
 
-                    if monitoring_system is not None:
-                        monitoring_system.record_request(
+                    if monitoring is not None:
+                        monitoring.record_request(
                             method=request.method,
                             endpoint=route,
                             status_code=status_code,
@@ -317,27 +367,28 @@ def create_app() -> FastAPI:
 
         if cfg.enable_metrics:
 
-            @app.get("/metrics")
+            @app.get("/metrics")  # type: ignore[misc]
             async def metrics() -> Response:
-                return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+                # Use module-level custom registry to avoid default registry duplication across imports
+                return Response(generate_latest(PROM_REGISTRY), media_type=CONTENT_TYPE_LATEST)
 
     # Global exception handler
-    @app.exception_handler(HTTPException)
-    async def http_exception_handler(request: Request, exc: HTTPException):
+    @app.exception_handler(HTTPException)  # type: ignore[misc]
+    async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
         """Handle HTTP exceptions with consistent error format."""
         log_api_access(request, status_code=exc.status_code)
         return create_error_response(
             message=exc.detail, error_type="HTTP_EXCEPTION", status_code=exc.status_code
         )
 
-    @app.exception_handler(Exception)
-    async def general_exception_handler(request: Request, exc: Exception):
+    @app.exception_handler(Exception)  # type: ignore[misc]
+    async def general_exception_handler(request: Request, exc: Exception) -> JSONResponse:
         """Handle general exceptions."""
         logger.error(f"Unexpected error: {exc}", exc_info=True)
         log_api_access(request, status_code=500)
-        if _PROM and monitoring_system is not None:
+        if _PROM and monitoring is not None:
             try:
-                monitoring_system.record_error(error_type=type(exc).__name__, severity="critical")
+                monitoring.record_error(error_type=type(exc).__name__, severity="critical")
             except Exception:
                 logger.debug("Failed to record error metric", exc_info=True)
         return create_error_response(
@@ -345,10 +396,11 @@ def create_app() -> FastAPI:
         )
 
     # Custom OpenAPI schema
-    def custom_openapi():
+    def custom_openapi() -> Dict[str, Any]:
         """Generate custom OpenAPI schema with security schemes."""
         if app.openapi_schema:
-            return app.openapi_schema
+            schema: Dict[str, Any] = cast(Dict[str, Any], app.openapi_schema)
+            return schema
 
         openapi_schema = get_openapi(
             title="Agent Enterprise API",
@@ -427,24 +479,24 @@ def create_app() -> FastAPI:
                     schemas[name] = schema_fn()
 
             # Enum types (not Pydantic models)
-            enums = [UserStatus, RoleLevel, SecurityEventType, SecuritySeverity]
-            for enum in enums:
-                schemas[enum.__name__] = {
-                    "title": enum.__name__,
+            enums: list[type[Enum]] = [UserStatus, RoleLevel, SecurityEventType, SecuritySeverity]
+            for enum_cls in enums:
+                schemas[enum_cls.__name__] = {
+                    "title": enum_cls.__name__,
                     "type": "string",
-                    "enum": [m.value for m in enum],
+                    "enum": [str(member.value) for member in enum_cls],
                 }
         except Exception:
             pass
 
         app.openapi_schema = openapi_schema
-        return app.openapi_schema
+        return cast(Dict[str, Any], app.openapi_schema)
 
     app.openapi = custom_openapi
 
     # Root endpoint
-    @app.get("/", tags=["System"])
-    async def root():
+    @app.get("/", tags=["System"])  # type: ignore[misc]
+    async def root() -> Dict[str, Any]:
         """Root endpoint with API information."""
         return {
             "message": "🚀 Agent Enterprise API",
@@ -453,44 +505,94 @@ def create_app() -> FastAPI:
             "docs": "/docs",
             "redoc": "/redoc",
             "health": "/api/v1/system/health",
+            "admin_providers": "/admin/providers",
         }
 
     # Health check endpoint (no auth required)
-    @app.get("/health", tags=["System"])
-    async def health_check():
-        """Basic health check endpoint."""
+    @app.get("/health", tags=["System"])  # type: ignore[misc]
+    async def health_check() -> JSONResponse:
+        """Basic health check endpoint with DB, cache, and provider readiness."""
+        db_ok = False
+        cache_ok = False
+        providers = []
         try:
-
-            async def _probe():
+            # DB probe
+            async def _probe_db() -> bool:
                 from sqlalchemy import text
 
-                def _task():
+                def _task() -> bool:
                     with auth_service.db.get_session() as session:
                         session.execute(text("SELECT 1"))
                     return True
 
-                return await run_blocking(_task)
+                return cast(bool, await run_blocking(_task))
 
-            await _probe()
-            return {"status": "healthy", "database": "connected"}
-        except Exception as e:
-            # In production, reflect failure; in non-prod, degrade gracefully
-            if cfg.is_production():
-                return JSONResponse(
-                    status_code=503,
-                    content={"status": "unhealthy", "database": "disconnected"},
-                )
-            return {"status": "degraded", "database": "unknown", "error": str(e)}
+            db_ok = await _probe_db()
+        except Exception:
+            db_ok = False
+
+        try:
+            # Cache/Redis probe
+            from .cache_manager import cache_manager
+
+            cache_ok = await cache_manager.is_healthy()
+        except Exception:
+            cache_ok = False
+
+        hints = []
+        try:
+            # Providers check and readiness
+            providers = unified_config.get_configured_providers()
+            order = list(unified_config.api.search_provider_order or ["serpapi", "bing", "google"])
+            disabled = list(unified_config.api.disabled_search_providers or [])
+            keys_present = {p: bool(get_api_key(p)) for p in ("serpapi", "bing", "google")}
+            google_cse_configured = bool(
+                (os.getenv("GOOGLE_CSE_ID") or os.getenv("GOOGLE_SEARCH_CX") or "").strip()
+            )
+            if keys_present.get("google") and not google_cse_configured:
+                hints.append("Set GOOGLE_CSE_ID or GOOGLE_SEARCH_CX for Google Custom Search")
+            enabled = [p for p in providers if p not in disabled and p in ("serpapi", "bing", "google")]
+            if not enabled and not getattr(settings, "TERMINAL_ONLY", False):
+                hints.append("Configure SERPAPI_KEY, BING_SEARCH_KEY, or GOOGLE_SEARCH_KEY to enable web search")
+        except Exception:
+            providers = []
+            order = ["serpapi", "bing", "google"]
+            disabled = []
+            keys_present = {p: False for p in ("serpapi", "bing", "google")}
+            google_cse_configured = False
+
+        overall = db_ok and (cache_ok or not cfg.is_production())
+        status_code = 200 if overall else 503
+        payload = {
+            "status": "healthy" if overall else "unhealthy",
+            "database": "connected" if db_ok else "disconnected",
+            "cache": "connected" if cache_ok else "disconnected",
+            "providers": providers,
+            "provider_order": order,
+            "providers_disabled": disabled,
+            "provider_keys_present": keys_present,
+            "google_cse_configured": google_cse_configured,
+        }
+        if not cache_ok and (cfg.is_production() or unified_config.strict_mode):
+            hints.append("Configure REDIS_URL and ensure Redis is reachable")
+        if hints:
+            payload["hints"] = hints
+        if status_code != 200 and not cfg.is_production():
+            # More permissive in non-production
+            payload["status"] = "degraded"
+            status_code = 200
+
+        return JSONResponse(status_code=status_code, content=payload)
 
     # Worker health check endpoints (to replace pgrep probes in Kubernetes)
-    @app.get("/health/worker", tags=["System"])
-    async def worker_health_check():
+    @app.get("/health/worker", tags=["System"], response_model=None)  # type: ignore[misc]
+    async def worker_health_check() -> Union[Dict[str, Any], JSONResponse]:
         """Worker health check endpoint for Kubernetes probes."""
         try:
 
             import psutil
 
-            def _collect():
+            def _collect() -> Tuple[Dict[str, Any], float, float]:
                 process_count = len(psutil.pids())
                 memory_info = psutil.virtual_memory()
                 cpu_percent = psutil.cpu_percent(interval=1)
@@ -540,28 +642,28 @@ def create_app() -> FastAPI:
                 },
             )
 
-    @app.get("/health/worker/ready", tags=["System"])
-    async def worker_readiness_check():
+    @app.get("/health/worker/ready", tags=["System"], response_model=None)  # type: ignore[misc]
+    async def worker_readiness_check() -> Union[Dict[str, Any], JSONResponse]:
         """Worker readiness check for Kubernetes readiness probes."""
         try:
             # Check database connectivity
             from sqlalchemy import text
 
-            async def _probe():
-                def _task():
+            async def _probe() -> bool:
+                def _task() -> bool:
                     with auth_service.db.get_session() as session:
                         session.execute(text("SELECT 1"))
                     return True
 
-                return await run_blocking(_task)
+                return cast(bool, await run_blocking(_task))
 
             await _probe()
 
             # Check if monitoring system is available
             try:
-                from .advanced_monitoring import monitoring_system
+                from .advanced_monitoring import monitoring_system as _ms
 
-                if not monitoring_system.is_initialized:
+                if not _ms.is_initialized:
                     raise Exception("Monitoring system not initialized")
             except Exception:
                 pass  # Not critical for readiness
@@ -593,8 +695,8 @@ def create_app() -> FastAPI:
                 },
             )
 
-    @app.get("/health/worker/live", tags=["System"])
-    async def worker_liveness_check():
+    @app.get("/health/worker/live", tags=["System"], response_model=None)  # type: ignore[misc]
+    async def worker_liveness_check() -> Union[Dict[str, Any], JSONResponse]:
         """Worker liveness check for Kubernetes liveness probes."""
         try:
             # Simple liveness check - if this endpoint responds, the process is alive
@@ -625,8 +727,8 @@ def create_app() -> FastAPI:
             )
 
     # API information endpoint
-    @app.get("/api/info", tags=["System"])
-    async def api_info():
+    @app.get("/api/info", tags=["System"])  # type: ignore[misc]
+    async def api_info() -> Dict[str, Any]:
         """Get API information and available endpoints."""
         return {
             "api": "Agent Enterprise API",
@@ -653,11 +755,127 @@ def create_app() -> FastAPI:
                 "system": {
                     "health": "GET /api/v1/system/health",
                     "info": "GET /api/v1/system/info",
+                    "providers_admin": "GET /admin/providers",
                 },
             },
             "authentication": "JWT Bearer tokens or API keys",
             "rate_limit": "100 requests per minute per IP",
         }
+
+    # Admin: provider configuration UI (simple HTML)
+    @app.get("/admin/providers", include_in_schema=False)  # type: ignore[misc]
+    async def providers_admin_page() -> HTMLResponse:
+        html = """
+<!DOCTYPE html>
+<html lang=\"en\">
+<head>
+  <meta charset=\"UTF-8\" />
+  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />
+  <title>Search Providers Admin</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    .row { margin-bottom: 12px; }
+    input[type=text], input[type=password] { width: 420px; padding: 6px; }
+    button { padding: 6px 12px; margin-left: 6px; }
+    code { background: #f2f2f2; padding: 2px 4px; border-radius: 3px; }
+    pre { background: #f8f8f8; padding: 10px; border: 1px solid #ddd; max-width: 820px; overflow-x: auto; }
+    .hint { color: #555; font-size: 0.9em; }
+    .ok { color: #0a0; }
+    .err { color: #a00; }
+  </style>
+</head>
+<body>
+  <h2>Search Provider Configuration</h2>
+  <div class=\"row\">
+    <label>JWT Token:</label><br />
+    <input id=\"token\" type=\"text\" placeholder=\"Paste Bearer token here (admin/manager required)\" />
+    <button onclick=\"loadStatus()\">Load</button>
+  </div>
+  <div class=\"row\">
+    <label>Quick Login (dev):</label><br />
+    <input id=\"username\" type=\"text\" placeholder=\"Username (e.g., admin)\" />
+    <input id=\"password\" type=\"password\" placeholder=\"Password\" />
+    <button onclick=\"loginAndSetToken()\">Login</button>
+    <span id=\"loginStatus\" class=\"hint\"></span>
+  </div>
+  <div class=\"row\">
+    <label>Order (comma-separated):</label><br />
+    <input id=\"order\" type=\"text\" value=\"serpapi,bing,google\" />
+  </div>
+  <div class=\"row\">
+    <label>Disabled (comma-separated):</label><br />
+    <input id=\"disabled\" type=\"text\" placeholder=\"e.g. google\" />
+  </div>
+  <div class=\"row\">
+    <button onclick=\"saveConfig()\">Save</button>
+  </div>
+  <h3>Current Status</h3>
+  <pre id=\"status\">Click Load to fetch status...</pre>
+  <script>
+    async function loginAndSetToken() {
+      const u = document.getElementById('username').value.trim();
+      const p = document.getElementById('password').value;
+      const statusEl = document.getElementById('loginStatus');
+      statusEl.textContent = '';
+      try {
+        const resp = await fetch('/api/v1/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: u, password: p, remember_me: false })
+        });
+        if (!resp.ok) {
+          const text = await resp.text();
+          statusEl.textContent = ' Login failed';
+          statusEl.className = 'hint err';
+          return;
+        }
+        const data = await resp.json();
+        const token = (data && data.data && data.data.access_token) ? data.data.access_token : '';
+        if (token) {
+          document.getElementById('token').value = token;
+          statusEl.textContent = ' Logged in';
+          statusEl.className = 'hint ok';
+        } else {
+          statusEl.textContent = ' Invalid response';
+          statusEl.className = 'hint err';
+        }
+      } catch (e) {
+        statusEl.textContent = ' ' + (e && e.message ? e.message : 'Login error');
+        statusEl.className = 'hint err';
+      }
+    }
+
+    async function loadStatus() {
+      const t = document.getElementById('token').value.trim();
+      const headers = t ? { 'Authorization': 'Bearer ' + t } : {};
+      const resp = await fetch('/api/v1/system/providers/search-config', { headers });
+      const data = await resp.json();
+      if (data && data.data) {
+        const st = data.data;
+        document.getElementById('order').value = (st.order || []).join(',');
+        document.getElementById('disabled').value = (st.disabled || []).join(',');
+        document.getElementById('status').textContent = JSON.stringify(st, null, 2);
+      } else {
+        document.getElementById('status').textContent = JSON.stringify(data, null, 2);
+      }
+    }
+
+    async function saveConfig() {
+      const t = document.getElementById('token').value.trim();
+      if (!t) { alert('Paste a Bearer token first or use Quick Login'); return; }
+      const headers = { 'Authorization': 'Bearer ' + t, 'Content-Type': 'application/json' };
+      const order = document.getElementById('order').value.split(',').map(s => s.trim()).filter(Boolean);
+      const disabled = document.getElementById('disabled').value.split(',').map(s => s.trim()).filter(Boolean);
+      const payload = { order, disabled };
+      const resp = await fetch('/api/v1/system/providers/search-config', { method: 'PUT', headers, body: JSON.stringify(payload) });
+      const data = await resp.json();
+      document.getElementById('status').textContent = JSON.stringify(data, null, 2);
+    }
+  </script>
+</body>
+</html>
+        """
+        return HTMLResponse(html)
 
     return app
 

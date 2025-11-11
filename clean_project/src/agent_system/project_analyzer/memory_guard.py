@@ -6,14 +6,17 @@ import logging
 import threading
 import time
 from dataclasses import dataclass
-from typing import Dict, Optional, Tuple
-
-try:
-    import psutil
-except Exception:  # pragma: no cover - psutil is an optional dependency in some environments
-    psutil = None
+from typing import Any, Dict, Optional, Tuple
 
 from ..unified_config import unified_config
+
+# Optional psutil import with typing-friendly fallback
+psutil: Any | None = None
+try:
+    import psutil as _psutil
+    psutil = _psutil
+except Exception:  # pragma: no cover - optional dependency
+    psutil = None
 
 logger = logging.getLogger(__name__)
 

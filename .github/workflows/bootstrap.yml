@@ -1,0 +1,39 @@
+name: Bootstrap Readiness
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run bootstrap readiness check
+        env:
+          DATABASE_URL: sqlite:///./agent_enterprise_ci.db
+          REDIS_URL: redis://localhost:6379/0
+          STRICT_MODE: 'false'
+          DISTRIBUTED_ENABLED: 'true'
+        run: |
+          python clean_project/scripts/bootstrap_check.py
+

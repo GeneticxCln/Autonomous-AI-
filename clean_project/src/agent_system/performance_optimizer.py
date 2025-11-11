@@ -51,17 +51,17 @@ class PerformanceMetrics:
 class MemoryOptimizer:
     """Manages memory usage optimization."""
 
-    def __init__(self):
-        self.memory_history = deque(maxlen=100)
-        self.gc_threshold = 500  # MB
-        self.cleanup_interval = 60  # seconds
-        self.last_cleanup = time.time()
+    def __init__(self) -> None:
+        self.memory_history: deque[dict[str, float]] = deque(maxlen=100)
+        self.gc_threshold: int = 500  # MB
+        self.cleanup_interval: int = 60  # seconds
+        self.last_cleanup: float = time.time()
         self._start_background_monitoring()
 
-    def _start_background_monitoring(self):
+    def _start_background_monitoring(self) -> None:
         """Start background memory monitoring."""
 
-        def monitor():
+        def monitor() -> None:
             while True:
                 try:
                     self.check_and_optimize_memory()
@@ -73,14 +73,14 @@ class MemoryOptimizer:
         thread = threading.Thread(target=monitor, daemon=True)
         thread.start()
 
-    def check_and_optimize_memory(self):
+    def check_and_optimize_memory(self) -> None:
         """Check memory usage and optimize if needed."""
         current_memory = psutil.virtual_memory()
         memory_mb = current_memory.used / (1024 * 1024)
 
         # Record memory history
         self.memory_history.append(
-            {"timestamp": time.time(), "memory_mb": memory_mb, "percent": current_memory.percent}
+            {"timestamp": time.time(), "memory_mb": float(memory_mb), "percent": float(current_memory.percent)}
         )
 
         # Auto cleanup if threshold exceeded
@@ -93,7 +93,7 @@ class MemoryOptimizer:
             self.cleanup_old_data()
             self.last_cleanup = time.time()
 
-    def optimize_memory(self):
+    def optimize_memory(self) -> None:
         """Perform memory optimization."""
         # Force garbage collection
         collected = gc.collect()
@@ -103,7 +103,7 @@ class MemoryOptimizer:
         if len(self.memory_history) > 80:
             self.memory_history = deque(list(self.memory_history)[-40:], maxlen=100)
 
-    def cleanup_old_data(self):
+    def cleanup_old_data(self) -> None:
         """Clean up old data from memory."""
         # Implementation would depend on specific data structures
         current_time = time.time()
@@ -112,12 +112,12 @@ class MemoryOptimizer:
         # Clean up old memory entries in agent if accessible
         try:
             # This would be called from agent context
-            if hasattr(self, "agent") and self.agent:
+            if hasattr(self, "agent") and getattr(self, "agent"):
                 self._cleanup_agent_memories(cutoff_time)
         except Exception as e:
             logger.debug(f"Cleanup error: {e}")
 
-    def _cleanup_agent_memories(self, cutoff_time: float):
+    def _cleanup_agent_memories(self, cutoff_time: float) -> None:
         """Clean up old memories from agent."""
         # Not implemented yet; safe no-op to avoid misleading behavior
         logger.debug("MemoryOptimizer._cleanup_agent_memories is not implemented; skipping.")
@@ -139,18 +139,18 @@ class MemoryOptimizer:
 class IOOptimizer:
     """Optimizes I/O operations and file access."""
 
-    def __init__(self):
-        self.file_cache = {}
-        self.cache_size_limit = 100
-        self.last_cache_cleanup = time.time()
+    def __init__(self) -> None:
+        self.file_cache: dict[str, dict[str, Any]] = {}
+        self.cache_size_limit: int = 100
+        self.last_cache_cleanup: float = time.time()
 
-    def optimize_file_operations(self):
+    def optimize_file_operations(self) -> None:
         """Optimize file operation patterns."""
         # Not implemented yet; safe no-op to avoid misleading behavior
         logger.debug("IOOptimizer.optimize_file_operations is not implemented; skipping.")
         return
 
-    def cleanup_file_cache(self):
+    def cleanup_file_cache(self) -> None:
         """Clean up file cache."""
         current_time = time.time()
         if current_time - self.last_cache_cleanup > 300:  # 5 minutes
@@ -168,16 +168,16 @@ class IOOptimizer:
 class ResourceMonitor:
     """Monitors and manages system resources."""
 
-    def __init__(self):
-        self.performance_history = deque(maxlen=1000)
+    def __init__(self) -> None:
+        self.performance_history: deque[PerformanceMetrics] = deque(maxlen=1000)
         self.resource_limits = unified_config.security
-        self.alert_thresholds = {"cpu_percent": 80, "memory_percent": 85, "disk_percent": 90}
+        self.alert_thresholds: dict[str, int] = {"cpu_percent": 80, "memory_percent": 85, "disk_percent": 90}
         self._start_monitoring()
 
-    def _start_monitoring(self):
+    def _start_monitoring(self) -> None:
         """Start resource monitoring."""
 
-        def monitor():
+        def monitor() -> None:
             while True:
                 try:
                     self.record_metrics()
@@ -232,14 +232,14 @@ class ResourceMonitor:
                 error_rate=0.0,
             )
 
-    def check_resource_limits(self):
+    def check_resource_limits(self) -> List[str]:
         """Check if resource limits are exceeded."""
         try:
             cpu_percent = psutil.cpu_percent()
             memory = psutil.virtual_memory()
             disk = psutil.disk_usage("/")
 
-            alerts = []
+            alerts: List[str] = []
 
             if cpu_percent > self.alert_thresholds["cpu_percent"]:
                 alerts.append(f"High CPU usage: {cpu_percent:.1f}%")
@@ -286,11 +286,11 @@ class ResourceMonitor:
 class ResponseTimeOptimizer:
     """Optimizes response times."""
 
-    def __init__(self):
-        self.response_times = deque(maxlen=1000)
-        self.slow_operations = []
+    def __init__(self) -> None:
+        self.response_times: deque[dict[str, Any]] = deque(maxlen=1000)
+        self.slow_operations: list[dict[str, Any]] = []
 
-    def record_operation(self, operation_name: str, duration: float, success: bool = True):
+    def record_operation(self, operation_name: str, duration: float, success: bool = True) -> None:
         """Record operation response time."""
         self.response_times.append(
             {
@@ -335,14 +335,14 @@ class ResponseTimeOptimizer:
 class PerformanceOptimizer:
     """Main performance optimization system."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.memory_optimizer = MemoryOptimizer()
         self.io_optimizer = IOOptimizer()
         self.resource_monitor = ResourceMonitor()
         self.response_optimizer = ResponseTimeOptimizer()
-        self.is_enabled = True
+        self.is_enabled: bool = True
 
-    def optimize_system(self):
+    def optimize_system(self) -> None:
         """Perform comprehensive system optimization."""
         if not self.is_enabled:
             return
@@ -373,7 +373,7 @@ class PerformanceOptimizer:
 
     def create_optimization_suggestions(self) -> List[str]:
         """Generate optimization suggestions based on current metrics."""
-        suggestions = []
+        suggestions: List[str] = []
 
         try:
             memory_stats = self.memory_optimizer.get_memory_stats()
@@ -414,12 +414,12 @@ class PerformanceOptimizer:
 
         return suggestions
 
-    def enable_optimization(self):
+    def enable_optimization(self) -> None:
         """Enable performance optimization."""
         self.is_enabled = True
         logger.info("Performance optimization enabled")
 
-    def disable_optimization(self):
+    def disable_optimization(self) -> None:
         """Disable performance optimization."""
         self.is_enabled = False
         logger.info("Performance optimization disabled")

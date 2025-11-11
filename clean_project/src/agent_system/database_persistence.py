@@ -16,6 +16,7 @@ from .database_models import (
     ActionSelectorModel,
     ConfigurationModel,
     CrossSessionPatternModel,
+    DatabaseManager,
     DecisionModel,
     GoalModel,
     LearningSystemModel,
@@ -32,8 +33,8 @@ logger = logging.getLogger(__name__)
 class DatabasePersistence:
     """Database-backed persistence layer replacing JSON files."""
 
-    def __init__(self):
-        self.db = db_manager
+    def __init__(self) -> None:
+        self.db: DatabaseManager = db_manager
 
     def save_action_selector(
         self, selector_data: Dict[str, Any], selector_type: str = "intelligent"
@@ -621,4 +622,4 @@ class DatabasePersistence:
 
 
 # Global database persistence instance
-db_persistence = DatabasePersistence()
+db_persistence: DatabasePersistence = DatabasePersistence()

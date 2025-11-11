@@ -11,11 +11,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from .incremental_parser import IncrementalParseSystem
-from .kernel_cache_manager import kernel_cache_manager
-from .memory_profiler import memory_profiler
-from .specialization import DomainSpecializationLayer
 from ..unified_config import unified_config
+from .incremental_parser import IncrementalParseSystem
+from .kernel_cache_manager import KernelCacheManager, kernel_cache_manager
+from .memory_profiler import MemoryProfiler, memory_profiler
+from .specialization import DomainSpecializationLayer
 
 logger = logging.getLogger(__name__)
 
@@ -55,8 +55,8 @@ class LargeProjectAnalyzer:
     def __init__(
         self,
         *,
-        cache_manager=kernel_cache_manager,
-        profiler=memory_profiler,
+        cache_manager: KernelCacheManager = kernel_cache_manager,
+        profiler: MemoryProfiler = memory_profiler,
         incremental_parser: Optional[IncrementalParseSystem] = None,
         specialization_layer: Optional[DomainSpecializationLayer] = None,
     ):
@@ -353,11 +353,11 @@ class LargeProjectAnalyzer:
         parser = "text_block"
         return self._fallback_tree(content), parser
 
-    def _fallback_tree(self, content: str):
+    def _fallback_tree(self, content: str) -> list[dict[str, Any]]:
         lines = content.splitlines()
         return [{"line": idx + 1, "content": line[:200]} for idx, line in enumerate(lines[:1000])]
 
-    def _markdown_outline(self, content: str):
+    def _markdown_outline(self, content: str) -> list[dict[str, Any]]:
         outline = []
         for idx, line in enumerate(content.splitlines(), start=1):
             if line.startswith("#"):

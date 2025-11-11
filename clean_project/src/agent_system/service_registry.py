@@ -12,7 +12,7 @@ import socket
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 from .cache_manager import cache_manager
 from .config_simple import settings
@@ -84,7 +84,8 @@ class ServiceRegistry:
         self.force_fallback = force_fallback
         self._is_initialized = False
         self._using_fallback = force_fallback
-        self._redis = None
+        # Async Redis client from cache_manager; typed as Any to avoid stub gaps
+        self._redis: Any | None = None
 
         # Fallback storage
         self._services: Dict[str, Dict[str, ServiceInstance]] = {}
@@ -108,6 +109,9 @@ class ServiceRegistry:
             self._is_initialized = True
             logger.info("Service registry connected to Redis backend")
             return True
+
+        if getattr(settings, "DISTRIBUTED_ENABLED", False):
+            raise RuntimeError("Service registry requires Redis when distributed is enabled")
 
         self._using_fallback = True
         self._is_initialized = True
@@ -150,10 +154,12 @@ class ServiceRegistry:
             return instance
 
         key = self._service_key(service_name, instance.instance_id)
-        await self._redis.set(
+        redis = self._redis
+        assert redis is not None
+        await redis.set(
             key, json.dumps(instance.to_dict(), default=str), ex=instance.ttl_seconds
         )
-        await self._redis.sadd(self._index_key(service_name), instance.instance_id)
+        await redis.sadd(self._index_key(service_name), instance.instance_id)
         return instance
 
     async def heartbeat(self, service_name: str, instance_id: str) -> bool:
@@ -171,13 +177,15 @@ class ServiceRegistry:
                 return True
 
         key = self._service_key(service_name, instance_id)
-        raw = await self._redis.get(key)
+        redis = self._redis
+        assert redis is not None
+        raw = await redis.get(key)
         if not raw:
             return False
 
         data = json.loads(self._decode(raw))
         data["last_heartbeat"] = time.time()
-        await self._redis.set(
+        await redis.set(
             key,
             json.dumps(data, default=str),
             ex=data.get("ttl_seconds", self.config.default_ttl_seconds),
@@ -194,8 +202,10 @@ class ServiceRegistry:
                 return service_map.pop(instance_id, None) is not None
 
         key = self._service_key(service_name, instance_id)
-        removed = await self._redis.delete(key)
-        await self._redis.srem(self._index_key(service_name), instance_id)
+        redis = self._redis
+        assert redis is not None
+        removed = await redis.delete(key)
+        await redis.srem(self._index_key(service_name), instance_id)
         return bool(removed)
 
     async def discover(self, service_name: str) -> List[ServiceInstance]:
@@ -217,16 +227,18 @@ class ServiceRegistry:
                     service_map.pop(instance_id, None)
                 return active
 
-        instance_ids = await self._redis.smembers(self._index_key(service_name))
+        redis = self._redis
+        assert redis is not None
+        instance_ids = await redis.smembers(self._index_key(service_name))
         if not instance_ids:
             return []
 
         instances: List[ServiceInstance] = []
         for instance_id in instance_ids:
             key = self._service_key(service_name, self._decode(instance_id))
-            raw = await self._redis.get(key)
+            raw = await redis.get(key)
             if not raw:
-                await self._redis.srem(self._index_key(service_name), self._decode(instance_id))
+                await redis.srem(self._index_key(service_name), self._decode(instance_id))
                 continue
             data = json.loads(self._decode(raw))
             instance = ServiceInstance.from_dict(data)
@@ -255,14 +267,16 @@ class ServiceRegistry:
 
         services = [service_name] if service_name else await self._list_services()
         removed = 0
+        redis = self._redis
+        assert redis is not None
         for svc in services:
-            instance_ids = await self._redis.smembers(self._index_key(svc))
+            instance_ids = await redis.smembers(self._index_key(svc))
             for instance_id in instance_ids:
                 instance_id_str = self._decode(instance_id)
                 key = self._service_key(svc, instance_id_str)
-                raw = await self._redis.get(key)
+                raw = await redis.get(key)
                 if not raw:
-                    await self._redis.srem(self._index_key(svc), instance_id_str)
+                    await redis.srem(self._index_key(svc), instance_id_str)
                     removed += 1
                     continue
                 data = json.loads(self._decode(raw))
@@ -277,7 +291,9 @@ class ServiceRegistry:
             async with self._lock:
                 return list(self._services.keys())
         pattern = f"{self.config.namespace}:*"
-        keys = await self._redis.keys(pattern)
+        redis = self._redis
+        assert redis is not None
+        keys = await redis.keys(pattern)
         services = set()
         for key in keys:
             decoded = self._decode(key)
@@ -290,7 +306,7 @@ class ServiceRegistry:
     def _decode(value: Any) -> str:
         if isinstance(value, bytes):
             return value.decode("utf-8")
-        return value
+        return cast(str, value)
 
 
 # Global registry instance

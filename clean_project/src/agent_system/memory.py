@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 class MemorySystem:
     """Manages working memory and episodic memory for the agent."""
 
-    def __init__(self, working_memory_size: int = 10):
+    def __init__(self, working_memory_size: int = 10) -> None:
         self.working_memory: List[Memory] = []
         self.episodic_memory: List[Memory] = []
         self.working_memory_size = working_memory_size
@@ -24,7 +24,7 @@ class MemorySystem:
         observation: Observation,
         context: Dict[str, Any],
         success_score: float,
-    ):
+    ) -> None:
         """Store a new memory."""
         self.memory_counter += 1
 
@@ -84,7 +84,7 @@ class MemorySystem:
 
         return context
 
-    def clear_working_memory(self):
+    def clear_working_memory(self) -> None:
         """Clear working memory (move all to episodic)."""
         self.episodic_memory.extend(self.working_memory)
         self.working_memory.clear()

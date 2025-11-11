@@ -298,9 +298,9 @@ AGENT_ROLES = {
 class AgentRoleManager:
     """Manages agent role definitions and business value propositions."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.roles = AGENT_ROLES
-        self.current_role = None
+        self.current_role: Optional[AgentRole] = None
 
     def get_role(self, role_name: str) -> Optional[AgentRole]:
         """Get a specific agent role by name."""

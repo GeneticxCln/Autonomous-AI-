@@ -9,9 +9,9 @@ import logging
 from datetime import UTC, datetime
 from typing import Any, Dict, List
 
+from .async_utils import run_blocking
 from .enterprise_persistence import enterprise_persistence
 from .models import Action, ActionStatus, Memory, Observation
-from .async_utils import run_blocking
 
 logger = logging.getLogger(__name__)
 
