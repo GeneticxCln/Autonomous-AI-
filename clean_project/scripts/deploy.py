@@ -56,6 +56,14 @@ OPENAI_API_KEY=your_openai_key_here
 # Get Anthropic key from: https://console.anthropic.com/
 ANTHROPIC_API_KEY=your_anthropic_key_here
 
+# OpenRouter (optional): https://openrouter.ai/
+OPENROUTER_API_KEY=your_openrouter_key_here
+# OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+
+# Local LLM (Ollama): https://ollama.ai/
+# OLLAMA_BASE_URL=http://localhost:11434
+# OLLAMA_MODEL=llama3
+
 # Security
 SECRET_KEY=change-this-secret-key-in-production
 API_KEY_ROTATION_DAYS=30

@@ -268,6 +268,12 @@ DATABASE_URL=sqlite:///./agent_enterprise.db
 OPENAI_API_KEY=your_openai_key
 ANTHROPIC_API_KEY=your_anthropic_key
 SERPAPI_KEY=your_serpapi_key
+# OpenRouter (optional)
+OPENROUTER_API_KEY=your_openrouter_key
+# OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+# Local LLM (Ollama)
+# OLLAMA_BASE_URL=http://localhost:11434
+# OLLAMA_MODEL=llama3
 
 # Security Settings
 RATE_LIMIT_REQUESTS=100
@@ -279,6 +285,14 @@ ACCOUNT_LOCKOUT_DURATION=30
 ENABLE_RATE_LIMITING=true
 ENABLE_CACHING=true
 ENABLE_AUDIT_LOGGING=true
+```
+
+### LLM provider selection (runtime)
+
+```python
+# Select a specific provider in code
+from agent_system.llm_integration import llm_manager
+text = await llm_manager.generate("hello", provider="openrouter")  # or "ollama", "openai", "anthropic"
 ```
 
 ### Production Configuration
@@ -294,10 +308,6 @@ export ENABLE_HTTPS="true"
 
 # Database
 export DATABASE_URL="postgresql://user:pass@prod-db:5432/agent"
-
-# Monitoring
-export ENABLE_METRICS="true"
-export METRICS_PORT="9090"
 ```
 
 ## 📖 API Documentation

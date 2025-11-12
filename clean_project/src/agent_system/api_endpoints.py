@@ -35,6 +35,8 @@ from .api_schemas import (
     LoginResponse,
     SearchProviderConfig,
     SearchProviderStatus,
+    LLMProviderSelect,
+    LLMProviderStatus,
     TokenData,
     TokenRefreshRequest,
     # User Management
@@ -1311,7 +1313,61 @@ async def alertmanager_webhook(request: Request) -> JSONResponse:
     )
 
 
-# Provider configuration endpoints
+# LLM Provider configuration endpoints
+@typed_router.get("/system/providers/llm-config", summary="Get LLM provider status")
+async def get_llm_provider_status(
+    security_context: SecurityContext = Depends(require_permission("system", "read")),
+) -> JSONResponse:
+    from .llm_integration import llm_manager
+    providers = llm_manager.get_available_providers()
+    preferred = llm_manager.get_preferred_provider()
+    # Determine configured providers: keys or base URL present
+    configured = []
+    if get_api_key("openai"):
+        configured.append("openai")
+    if get_api_key("anthropic"):
+        configured.append("anthropic")
+    if get_api_key("openrouter"):
+        configured.append("openrouter")
+    try:
+        from .unified_config import unified_config as _uc
+        if getattr(_uc.api, "ollama_base_url", None):
+            configured.append("ollama")
+    except Exception:
+        pass
+    status_model = LLMProviderStatus(providers=providers, preferred=preferred, configured=configured)
+    return create_api_response(status_model.model_dump(), message="LLM provider status")
+
+
+@typed_router.put("/system/providers/llm-config", summary="Select default LLM provider")
+async def set_llm_provider(
+    payload: LLMProviderSelect,
+    security_context: SecurityContext = Depends(require_permission("system", "write")),
+) -> JSONResponse:
+    from .llm_integration import llm_manager
+    name = payload.provider.strip().lower()
+    if name not in llm_manager.get_available_providers():
+        return create_error_response(
+            message=f"Provider '{name}' is not available",
+            error_type="INVALID_PROVIDER",
+        )
+    ok = llm_manager.set_preferred_provider(name)
+    # Persist preferred provider to config if possible
+    try:
+        from .unified_config import unified_config as _uc
+        _uc.api.default_llm_provider = name
+        _uc.save_to_file()
+    except Exception:
+        pass
+    status_model = LLMProviderStatus(
+        providers=llm_manager.get_available_providers(),
+        preferred=llm_manager.get_preferred_provider(),
+        configured=[],
+    )
+    return create_api_response(status_model.model_dump(), message="Default LLM provider set")
+
+
+# Provider configuration endpoints (web search)
 @typed_router.get("/system/providers/search-config", summary="Get search provider configuration")
 async def get_search_provider_config(
     security_context: SecurityContext = Depends(require_permission("system", "read")),

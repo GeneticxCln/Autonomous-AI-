@@ -182,11 +182,11 @@ class AnthropicProvider(LLMProvider):
 
 
 class LocalProvider(LLMProvider):
-    """Local LLM provider (Ollama, LM Studio, etc.)."""
+    """Local LLM provider (generic). Use for non-Ollama local backends."""
 
-    def __init__(self, base_url: str = "http://localhost:11434"):
+    def __init__(self, base_url: str = "http://localhost:11434", model: Optional[str] = None):
         self.base_url = base_url
-        self.model = settings.DEFAULT_LLM_MODEL
+        self.model = model or settings.DEFAULT_LLM_MODEL
 
     async def generate(self, prompt: str, **kwargs: Any) -> str:
         """Generate text using local LLM."""
@@ -249,12 +249,149 @@ class LocalProvider(LLMProvider):
             return await super().stream_chat(messages, **kwargs)
 
 
+class OpenRouterProvider(LLMProvider):
+    """OpenRouter provider using OpenAI-compatible SDK with base_url override."""
+
+    def __init__(self, api_key: str, base_url: str = "https://openrouter.ai/api/v1", model: str = "openrouter/auto"):
+        self.api_key = api_key
+        self.base_url = base_url
+        self.model = model
+
+    async def generate(self, prompt: str, **kwargs: Any) -> str:
+        try:
+            import openai
+
+            client = openai.AsyncOpenAI(api_key=self.api_key, base_url=self.base_url)
+            response = await client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+                **kwargs,
+            )
+            return str(response.choices[0].message.content or "")
+        except Exception as e:
+            logger.error(f"OpenRouter generation failed: {e}")
+            return f"Error: {str(e)}"
+
+    async def chat(self, messages: List[Dict[str, str]], **kwargs: Any) -> str:
+        try:
+            import openai
+
+            client = openai.AsyncOpenAI(api_key=self.api_key, base_url=self.base_url)
+            response = await client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                stream=False,
+                **kwargs,
+            )
+            return str(response.choices[0].message.content or "")
+        except Exception as e:
+            logger.error(f"OpenRouter chat failed: {e}")
+            return f"Error: {str(e)}"
+
+    async def stream_chat(self, messages: List[Dict[str, str]], **kwargs: Any) -> AsyncIterator[str]:
+        try:
+            import openai
+
+            client = openai.AsyncOpenAI(api_key=self.api_key, base_url=self.base_url)
+            stream = await client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                stream=True,
+                **kwargs,
+            )
+
+            async def _gen() -> AsyncIterator[str]:
+                async for event in stream:
+                    try:
+                        delta = event.choices[0].delta.content or ""
+                    except Exception:
+                        delta = ""
+                    if delta:
+                        yield delta
+
+            return _gen()
+        except Exception as e:
+            logger.warning(f"OpenRouter streaming unavailable, falling back: {e}")
+            return await super().stream_chat(messages, **kwargs)
+
+
+class OllamaProvider(LLMProvider):
+    """Explicit Ollama provider (local server)."""
+
+    def __init__(self, base_url: str = "http://localhost:11434", model: Optional[str] = None):
+        self.base_url = base_url
+        self.model = model or settings.DEFAULT_LLM_MODEL
+
+    async def generate(self, prompt: str, **kwargs: Any) -> str:
+        try:
+            import httpx
+
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(
+                    f"{self.base_url}/api/generate",
+                    json={"model": self.model, "prompt": prompt, "stream": False},
+                    timeout=30.0,
+                )
+                resp.raise_for_status()
+                return str(resp.json().get("response", ""))
+        except Exception as e:
+            logger.error(f"Ollama generation failed: {e}")
+            return f"Error: {str(e)}"
+
+    async def chat(self, messages: List[Dict[str, str]], **kwargs: Any) -> str:
+        try:
+            import httpx
+
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(
+                    f"{self.base_url}/api/chat",
+                    json={"model": self.model, "messages": messages, "stream": False},
+                    timeout=30.0,
+                )
+                resp.raise_for_status()
+                return str(resp.json().get("message", {}).get("content") or resp.text)
+        except Exception as e:
+            logger.error(f"Ollama chat failed: {e}")
+            return f"Error: {str(e)}"
+
+    async def stream_chat(self, messages: List[Dict[str, str]], **kwargs: Any) -> AsyncIterator[str]:
+        try:
+            import httpx
+
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                async with client.stream(
+                    "POST",
+                    f"{self.base_url}/api/chat",
+                    json={"model": self.model, "messages": messages, "stream": True},
+                ) as resp:
+                    resp.raise_for_status()
+
+                    async def _gen() -> AsyncIterator[str]:
+                        async for line in resp.aiter_lines():
+                            if not line:
+                                continue
+                            yield line
+            return _gen()
+        except Exception as e:
+            logger.warning(f"Ollama streaming unavailable, falling back: {e}")
+            return await super().stream_chat(messages, **kwargs)
+
+
 class LLMManager:
     """Manager for LLM providers with fallback support."""
 
     def __init__(self) -> None:
         self.providers: Dict[str, LLMProvider] = {}
+        self.preferred_provider: Optional[str] = None
         self._initialize_providers()
+        # Load preferred provider from config if available
+        try:
+            from .unified_config import unified_config as _cfg
+            if _cfg.api.default_llm_provider:
+                if _cfg.api.default_llm_provider in self.providers:
+                    self.preferred_provider = _cfg.api.default_llm_provider
+        except Exception:
+            pass
 
     def _initialize_providers(self) -> None:
         """Initialize available LLM providers."""
@@ -270,8 +407,37 @@ class LLMManager:
             self.providers["anthropic"] = AnthropicProvider(anthropic_key)
             logger.info("Anthropic provider initialized")
 
-        # Always try local provider
-        self.providers["local"] = LocalProvider()
+        # Add OpenRouter if configured
+        try:
+            from .unified_config import unified_config as _cfg
+        except Exception:
+            _cfg = None
+        openrouter_key = get_api_key("openrouter")
+        if openrouter_key:
+            try:
+                self.providers["openrouter"] = OpenRouterProvider(
+                    api_key=openrouter_key,
+                    base_url=_cfg.api.openrouter_base_url if _cfg else "https://openrouter.ai/api/v1",
+                )
+                logger.info("OpenRouter provider initialized")
+            except Exception as e:
+                logger.warning(f"Failed to initialize OpenRouter provider: {e}")
+
+        # Add Ollama-specific provider if base URL present
+        ollama_base = None
+        ollama_model = None
+        try:
+            if _cfg:
+                ollama_base = _cfg.api.ollama_base_url
+                ollama_model = _cfg.api.ollama_model or _cfg.api.default_llm_model
+        except Exception:
+            pass
+        if ollama_base:
+            self.providers["ollama"] = OllamaProvider(base_url=ollama_base, model=ollama_model)
+            logger.info("Ollama provider initialized")
+
+        # Always add generic local provider as last fallback
+        self.providers.setdefault("local", LocalProvider(base_url=ollama_base or "http://localhost:11434", model=ollama_model))
         logger.info("Local LLM provider initialized")
 
     async def generate(
@@ -283,8 +449,13 @@ class LLMManager:
         if provider and provider in self.providers:
             providers_to_try = [provider]
         else:
-            # Try providers in order of preference
-            providers_to_try = list(self.providers.keys())
+            # Try preferred provider first, then others
+            providers_to_try = []
+            if self.preferred_provider and self.preferred_provider in self.providers:
+                providers_to_try.append(self.preferred_provider)
+            for name in self.providers.keys():
+                if name not in providers_to_try:
+                    providers_to_try.append(name)
 
         for provider_name in providers_to_try:
             try:
@@ -314,7 +485,12 @@ class LLMManager:
         if provider and provider in self.providers:
             providers_to_try = [provider]
         else:
-            providers_to_try = list(self.providers.keys())
+            providers_to_try = []
+            if self.preferred_provider and self.preferred_provider in self.providers:
+                providers_to_try.append(self.preferred_provider)
+            for name in self.providers.keys():
+                if name not in providers_to_try:
+                    providers_to_try.append(name)
 
         for provider_name in providers_to_try:
             try:
@@ -334,6 +510,19 @@ class LLMManager:
     def get_available_providers(self) -> List[str]:
         """Get list of available providers."""
         return list(self.providers.keys())
+
+    def set_preferred_provider(self, name: Optional[str]) -> bool:
+        """Set preferred provider (or None to clear). Returns True if applied."""
+        if name is None:
+            self.preferred_provider = None
+            return True
+        if name in self.providers:
+            self.preferred_provider = name
+            return True
+        return False
+
+    def get_preferred_provider(self) -> Optional[str]:
+        return self.preferred_provider
 
     async def stream_chat(
         self,

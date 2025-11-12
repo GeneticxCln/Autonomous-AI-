@@ -147,6 +147,12 @@ ANTHROPIC_API_KEY=your_key_here
 SERPAPI_KEY=your_key_here
 BING_SEARCH_KEY=your_key_here
 GOOGLE_SEARCH_KEY=your_key_here
+# OpenRouter
+OPENROUTER_API_KEY=your_openrouter_key
+# OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+# Local LLM (Ollama)
+# OLLAMA_BASE_URL=http://localhost:11434
+# OLLAMA_MODEL=llama3
 # Google Custom Search requires a CSE ID
 GOOGLE_CSE_ID=your_cse_id
 
@@ -211,7 +217,17 @@ agent-run --goal "Your task here"
 ## 🐳 Deployment
 
 
-### Provider Configuration API
+### LLM provider selection (runtime)
+
+```python
+from agent_system.llm_integration import llm_manager
+# Use OpenRouter (requires OPENROUTER_API_KEY)
+text = await llm_manager.generate("hello", provider="openrouter")
+# Use Ollama (requires local server; optional OLLAMA_MODEL)
+text = await llm_manager.generate("hello", provider="ollama")
+```
+
+### Provider Configuration API (web search)
 
 Requires an authenticated token with `system.read`/`system.write`.
 

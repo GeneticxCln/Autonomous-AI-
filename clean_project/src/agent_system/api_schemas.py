@@ -84,6 +84,20 @@ class APIError(BaseModel):  # type: ignore[misc]
 
 
 # Provider configuration schemas
+class LLMProviderSelect(BaseModel):  # type: ignore[misc]
+    """Select default LLM provider."""
+
+    provider: str = Field(..., description="Provider name (openai|anthropic|openrouter|ollama|local)")
+
+
+class LLMProviderStatus(BaseModel):  # type: ignore[misc]
+    """Runtime status for LLM providers."""
+
+    providers: List[str] = Field(..., description="Available LLM providers")
+    preferred: Optional[str] = Field(None, description="Preferred provider (if set)")
+    configured: List[str] = Field(default_factory=list, description="Providers with keys or base URL configured")
+
+
 class SearchProviderConfig(BaseModel):  # type: ignore[misc]
     """Search provider configuration (order and disabled lists)."""
 

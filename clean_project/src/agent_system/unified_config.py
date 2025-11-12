@@ -59,7 +59,15 @@ class APIConfig:
     # LLM APIs
     openai_api_key: Optional[str] = None
     anthropic_api_key: Optional[str] = None
+    # OpenRouter
+    openrouter_api_key: Optional[str] = None
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    # Local/Ollama
+    ollama_base_url: str = "http://localhost:11434"
+    ollama_model: Optional[str] = None
+
     default_llm_model: str = "gpt-3.5-turbo"
+    default_llm_provider: Optional[str] = None
     llm_timeout: int = 60
     max_tokens: int = 2000
 
@@ -250,8 +258,16 @@ class UnifiedConfig:
         self.api.serpapi_key = os.getenv("SERPAPI_KEY")
         self.api.openai_api_key = os.getenv("OPENAI_API_KEY")
         self.api.anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
+        self.api.openrouter_api_key = os.getenv("OPENROUTER_API_KEY")
+        # Allow overriding base URLs/models via env
+        self.api.openrouter_base_url = os.getenv("OPENROUTER_BASE_URL", self.api.openrouter_base_url)
+        self.api.ollama_base_url = os.getenv("OLLAMA_BASE_URL", self.api.ollama_base_url)
+        self.api.ollama_model = os.getenv("OLLAMA_MODEL", self.api.ollama_model)
         self.api.bing_search_key = os.getenv("BING_SEARCH_KEY")
         self.api.google_search_key = os.getenv("GOOGLE_SEARCH_KEY")
+        v = os.getenv("DEFAULT_LLM_PROVIDER")
+        if v is not None:
+            self.api.default_llm_provider = v.strip().lower() or None
         v = os.getenv("SEARCH_PROVIDER_ORDER")
         if v is not None:
             self.api.search_provider_order = [p.strip().lower() for p in v.split(",") if p.strip()]
@@ -461,6 +477,7 @@ class UnifiedConfig:
             "google": self.api.google_search_key,
             "openai": self.api.openai_api_key,
             "anthropic": self.api.anthropic_api_key,
+            "openrouter": self.api.openrouter_api_key,
         }
         return provider_map.get(provider.lower())
 
@@ -481,6 +498,8 @@ class UnifiedConfig:
             providers.append("openai")
         if self.api.anthropic_api_key:
             providers.append("anthropic")
+        if self.api.openrouter_api_key:
+            providers.append("openrouter")
         return providers
 
     def create_config_template(self) -> None:
@@ -504,7 +523,13 @@ class UnifiedConfig:
                 "bing_search_key": "your_bing_key_here",
                 "google_search_key": "your_google_key_here",
                 "openai_api_key": "your_openai_key_here",
+                "anthropic_api_key": "your_anthropic_key_here",
+                "openrouter_api_key": "your_openrouter_key_here",
+                "openrouter_base_url": "https://openrouter.ai/api/v1",
+                "ollama_base_url": "http://localhost:11434",
+                "ollama_model": null,
                 "default_llm_model": "gpt-3.5-turbo",
+                "default_llm_provider": null,
                 "search_provider_order": ["serpapi", "bing", "google"],
                 "disabled_search_providers": [],
             },
