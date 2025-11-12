@@ -78,28 +78,12 @@ worker:
 interactive:
 	$(PY) -m src.agent_system --interactive
 
-# Infrastructure Management Commands
-infra-up:
-	@echo "🚀 Starting infrastructure with Docker Compose..."
-	docker-compose -f config/docker-compose.yml up -d
-
-infra-down:
-	@echo "🛑 Stopping infrastructure..."
-	docker-compose -f config/docker-compose.yml down
-
-infra-logs:
-	@echo "📋 Following infrastructure logs..."
-	docker-compose -f config/docker-compose.yml logs -f
-
-infra-status:
-	@echo "📊 Infrastructure status:"
-	@docker-compose -f config/docker-compose.yml ps
+# Infrastructure commands removed (no Docker Compose in this project)
 
 health:
 	@echo "🏥 Health check:"
 	@curl -s http://localhost:8000/health | jq '.' || echo "API not responding"
-	@echo "Redis status:"
-	@docker exec $$(docker ps -q -f name=agent_redis) redis-cli ping || echo "Redis not responding"
+	@echo "Redis status: skipping container check (no docker-compose); ensure REDIS_URL is configured if required"
 
 # Readiness check
 bootstrap-check:
@@ -133,23 +117,7 @@ provider-disable:
 	fi
 	PYTHONPATH=src $(PY) scripts/search_providers_cli.py --disable $(DISABLE)
 
-# Kubernetes Commands (when deployed to K8s)
-k8s-deploy:
-	@echo "☸️ Deploying to Kubernetes..."
-	kubectl apply -f k8s/namespace/
-	kubectl apply -f k8s/configmaps/
-	kubectl apply -f k8s/deployments/
-	kubectl apply -f k8s/services/
-	kubectl apply -f k8s/ingress/
-
-k8s-status:
-	@echo "☸️ Kubernetes status:"
-	@kubectl get pods -n agent-system
-	@kubectl get services -n agent-system
-
-k8s-logs:
-	@echo "☸️ Kubernetes logs:"
-	@kubectl logs -l app=agent-system -n agent-system --tail=100
+# Kubernetes commands removed (no Kubernetes manifests in this project)
 
 # Clean build artifacts
 clean:
@@ -179,18 +147,7 @@ help:
 	@echo "  api         - Start API server"
 	@echo "  interactive - Interactive terminal mode"
 	@echo ""
-	@echo "Infrastructure:"
-	@echo "  infra-up    - Start infrastructure (Redis, workers, monitoring)"
-	@echo "  infra-down  - Stop infrastructure"
-	@echo "  infra-logs  - View infrastructure logs"
-	@echo "  infra-status - Check infrastructure status"
-	@echo "  health      - System health check"
-	@echo ""
-	@echo "Kubernetes:"
-	@echo "  k8s-deploy  - Deploy to Kubernetes"
-	@echo "  k8s-status  - Check K8s deployment status"
-	@echo "  k8s-logs    - View K8s logs"
-	@echo ""
 	@echo "Utilities:"
+	@echo "  health      - System health check"
 	@echo "  clean       - Clean build artifacts"
 	@echo "  help        - Show this help"

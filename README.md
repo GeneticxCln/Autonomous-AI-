@@ -356,17 +356,7 @@ curl -X POST http://localhost:8000/api/v1/auth/refresh \\
 
 ### Docker Deployment
 
-```bash
-# Using the clean project (recommended)
-cd clean_project
-
-# Build and run with Docker
-docker build -f config/Dockerfile -t agent-system .
-docker run -p 8000:8000 --env-file .env agent-system
-
-# Or using docker-compose
-docker-compose -f config/docker-compose.yml up -d
-```
+Containerization files have been removed from this project. Run locally with Python or your own container setup if desired.
 
 ### Production Deployment
 

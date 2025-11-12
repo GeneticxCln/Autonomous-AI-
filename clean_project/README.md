@@ -68,8 +68,6 @@ clean_project/
 ├── tests/                  # Test suite
 ├── config/                 # Configuration files
 │   ├── requirements.txt    # Dependencies
-│   ├── Dockerfile         # Container definition
-│   ├── docker-compose.yml # Service orchestration
 │   └── .env.example       # Environment template
 ├── docs/                   # Documentation
 ├── scripts/                # Utilities and demos
@@ -212,14 +210,6 @@ agent-run --goal "Your task here"
 
 ## 🐳 Deployment
 
-### Docker
-```bash
-# Build image
-docker build -f config/Dockerfile -t agent-system .
-
-# Run with compose
-docker-compose -f config/docker-compose.yml up
-```
 
 ### Provider Configuration API
 
@@ -257,11 +247,7 @@ Make targets for convenience:
 - Manage secrets via a dedicated store (AWS Secrets Manager, GCP Secret Manager, Vault, or Kubernetes Secrets) as outlined in [`docs/SECRET_MANAGEMENT.md`](docs/SECRET_MANAGEMENT.md)
 
 ### Monitoring & Observability
-- **Prometheus**: scrape the FastAPI `/metrics` endpoint (enabled when `ENABLE_METRICS=1`) for detailed system, cache, and AI-performance metrics including `agent_system_health_score`, `agent_decision_accuracy_ratio`, and `cache_hit_ratio`.
-- **Grafana Dashboards**: prebuilt dashboards live in `config/monitoring/grafana/dashboards/` (`Agent System Overview`, `Agent System Health`, `Agent AI Performance`). They are auto-provisioned by the compose/Kubernetes manifests.
-- **Alerting**: Prometheus alert rules are defined in `config/monitoring/alert_rules.yml` and cover availability, infrastructure saturation, cache efficiency, and AI quality signals. Wire them to Alertmanager (e.g., Slack/Webhook) for paging.
-- **Alertmanager**: `config/monitoring/alertmanager.yml` is enabled via Docker Compose and forwards incidents to the internal `/api/v1/system/alerts/webhook` endpoint. Set `ALERTMANAGER_WEBHOOK_TOKEN` if you want bearer-token protection or swap in your own receivers.
-- **Docker Compose**: `config/docker-compose.yml` mounts both `prometheus.yml` and the alert rules so you get health/AI alerts out-of-the-box (`docker compose -f config/docker-compose.yml up prometheus grafana`).
+Prometheus/Grafana configuration and Docker Compose setup have been removed to simplify the project.
 
 ## 🧪 Examples
 
